@@ -5,7 +5,7 @@
 # together whenever you ship a change (see the repo's `ship` skill).
 name: "Family Panel"
 description: "Self-hosted family wall calendar: shared calendar, chores, lists, meal planner and Home Assistant tiles."
-version: "0.15.8"
+version: "0.15.9"
 slug: "family_panel"
 url: "https://github.com/rm8705-claude/family_panel"
 arch:
@@ -48,20 +48,21 @@ options:
   weather:
     lat: -27.48
     lon: 152.98
-  # Rohan's actual devices: three Sensibo heads, one SwitchBot curtain, one
-  # Sonos. Entity IDs derived from their HA friendly names — if a tile shows
-  # unavailable, check the real ID in Developer tools -> States. All three
-  # climate tiles collapse into a single aircon tile on the panel.
+  # Rohan's actual devices, IDs read off Developer tools -> States. Note the
+  # Sensibo integration doubles the name (device + entity), hence
+  # climate.kids_room_kids_room — the friendly name in the UI is just "Kids
+  # room", so these cannot be guessed from the dashboard. All three climate
+  # tiles collapse into a single aircon tile on the panel.
   ha_tiles:
-    - entity: "climate.lounge_room"
+    - entity: "climate.lounge_room_lounge_room"
       label: "Lounge"
       type: "climate"
       allow_action: true
-    - entity: "climate.kids_room"
+    - entity: "climate.kids_room_kids_room"
       label: "Kids"
       type: "climate"
       allow_action: true
-    - entity: "climate.studio"
+    - entity: "climate.studio_studio"
       label: "Studio"
       type: "climate"
       allow_action: true
