@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.15.15"
+APP_VERSION = "0.15.16"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -21,7 +21,11 @@ import recipes as _recipes_mod
 _recipes_mod.seed_starters()
 _recipes_mod.upgrade_starter_methods()
 
-app = Flask(__name__, static_folder="static", static_url_path="/static")
+# static_folder=None: Flask's automatic static handler doesn't set the
+# Cache-Control our versioned-URL scheme needs, so /api_static below (mounted
+# at the same /static/<path> URL) fully replaces it rather than sitting
+# alongside it.
+app = Flask(__name__, static_folder=None)
 
 
 def admin_pin_ok() -> bool:
@@ -39,7 +43,34 @@ def require_pin():
 
 @app.get("/")
 def index():
-    return send_from_directory(os.path.join(BASE_DIR, "static"), "index.html")
+    """Serve the shell with every asset URL stamped ?v=<APP_VERSION>.
+
+    A kiosk tablet is rarely closed, so its browser cache is rarely cleared
+    either — after an update it kept running last release's app.js while the
+    server had already moved on, invisibly, until someone happened to notice
+    a stale feature. Versioning the URL means a new release is a genuinely
+    different URL, so there is nothing STALE to serve; the browser is free to
+    cache each version's asset forever (see api_static below) since it will
+    never be asked for that exact URL again after the next release.
+    """
+    path = os.path.join(BASE_DIR, "static", "index.html")
+    with open(path, encoding="utf-8") as f:
+        html = f.read().replace("{{V}}", APP_VERSION)
+    resp = app.response_class(html, mimetype="text/html")
+    # The shell itself must always be re-fetched — it's the one file whose
+    # URL never changes, so it's the one thing that's actually allowed to be
+    # cached is nothing.
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+@app.get("/static/<path:filename>")
+def api_static(filename):
+    resp = send_from_directory(os.path.join(BASE_DIR, "static"), filename)
+    # Safe to cache hard: a version bump changes the referring ?v= URL, so a
+    # cached copy is never asked for again once it's actually stale.
+    resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return resp
 
 
 @app.get("/healthz")
