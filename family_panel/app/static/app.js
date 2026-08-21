@@ -798,7 +798,10 @@
       'themeMode:     ' + state.themeMode + '\n' +
       'autoTheme():   ' + autoTheme() + '\n' +
       'state.theme:   ' + state.theme + '\n' +
-      'data-theme:    ' + document.documentElement.getAttribute('data-theme');
+      'data-theme:    ' + document.documentElement.getAttribute('data-theme') + '\n' +
+      'data-skin:     ' + document.documentElement.getAttribute('data-skin') +
+      '  (a dark SKIN, e.g. Slate/“Charcoal wallboard”, looks like ' +
+      'night even when data-theme above says day — these are two separate settings)';
   }
 
   /* Push the family accents into CSS so the rail strip can use them. */
