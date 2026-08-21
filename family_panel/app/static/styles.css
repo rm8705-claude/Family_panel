@@ -712,6 +712,10 @@ ul, ol { list-style: none; }
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* Never let the foot (Assist / Settings / sync note) fall off the bottom
+     edge unreachable. On any height where the column doesn't fit, this
+     scrolls instead of silently clipping. */
+  overflow-y: auto;
   padding: 2rem 1.5rem 1.25rem;
   border-right: 1px solid var(--hair);
   background: var(--rail-bg);
@@ -3819,6 +3823,14 @@ html[data-theme="night"] select.inp {
   .pf-fig .v { font-size: 1.875rem; }
 }
 
+@media (max-height: 640px) {
+  /* 1024x600 wall tablets: the giant date is the first thing to give. */
+  .rail-day { font-size: 4rem; }
+  .rail-full { display: none; }
+  .spine { display: none; }
+  .rail { padding-top: 1rem; }
+}
+
 /* 1280x800 and other 800-tall panels: the sky zone costs the chores card a
    row, so the arc folds flat to a line of text and the 7-day strip tightens.
    The Today grid gives every pixel it frees straight to the chores list. */
@@ -3905,7 +3917,13 @@ html[data-theme="night"] select.inp {
 
 .pd-strip, .pd-chips, .meal-day, .tab-more { display: none; }
 
-@media (orientation: portrait), (max-width: 700px) {
+/* A landscape phone (roughly 915x412) is wide enough to miss the compact
+   breakpoint below but far too short for the rail: the date block and tabs
+   eat the column, and Assist / Settings / the sync note get pushed clean
+   past the rail's bottom edge with no way to reach them. Anything this short
+   gets the same top-bar-and-bottom-tabs treatment portrait uses. The wall
+   tablet is 800px tall in landscape, so it keeps the proper rail. */
+@media (orientation: portrait), (max-width: 700px), (max-height: 560px) {
 
   /* the vw/vh clamp shrinks type to nothing on a phone: fix the base */
   html { font-size: 15px; }
