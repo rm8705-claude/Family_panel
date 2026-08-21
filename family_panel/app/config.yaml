@@ -26,26 +26,36 @@ ics_feeds:
 
 weather: {lat: -27.48, lon: 152.98}   # Corinda, Brisbane
 
-ha_tiles: []
+# The solar tile is wired for mkaiser's modbus_sungrow.yaml integration
+# (https://github.com/mkaiser/Sungrow-SHx-Inverter-Modbus-Home-Assistant).
+# It will show as empty/unavailable until that yaml is installed on your HA
+# instance (see its doc/installation.md) and HA_BASE_URL/HA_TOKEN are set in
+# .env — nothing else needs to change here once those are in place.
+ha_tiles:
+  - type: solar
+    label: Solar
+    pv_power: sensor.total_dc_power             # W
+    load_power: sensor.load_power               # W
+    grid_power: sensor.export_power_raw         # W — NOT sensor.export_power,
+                                                 # which mkaiser's yaml clamps to
+                                                 # >=0, losing import readings.
+                                                 # export_power_raw is already
+                                                 # signed the way this tile wants.
+    battery_power: sensor.battery_power         # W
+    battery_level: sensor.battery_level         # %
+    invert_battery: true   # mkaiser's battery_power reads negative while
+                            # charging / positive while discharging — the
+                            # opposite of this tile's convention, so invert it.
+    # These five may also be nested under an `entities:` key here; the
+    # add-on's Configuration tab must use the flat form above.
+    # invert_grid: true      # if your sensor reports import as positive
+    # power_unit: kW         # if the sensors report kW instead of W
 #  - {entity: climate.living_sensibo,    label: Aircon,   type: climate, allow_action: true}
 #  - {entity: cover.bedroom_curtains,    label: Curtains, type: cover,   allow_action: true}
 #  - {entity: media_player.living_sonos, label: Sonos,    type: media,   allow_action: true}
 #  - {entity: camera.front_yard,         label: Front,    type: camera_snapshot}
 #  - {entity: fan.bedroom_dyson,         label: Dyson,    type: fan,     allow_action: true}
 #      # Dyson via the HACS "Dyson Local" integration (local MQTT) — deploy/SETUP.md
-#  - type: solar                         # Sungrow SH + SBR via the mkaiser
-#    label: Solar                        # HACS integration (local Modbus TCP
-#                                        # to the WiNet-S — NOT iSolarCloud)
-#    pv_power: sensor.total_dc_power             # W
-#    load_power: sensor.load_power               # W
-#    grid_power: sensor.export_power             # W, positive = exporting
-#    battery_power: sensor.battery_power         # W, positive = charging
-#    battery_level: sensor.battery_level         # %
-#    # These five may also be nested under an `entities:` key here; the
-#    # add-on's Configuration tab must use the flat form above.
-#    # invert_grid: true      # if your sensor reports import as positive
-#    # invert_battery: true   # if discharge reads positive
-#    # power_unit: kW         # if the sensors report kW instead of W
 #  - {entity: person.rohan,              label: Rohan,    type: presence}
 #  - {entity: person.partner,            label: Partner,  type: presence}
 #      # presence = HA person entities; home/away comes from each person's own
