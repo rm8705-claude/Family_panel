@@ -5,7 +5,7 @@
 # together whenever you ship a change (see the repo's `ship` skill).
 name: "Family Panel"
 description: "Self-hosted family wall calendar: shared calendar, chores, lists, meal planner and Home Assistant tiles."
-version: "0.15.11"
+version: "0.15.12"
 slug: "family_panel"
 url: "https://github.com/rm8705-claude/family_panel"
 arch:
@@ -55,8 +55,8 @@ options:
   # (media_player.lounge_lounge). All three climate tiles collapse into a
   # single aircon tile on the panel.
   #
-  # There is also media_player.sonos_roam (the portable Roam) if a second
-  # speaker tile is ever wanted.
+  # Media players each get their own tile — unlike climate and cameras, they
+  # do not collapse into one.
   ha_tiles:
     - entity: "climate.lounge_room_lounge_room"
       label: "Lounge"
@@ -76,6 +76,10 @@ options:
       allow_action: true
     - entity: "media_player.lounge_lounge"
       label: "Sonos"
+      type: "media"
+      allow_action: true
+    - entity: "media_player.sonos_roam"
+      label: "Roam"
       type: "media"
       allow_action: true
   screen:
