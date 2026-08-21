@@ -35,14 +35,31 @@ def _headers(token: str) -> dict:
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 
+SOLAR_KEYS = ("pv_power", "load_power", "grid_power", "battery_power", "battery_level")
+
+
+def solar_entities(tile: dict) -> dict:
+    """The solar tile's several sensors, from either shape it can be written in.
+
+    Hand-written config.yaml (the non-add-on path) nests them under `entities`.
+    The add-on's Configuration tab writes them flat on the tile instead, because
+    the Supervisor makes any nested schema object mandatory — nesting there
+    would force every unrelated tile to carry an empty `entities: {}`.
+    """
+    nested = tile.get("entities")
+    if isinstance(nested, dict) and nested:
+        return nested
+    return {k: tile[k] for k in SOLAR_KEYS if tile.get(k)}
+
+
 def wanted_entities(tiles: list[dict]) -> set[str]:
     """Every entity any tile needs. Most tiles have one `entity`; the solar
-    tile maps several sensors through an `entities` dict."""
+    tile maps several sensors through `entities`/flat solar keys."""
     out = set()
     for t in tiles:
         if t.get("entity"):
             out.add(t["entity"])
-        for v in (t.get("entities") or {}).values():
+        for v in solar_entities(t).values():
             if v:
                 out.add(v)
     return out
@@ -180,7 +197,7 @@ def solar_shape(tile: dict, states: dict) -> dict:
     Power values are watts; set power_unit: kW on the tile if the sensors
     report kilowatts and they'll be scaled up.
     """
-    ents = tile.get("entities") or {}
+    ents = solar_entities(tile)
     scale = 1000.0 if str(tile.get("power_unit", "W")).lower() == "kw" else 1.0
 
     def num(key, scaled=True):

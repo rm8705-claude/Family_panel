@@ -35,12 +35,14 @@ ha_tiles: []
 #      # Dyson via the HACS "Dyson Local" integration (local MQTT) — deploy/SETUP.md
 #  - type: solar                         # Sungrow SH + SBR via the mkaiser
 #    label: Solar                        # HACS integration (local Modbus TCP
-#    entities:                           # to the WiNet-S — NOT iSolarCloud)
-#      pv_power: sensor.total_dc_power           # W
-#      load_power: sensor.load_power             # W
-#      grid_power: sensor.export_power           # W, positive = exporting
-#      battery_power: sensor.battery_power       # W, positive = charging
-#      battery_level: sensor.battery_level       # %
+#                                        # to the WiNet-S — NOT iSolarCloud)
+#    pv_power: sensor.total_dc_power             # W
+#    load_power: sensor.load_power               # W
+#    grid_power: sensor.export_power             # W, positive = exporting
+#    battery_power: sensor.battery_power         # W, positive = charging
+#    battery_level: sensor.battery_level         # %
+#    # These five may also be nested under an `entities:` key here; the
+#    # add-on's Configuration tab must use the flat form above.
 #    # invert_grid: true      # if your sensor reports import as positive
 #    # invert_battery: true   # if discharge reads positive
 #    # power_unit: kW         # if the sensors report kW instead of W

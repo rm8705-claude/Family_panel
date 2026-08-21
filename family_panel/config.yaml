@@ -5,9 +5,9 @@
 # together whenever you ship a change (see the repo's `ship` skill).
 name: "Family Panel"
 description: "Self-hosted family wall calendar: shared calendar, chores, lists, meal planner and Home Assistant tiles."
-version: "0.15.4"
+version: "0.15.5"
 slug: "family_panel"
-url: "https://github.com/rm8705-claude/claude"
+url: "https://github.com/rm8705-claude/family_panel"
 arch:
   - aarch64
   - amd64
@@ -84,12 +84,17 @@ schema:
       label: "str"
       type: "list(sensor|cover|switch|climate|media|camera_snapshot|presence|fan|solar)"
       allow_action: "bool?"
-      entities:
-        pv_power: "str?"
-        load_power: "str?"
-        grid_power: "str?"
-        battery_power: "str?"
-        battery_level: "str?"
+      # Solar tile only. These are FLAT, not nested under an `entities:` key:
+      # the Supervisor treats any nested object in a schema as mandatory (only
+      # a string type ending in `?` is skippable), so a nested block here would
+      # force every tile — a light switch, a curtain — to carry an empty
+      # `entities: {}`. ha.py accepts either shape; hand-written config.yaml on
+      # the non-add-on path may still nest them.
+      pv_power: "str?"
+      load_power: "str?"
+      grid_power: "str?"
+      battery_power: "str?"
+      battery_level: "str?"
       invert_grid: "bool?"
       invert_battery: "bool?"
       power_unit: "str?"
