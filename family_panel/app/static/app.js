@@ -764,6 +764,41 @@
   function updateTheme(animate) {
     var want = state.themeMode === 'auto' ? autoTheme() : state.themeMode;
     if (want !== state.theme) applyTheme(want, animate !== false);
+    renderThemeDebug();
+  }
+
+  /* ?debugtheme=1 — a small on-screen readout of every input the day/night
+     decision runs on, for diagnosing "it says night but it isn't" on a
+     kiosk tablet where there is no realistic way to open devtools. Shows the
+     device's own clock, what it thinks sunrise/sunset are and where that
+     data came from, and the theme that follows from them — so a wrong
+     device clock, stale/missing weather, and an actual logic bug each look
+     different at a glance instead of all presenting as "stuck on night". */
+  var THEME_DEBUG = Q.get('debugtheme') === '1';
+  function renderThemeDebug() {
+    if (!THEME_DEBUG) return;
+    var el = byId('themeDebug');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'themeDebug';
+      el.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:99999;' +
+        'background:#000;color:#0f0;font:12px/1.5 monospace;padding:.5rem .75rem;' +
+        'white-space:pre-wrap;pointer-events:none;';
+      document.body.appendChild(el);
+    }
+    var s = sunTimes(), n = nowMins();
+    var d = new Date();
+    el.textContent =
+      'device clock:  ' + d.toString() + '\n' +
+      'device tz:     ' + Intl.DateTimeFormat().resolvedOptions().timeZone + '\n' +
+      'nowMins():     ' + n + '  (' + Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0') + ')\n' +
+      'sun source:    ' + (s.real ? 'weather API' : 'FALLBACK (no weather data)') + '\n' +
+      'sunrise/set:   ' + s.sunrise + ' / ' + s.sunset + '\n' +
+      'D.weather:     ' + (D.weather ? 'loaded' : 'NULL — never fetched or fetch failed') + '\n' +
+      'themeMode:     ' + state.themeMode + '\n' +
+      'autoTheme():   ' + autoTheme() + '\n' +
+      'state.theme:   ' + state.theme + '\n' +
+      'data-theme:    ' + document.documentElement.getAttribute('data-theme');
   }
 
   /* Push the family accents into CSS so the rail strip can use them. */
@@ -5056,6 +5091,7 @@
     var forced = Q.get('theme');
     if (forced === 'night' || forced === 'day') state.themeMode = forced;
     applyTheme(state.themeMode === 'auto' ? autoTheme() : state.themeMode, false);
+    renderThemeDebug();
 
     render();
 
