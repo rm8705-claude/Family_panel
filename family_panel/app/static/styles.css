@@ -953,7 +953,9 @@ ul, ol { list-style: none; }
   font-weight: 700;
 }
 
-.rail-foot { display: flex; flex-direction: column; gap: 6px; }
+/* 6px read as touching/merged when the rail is photographed at a steep
+   angle off a wall-mounted tablet — real separation helps regardless. */
+.rail-foot { display: flex; flex-direction: column; gap: 0.625rem; }
 
 .rail-btn {
   min-height: var(--tap);
