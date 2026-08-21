@@ -5,7 +5,7 @@
 # together whenever you ship a change (see the repo's `ship` skill).
 name: "Family Panel"
 description: "Self-hosted family wall calendar: shared calendar, chores, lists, meal planner and Home Assistant tiles."
-version: "0.15.6"
+version: "0.15.7"
 slug: "family_panel"
 url: "https://github.com/rm8705-claude/family_panel"
 arch:
@@ -48,25 +48,28 @@ options:
   weather:
     lat: -27.48
     lon: 152.98
-  # Starter tiles. The entity IDs below are PLACEHOLDERS — replace each one
-  # with what Developer tools -> States actually reports for your Sensibo,
-  # SwitchBot and Sonos devices. A tile whose entity doesn't exist renders as
-  # unavailable rather than breaking anything, so a wrong ID is safe, just
-  # useless. All climate tiles collapse into one aircon tile on the panel.
+  # Rohan's actual devices: three Sensibo heads, one SwitchBot curtain, one
+  # Sonos. Entity IDs derived from their HA friendly names — if a tile shows
+  # unavailable, check the real ID in Developer tools -> States. All three
+  # climate tiles collapse into a single aircon tile on the panel.
   ha_tiles:
-    - entity: "climate.living_room_aircon"
-      label: "Living"
+    - entity: "climate.lounge_room"
+      label: "Lounge"
       type: "climate"
       allow_action: true
-    - entity: "climate.master_bedroom_aircon"
-      label: "Master bed"
+    - entity: "climate.kids_room"
+      label: "Kids"
       type: "climate"
       allow_action: true
-    - entity: "cover.bedroom_curtains"
+    - entity: "climate.studio"
+      label: "Studio"
+      type: "climate"
+      allow_action: true
+    - entity: "cover.curtain_3_f9b7"
       label: "Curtains"
       type: "cover"
       allow_action: true
-    - entity: "media_player.living_room"
+    - entity: "media_player.lounge"
       label: "Sonos"
       type: "media"
       allow_action: true
