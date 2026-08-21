@@ -7,6 +7,7 @@ the supervisor internal API (SUPERVISOR_TOKEN present).
 State polling caches into the settings table so /api/ha/tiles can keep
 serving the last-known state (greyed out) while HA is unreachable.
 """
+import hashlib
 import os
 
 import requests
@@ -111,7 +112,13 @@ def tile_shape(tile: dict, cached: dict | None) -> dict:
                         # the entity's source_list — the panel's "play something"
                         "source_list": attrs.get("source_list") or [],
                         "source": attrs.get("source"),
-                        "entity_picture": attrs.get("entity_picture")}
+                        # Point at our own proxy, not HA's path — see media_art.
+                        # The cache key rides along so the browser refetches
+                        # when the track changes and caches within a track.
+                        "entity_picture": (
+                            f"/api/ha/art/{tile['entity']}"
+                            f"?v={hashlib.sha1(attrs['entity_picture'].encode()).hexdigest()[:12]}"
+                            if attrs.get("entity_picture") else None)}
     elif ttype == "fan":
         out["attrs"] = {"percentage": attrs.get("percentage"),
                         "oscillating": attrs.get("oscillating"),
@@ -175,6 +182,28 @@ def call_action(entity: str, action: str, value=None) -> None:
     r = requests.post(f"{base}/services/{service_domain}/{service}",
                       headers=_headers(token), json=body, timeout=TIMEOUT)
     r.raise_for_status()
+
+
+def media_art(entity: str) -> tuple[bytes, str]:
+    """Fetch a media player's album art through our own API connection.
+
+    HA hands out `entity_picture` as a path relative to ITS origin, e.g.
+    /api/media_player_proxy/media_player.lounge?token=...  The panel is served
+    from a different port (and, as an add-on, reaches HA at http://supervisor
+    which the browser can't resolve at all), so handing that path to an <img>
+    resolves it against the panel and 404s. Proxy it instead, exactly as
+    camera snapshots are.
+    """
+    cached = (db.get_json_setting("ha:states") or {}).get("states", {}).get(entity)
+    pic = ((cached or {}).get("attributes") or {}).get("entity_picture")
+    if not pic:
+        raise NotConfigured(f"{entity} has no album art")
+    base, token = _api_base()
+    # base ends in /api and `pic` starts with /api — drop one so they join up.
+    root = base[:-4] if base.endswith("/api") else base
+    r = requests.get(root + pic, headers=_headers(token), timeout=TIMEOUT)
+    r.raise_for_status()
+    return r.content, r.headers.get("Content-Type", "image/jpeg")
 
 
 def camera_snapshot(entity: str) -> tuple[bytes, str]:

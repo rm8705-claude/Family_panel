@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.15.9"
+APP_VERSION = "0.15.10"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -831,6 +831,26 @@ def api_ha_action():
     except Exception as e:
         return jsonify({"error": f"Home Assistant did not respond ({e})"}), 502
     return jsonify({"ok": True})
+
+
+@app.get("/api/ha/art/<entity>")
+def api_ha_art(entity):
+    """Album art for a configured media tile, proxied from Home Assistant."""
+    import ha
+    if not any(t.get("entity") == entity and t.get("type") == "media"
+               for t in CONFIG.get("ha_tiles", []) or []):
+        return jsonify({"error": "Unknown media player"}), 404
+    try:
+        content, ctype = ha.media_art(entity)
+    except Exception:
+        # No art for this track is completely normal (radio, local files) —
+        # the panel falls back to its own spinning-record artwork.
+        return jsonify({"error": "No album art"}), 404
+    resp = app.response_class(content, mimetype=ctype)
+    # The URL carries a hash of HA's own picture token, so it changes whenever
+    # the track does. Within one track it's safe to cache hard.
+    resp.headers["Cache-Control"] = "public, max-age=3600"
+    return resp
 
 
 @app.get("/api/ha/camera/<entity>")

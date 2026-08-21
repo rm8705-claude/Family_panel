@@ -1831,7 +1831,12 @@
   function npArt(t) {
     var a = t.attrs || {};
     if (a.entity_picture) {
-      return '<img class="np-img" src="' + esc(a.entity_picture) + '" alt="">';
+      /* The art is proxied through the panel (HA's own entity_picture path is
+         relative to HA's origin and 404s here). If that proxy fails anyway —
+         art pulled mid-track, a stream with none — drop back to the record
+         sleeve rather than leaving a broken-image glyph on the wall. */
+      return '<img class="np-img" src="' + esc(a.entity_picture) + '" alt="" ' +
+        'data-entity="' + esc(t.entity) + '" onerror="window.__artFail(this)">';
     }
     /* Nothing queued: a plain speaker glyph rather than a record of silence. */
     if (!a.title) return '<span class="np-glyph">' + ICON.speaker + '</span>';
@@ -1930,6 +1935,15 @@
     }
     return out + '</div>';
   }
+
+  /* Called from the art <img>'s onerror — forget the picture for this track
+     and redraw, which falls through to the record sleeve. The next poll will
+     offer a fresh URL if the track changes. */
+  window.__artFail = function (img) {
+    var t = mediaTile(img.getAttribute('data-entity'));
+    if (t && t.attrs) t.attrs.entity_picture = null;
+    updateNowPlaying();
+  };
 
   function openNowPlaying(entity) {
     var t = mediaTile(entity);
