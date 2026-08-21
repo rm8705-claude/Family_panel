@@ -331,6 +331,7 @@
     np: null,                   // entity of the open now-playing overlay
     npStart: null,              // {entity, name, at} — favourite we just asked for
     climate: false,             // the whole-house aircon sheet is open
+    sonos: false,               // the multi-speaker sheet is open
     camIdx: 0,                  // which channel the grouped Cameras tile shows
     solar: false,               // the power-flow overlay is open
     wgScrolled: false,          // the week grid has found its scroll position
@@ -1816,12 +1817,14 @@
         (ha ? 'No tiles configured yet — add them to config.yaml.' : waitingCopy('Home tiles')) +
         '</span></div></section>';
     }
-    /* Climate entities and camera channels each collapse to a single tile,
-       drawn where the first one of its kind sat so the row keeps the order
-       config.yaml asked for. Everything else is one tile per entity. */
+    /* Climate entities, camera channels and media players each collapse to a
+       single tile, drawn where the first one of its kind sat so the row
+       keeps the order config.yaml asked for. Everything else is one tile
+       per entity. */
     var clims = climateTiles();
     var cams = cameraTiles();
-    var drawnClim = false, drawnCam = false;
+    var meds = mediaTiles();
+    var drawnClim = false, drawnCam = false, drawnMedia = false;
 
     var body = tiles.map(function (t) {
       if (t.type === 'climate') {
@@ -1834,16 +1837,17 @@
         drawnCam = true;
         return camCycleTile(cams, off);
       }
-      /* The media tile opens the now-playing overlay when tapped anywhere its
-         own buttons aren't — they sit deeper, so delegation finds them first. */
-      var media = t.type === 'media' && !off;
+      if (t.type === 'media') {
+        if (drawnMedia) return '';
+        drawnMedia = true;
+        return sonosTile(meds, off);
+      }
       /* the solar tile is read-only everywhere — its whole tap is the
          power-flow overlay, and it carries no buttons at all */
       var sol = t.type === 'solar' && !off;
-      return '<div class="tile' + (off ? ' is-off' : '') + (media ? ' is-media' : '') +
+      return '<div class="tile' + (off ? ' is-off' : '') +
         (t.type === 'fan' ? ' is-fan' : '') +
         (t.type === 'solar' ? ' is-solar' : '') + '"' +
-        (media ? ' data-act="media-open" data-entity="' + esc(t.entity) + '" role="button" tabindex="0"' : '') +
         (sol ? ' data-act="solar-open" role="button" tabindex="0"' : '') + '>' +
         '<div class="t-label">' + esc(t.label) + '</div>' + tileBody(t) +
         (off ? '' : tileActions(t)) + '</div>';
@@ -1859,6 +1863,113 @@
      key and a volume bar you can hit from across the kitchen. HA may start
      sending `entity_picture` later — until then the art well draws a vinyl
      disc in the family's own four colours rather than pulling an image. */
+
+  function mediaTiles() {
+    return ((D.ha && D.ha.tiles) || []).filter(function (t) { return t.type === 'media'; });
+  }
+
+  /* SONOS — one speaker and the Home card tile IS that speaker, same as
+     before. Two or more and it collapses into a single "Sonos" tile, same
+     pattern as the aircon and camera groups: a count badge and whichever
+     speaker is actually playing, tapping opens every speaker at once. */
+  function sonosTile(list, off) {
+    if (list.length <= 1) {
+      var only = list[0];
+      if (!only) return '';
+      return '<div class="tile' + (off ? ' is-off' : '') + ' is-media"' +
+        (off ? '' : ' data-act="media-open" data-entity="' + esc(only.entity) + '" role="button" tabindex="0"') + '>' +
+        '<div class="t-label">' + esc(only.label) + '</div>' + tileBody(only) +
+        (off ? '' : tileActions(only)) + '</div>';
+    }
+    var playing = list.filter(function (t) { return t.attrs && t.attrs.playing; });
+    var primary = playing[0] ||
+      list.filter(function (t) { return t.attrs && t.attrs.title; })[0] || list[0];
+    var a = primary.attrs || {};
+    return '<div class="tile is-sonos' + (off ? ' is-off' : '') + '"' +
+      (off ? '' : ' data-act="sonos-open" role="button" tabindex="0"') + '>' +
+      '<div class="t-label">Sonos<span class="t-count">' + list.length + '</span></div>' +
+      '<div class="t-value mono" style="font-size:1rem">' +
+      esc(playing.length > 1 ? playing.length + ' playing' : (playing.length ? 'Playing' : 'Paused')) +
+      '</div>' +
+      '<div class="t-sub">' + esc(a.title || '—') + (a.artist ? ' · ' + esc(a.artist) : '') + '</div>' +
+      '</div>';
+  }
+
+  /* Every speaker, stacked: art, transport, volume and its own favourites —
+     the same controls the single-speaker overlay has, once per speaker. */
+  function sonosSheetHtml() {
+    var list = mediaTiles();
+    if (!list.length) return '<div class="empty">No speakers are configured on the panel yet.</div>';
+    return '<button class="close-x np-close" data-act="close-sheet" aria-label="Close">' + ICON.close + '</button>' +
+      '<div class="np-label">Sonos · ' + list.length + ' speaker' + (list.length === 1 ? '' : 's') + '</div>' +
+      '<div class="sn-list">' + list.map(sonosSpeakerCard).join('') + '</div>';
+  }
+
+  function sonosSpeakerCard(t) {
+    var a = t.attrs || {};
+    var vol = typeof a.volume === 'number' ? Math.max(0, Math.min(1, a.volume)) : null;
+    var pct = vol == null ? null : Math.round(vol * 100);
+    var playing = !!a.playing;
+    var can = !!t.allow_action;
+    var starting = startingSource(t);
+    var btn = function (action, label, value, cls) {
+      return '<button class="' + cls + '" data-act="ha" data-now="1" data-entity="' + esc(t.entity) +
+        '" data-action="' + action + '"' + (value != null ? ' data-value="' + value + '"' : '') +
+        ' data-label="' + esc(label) + '" aria-label="' + esc(label) + '">';
+    };
+    var out = '<div class="sn-speaker' + (playing ? ' is-playing' : '') + '">' +
+      '<div class="sn-sp-head"><div class="sn-sp-art">' + npArt(t) + '</div>' +
+      '<div class="sn-sp-info">' +
+      '<div class="sn-sp-name">' + esc(t.label) + ' · ' +
+      (starting ? 'Starting' : (playing ? 'Now playing' : 'Paused')) + '</div>' +
+      '<div class="sn-sp-title">' + esc(starting ? starting : (a.title || 'Nothing playing')) + '</div>' +
+      '<div class="sn-sp-artist">' + esc(starting ? 'Starting…' : (a.artist || (a.source || '—'))) + '</div>' +
+      '</div></div>';
+    if (!can) {
+      out += '<p class="muted2 np-ro">This speaker is read-only on the panel.</p>';
+    } else {
+      out += '<div class="np-transport">' +
+        btn('previous', 'Previous track', null, 'np-skip') + ICON.prev + '</button>' +
+        btn(playing ? 'pause' : 'play', playing ? 'Pause' : 'Play', null, 'np-play') +
+        (playing ? ICON.pause : ICON.play) + '<span>' + (playing ? 'Pause' : 'Play') + '</span></button>' +
+        btn('next', 'Next track', null, 'np-skip') + ICON.next + '</button>' +
+        '</div>';
+      if (vol != null) {
+        out += '<div class="np-vol">' +
+          btn('volume_set', 'Quieter', volStep(vol, -1), 'np-vbtn') + '−</button>' +
+          '<div class="np-bar" data-act="np-seek" data-entity="' + esc(t.entity) + '" role="slider" tabindex="0" ' +
+          'aria-label="Volume" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '">' +
+          '<i style="width:' + pct + '%"></i></div>' +
+          btn('volume_set', 'Louder', volStep(vol, +1), 'np-vbtn') + '+</button>' +
+          '<span class="np-pct mono">' + pct + '%</span></div>';
+      }
+      out += '<div class="np-sources"><div class="np-sec">Play something</div>' + sourceRows(t) + '</div>';
+    }
+    return out + '</div>';
+  }
+
+  function openSonosSheet() {
+    var list = mediaTiles();
+    /* One speaker in the house and this would be a list of one — the
+       existing single-speaker overlay already does that, better. */
+    if (list.length <= 1) { if (list[0]) openNowPlaying(list[0].entity); return; }
+    openSheet('<div class="sn-sheet" id="sonosCard">' + sonosSheetHtml() + '</div>', { raw: true, centre: true });
+    state.sonos = true;
+  }
+
+  /* Keep every speaker's card in step with the 15 s HA poll, the same way
+     the climate sheet does — but hold each speaker's favourites list where
+     the reader left it scrolled, exactly as the single-speaker overlay does. */
+  function updateSonosSheet() {
+    if (!state.sonos) return;
+    var host = byId('sonosCard');
+    if (!host) { state.sonos = false; return; }
+    var lists = host.querySelectorAll('.np-src-list');
+    var tops = Array.prototype.map.call(lists, function (l) { return l.scrollTop; });
+    host.innerHTML = sonosSheetHtml();
+    var lists2 = host.querySelectorAll('.np-src-list');
+    Array.prototype.forEach.call(lists2, function (l, i) { if (tops[i]) l.scrollTop = tops[i]; });
+  }
 
   function mediaTile(entity) {
     var tiles = (D.ha && D.ha.tiles) || [];
@@ -3051,6 +3162,7 @@
     paintShelf();
     renderRail();
     updateNowPlaying();
+    updateSonosSheet();
     updateClimateSheet();
     paintSolar();
   }
@@ -3105,6 +3217,7 @@
     state.np = null;
     state.climate = false;
     state.solar = false;
+    state.sonos = false;
     stopStatusRefresh();
     renderCatchUp();
   }
@@ -3116,6 +3229,7 @@
     state.np = null;
     state.climate = false;
     state.solar = false;
+    state.sonos = false;
     stopStatusRefresh();
     host.innerHTML = '<div class="scrim' + (opts.centre ? ' centre' : '') +
       (opts.cls ? ' ' + opts.cls : '') + '" data-act="scrim">' +
@@ -4694,6 +4808,7 @@
       case 'cams': openCameraGrid(); break;
       case 'cam-grid': openCameraGrid(); break;
       case 'media-open': openNowPlaying(el.dataset.entity); break;
+      case 'sonos-open': openSonosSheet(); break;
       case 'climate-open': openClimateSheet(); break;
       case 'solar-open': openSolarSheet(); break;
       case 'np-seek':
@@ -5783,6 +5898,16 @@
         attrs: {
           title: 'Gold Chains', artist: 'Angus & Julia Stone', volume: 0.34, playing: true,
           source_list: FAVOURITES.slice(), source: 'Kitchen Disco', entity_picture: null
+        }
+      },
+      /* A second speaker so the demo shows the grouped Sonos tile, not the
+         single-speaker one — most real households have more than one. */
+      {
+        entity: 'media_player.roam', label: 'Roam', type: 'media', allow_action: true,
+        state: 'paused',
+        attrs: {
+          title: null, artist: null, volume: 0.6, playing: false,
+          source_list: FAVOURITES.slice(), source: null, entity_picture: null
         }
       },
       {

@@ -1646,7 +1646,7 @@ ul, ol { list-style: none; }
 /* the media tile is tap-anywhere-to-open, so it has to keep a strip that is
    not a button — with three Sensibos in the row it was squeezed to the point
    where its own keys covered the whole tile */
-.tile.is-media { min-width: 13rem; flex-grow: 1.4; }
+.tile.is-media, .tile.is-sonos { min-width: 13rem; flex-grow: 1.4; }
 /* a read-out with no keys needs no width at all */
 .tile.is-climate { min-width: 8rem; }
 
@@ -3107,7 +3107,7 @@ html[data-theme="night"] select.inp {
 /* ------------------------------------------------------ now playing ------ */
 /* The media tile, blown up to be read and driven from across the room. */
 
-.tile.is-media { cursor: pointer; }
+.tile.is-media, .tile.is-sonos { cursor: pointer; }
 
 .np {
   position: relative;
@@ -3303,6 +3303,79 @@ html[data-theme="night"] select.inp {
 .np-src.is-on { border-color: var(--hero); background: var(--chore-star-bg); }
 .np-src.is-on .np-src-ic { color: var(--hero); }
 .np-src.is-starting { border-color: var(--ink-3); opacity: 0.75; }
+
+/* --------------------------------------------------- multi-speaker sheet - */
+/* Every configured speaker at once — one .sn-speaker card per entity, each
+   carrying the same transport/volume/favourites the single-speaker overlay
+   has. The .np, .np-transport, .np-vol, .np-src-* etc. classes are reused
+   as-is; only the per-speaker head (art + name + now-playing line) and the
+   list/card wrapper are new. */
+
+.sn-sheet {
+  position: relative;
+  width: min(40rem, 92vw);
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  padding: 2.25rem;
+  background: var(--paper);
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+}
+
+.sn-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin-top: 1rem;
+  padding-right: 0.25rem;
+}
+
+.sn-speaker { border-top: 1px solid var(--hair); padding-top: 1.5rem; }
+.sn-speaker:first-child { border-top: none; padding-top: 0; }
+
+.sn-sp-head { display: flex; align-items: center; gap: 1rem; }
+
+.sn-sp-art {
+  width: 4rem;
+  height: 4rem;
+  flex: 0 0 auto;
+  border-radius: var(--radius-s);
+  overflow: hidden;
+  background: var(--card-2);
+  display: grid;
+  place-items: center;
+}
+.sn-sp-art .np-img { width: 100%; height: 100%; object-fit: cover; }
+.sn-sp-art .np-disc { width: 3.5rem; }
+.sn-sp-art .np-glyph svg { width: 2rem; height: 2rem; }
+
+.sn-sp-info { min-width: 0; }
+.sn-sp-name {
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.sn-sp-title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  margin-top: 0.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sn-sp-artist { font-size: 0.9375rem; color: var(--ink-2); margin-top: 0.125rem; }
+
+/* Reused overlay parts, sized down to fit stacked several-to-a-sheet rather
+   than filling the whole card as they do in the single-speaker view. */
+.sn-speaker .np-transport { padding-top: 1rem; }
+.sn-speaker .np-vol { margin-top: 0.875rem; }
+.sn-speaker .np-sources { margin-top: 1rem; }
+.sn-speaker .np-src-list { max-height: 9rem; }
 
 /* ------------------------------------------------------- power flow ------ */
 /* The solar overlay: a diamond of four nodes with the live arms carrying
@@ -4134,7 +4207,7 @@ html[data-theme="night"] select.inp {
   }
   .tile { min-width: 0; }
   /* the two tiles that carry a whole control panel get the full width */
-  .tile.is-fan, .tile.is-media, .tile.is-solar { min-width: 0; grid-column: span 2; }
+  .tile.is-fan, .tile.is-media, .tile.is-sonos, .tile.is-solar { min-width: 0; grid-column: span 2; }
   .tile.is-aircon { min-width: 0; }
   .tile.is-cams { grid-column: span 2; width: auto; height: 9rem; }
   .ha-offline { grid-column: span 2; }
@@ -4301,7 +4374,7 @@ html[data-theme="night"] select.inp {
   html { font-size: 16px; }
   .stage { padding-left: 1.25rem; padding-right: 1.25rem; }
   .ha-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .tile.is-fan, .tile.is-media { grid-column: span 1; }
+  .tile.is-fan, .tile.is-media, .tile.is-sonos { grid-column: span 1; }
   .tile.is-cams { grid-column: span 3; height: 12rem; }
   .ha-offline { grid-column: span 3; }
   .cam-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
