@@ -5,7 +5,7 @@
 # together whenever you ship a change (see the repo's `ship` skill).
 name: "Family Panel"
 description: "Self-hosted family wall calendar: shared calendar, chores, lists, meal planner and Home Assistant tiles."
-version: "0.15.5"
+version: "0.15.6"
 slug: "family_panel"
 url: "https://github.com/rm8705-claude/family_panel"
 arch:
@@ -26,16 +26,21 @@ map:
 homeassistant_api: true
 hassio_api: false
 options:
+  # Keep every `id` lowercase. ics_feeds[].person and the chore/star tables all
+  # match on it exactly, so a stray capital silently orphans a calendar feed.
   people:
     - id: "rohan"
       name: "Rohan"
       colour: "#3D5A80"
-    - id: "partner"
-      name: "Partner"
+    - id: "eloise"
+      name: "Eloise"
       colour: "#7C5CBF"
-    - id: "kid"
-      name: "Kid"
+    - id: "riley"
+      name: "Riley"
       colour: "#E8A13D"
+    - id: "zoe"
+      name: "Zoe"
+      colour: "#C4626E"
     - id: "family"
       name: "Family"
       colour: "#4F7B58"
@@ -43,7 +48,28 @@ options:
   weather:
     lat: -27.48
     lon: 152.98
-  ha_tiles: []
+  # Starter tiles. The entity IDs below are PLACEHOLDERS — replace each one
+  # with what Developer tools -> States actually reports for your Sensibo,
+  # SwitchBot and Sonos devices. A tile whose entity doesn't exist renders as
+  # unavailable rather than breaking anything, so a wrong ID is safe, just
+  # useless. All climate tiles collapse into one aircon tile on the panel.
+  ha_tiles:
+    - entity: "climate.living_room_aircon"
+      label: "Living"
+      type: "climate"
+      allow_action: true
+    - entity: "climate.master_bedroom_aircon"
+      label: "Master bed"
+      type: "climate"
+      allow_action: true
+    - entity: "cover.bedroom_curtains"
+      label: "Curtains"
+      type: "cover"
+      allow_action: true
+    - entity: "media_player.living_room"
+      label: "Sonos"
+      type: "media"
+      allow_action: true
   screen:
     sleep: "21:00"
     wake: "05:45"
@@ -51,7 +77,6 @@ options:
   llm_provider: "anthropic"
   anthropic_api_key: ""
   llm_model: "claude-haiku-4-5"
-  lmstudio_base_url: ""
   lmstudio_model: "local-model"
   imap_host: "imap.gmail.com"
   imap_user: ""
