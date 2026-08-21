@@ -5,7 +5,7 @@
 # together whenever you ship a change (see the repo's `ship` skill).
 name: "Family Panel"
 description: "Self-hosted family wall calendar: shared calendar, chores, lists, meal planner and Home Assistant tiles."
-version: "0.15.14"
+version: "0.15.15"
 slug: "family_panel"
 url: "https://github.com/rm8705-claude/family_panel"
 arch:
@@ -40,14 +40,14 @@ options:
       colour: "#E8A13D"
     - id: "zoe"
       name: "Zoe"
-      colour: "#C4626E"
+      colour: "#4F7B58"
     # The shared household calendar. Its id must stay `family`: that is the
     # default owner for anything added on the panel with nobody attached —
     # bin night, payday — and for Magic Import's suggestions. The display
     # name is free to be whatever the household calls it.
     - id: "family"
       name: "ELRO"
-      colour: "#4F7B21"
+      colour: "#C4626E"
   ics_feeds: []
   weather:
     lat: -27.48
