@@ -1,0 +1,4297 @@
+/* ============================================================================
+   Family Panel — design system (BRIEF §7, warmed up per owner feedback)
+   Warm paper, ink, hairlines, and the four family accents doing real work.
+   12 px radius, no violet, touch-first.
+
+   Departs from the BRIEF's "flat cards, no shadows" on purpose: with card and
+   paper within two values of each other the whole panel read as one flat
+   sheet, which is what "dull" meant. Cards now sit on a deeper warm ground
+   with a soft warm-tinted shadow. The rule the brief was protecting — no
+   decoration for its own sake — still holds.
+
+   Two themes, one token set: the day theme lives on :root, the night theme
+   swaps the same names under html[data-theme="night"]. Nothing below the
+   token blocks should ever name a colour literal.
+   ========================================================================= */
+
+:root {
+  /* --- surfaces + ink -------------------------------------------------
+     Three layers, deliberately separated: the rail is the deepest, the stage
+     sits a step above it, and cards are near-white paper stock laid on top.
+     The old palette had card and paper within two values of each other, so
+     everything read as one flat sheet — that is what "dull" was. */
+  --paper:    #EFE9DD;
+  --rail-bg:  #E7E0D0;
+  --card:     #FDFBF5;
+  --card-2:   #F5F1E7;
+  --ink:      #1F2228;
+  --ink-2:    #565B65;
+  --ink-3:    #8B8F98;
+  --hair:     #DCD6C9;
+  --hair-2:   #E9E4D9;
+
+  /* card edge + elevation. Warm-tinted shadow, never neutral grey: on paper
+     this stock a grey shadow reads as dirt. Two steps only — cards sit at
+     --lift, anything floating over the panel at --lift-2. */
+  --card-edge: rgba(74, 58, 38, 0.11);
+  --lift:      0 1px 1.5px rgba(72, 56, 36, 0.055), 0 6px 16px -9px rgba(72, 56, 36, 0.20);
+  --lift-2:    0 2px 4px rgba(72, 56, 36, 0.07), 0 18px 40px -18px rgba(72, 56, 36, 0.32);
+
+  /* the light falling across the stage — keeps a 15" panel from reading as
+     one dead fill of colour */
+  /* Deliberately off. The stage is almost entirely covered by cards, so a
+     gradient here only shows up as an uneven wash in the gutters. Kept as a
+     token because it is a one-line experiment to run again. */
+  --glow: none;
+
+  /* Solid "selected / primary" fill and what sits on it. The panel's signature
+     terracotta, not black — the selected tab, a primary button and the armed
+     confirm now answer to the same colour as the hero date numeral, so the UI
+     has one voice instead of a neutral one. */
+  --fill:      #9E4B2C;
+  --on-fill:   #FFF6EC;
+  --on-accent: #FFFFFF;
+
+  /* section labels — warm brown rather than grey, so EVENTS / CHORES /
+     WEATHER sit on the paper instead of on top of it */
+  --label:     #8F7355;
+
+  /* --- signature colour ---------------------------------------------- */
+  --hero:     #9E4B2C;          /* the oversized date numeral */
+  --hero-2:   #C97A44;          /* its duotone partner (weekday/month) */
+  --star:     #E8A13D;
+  --ok:       #4F7B58;
+  --warn:     #B4622F;
+
+  /* the four family accents — overwritten from /api/status at boot */
+  --fam1: #3D5A80;
+  --fam2: #7C5CBF;
+  --fam3: #E8A13D;
+  --fam4: #4F7B58;
+
+  /* --- card identities ------------------------------------------------ */
+  --dinner-a: #FFF0DA;          /* appetising warm wash */
+  --dinner-b: #FFFCF5;
+  --dinner-edge: #EFD9B8;
+  --chore-star-bg: #FDF3E1;
+  --arm:      #F2EDE2;          /* long-press arm */
+  --scrim:    rgba(34, 37, 43, 0.32);
+  --cam-bg:   #1B2026;
+  --np-vinyl: #2A2D33;          /* the now-playing record body */
+
+  /* weather sky zones — one per WMO group, day values */
+  --sky-clear:   linear-gradient(168deg, #F8DDA4 0%, #FBEBCB 55%, #FEF7E9 100%);
+  --sky-partly:  linear-gradient(168deg, #EADFBE 0%, #F3EEDF 55%, #FCF8EF 100%);
+  --sky-cloud:   linear-gradient(168deg, #DCE1E5 0%, #EDEFEE 55%, #F8F7F4 100%);
+  --sky-rain:    linear-gradient(168deg, #CBD8E3 0%, #E3EAEF 55%, #F2F5F6 100%);
+  --sky-storm:   linear-gradient(168deg, #BFC9D6 0%, #DCE1E8 55%, #EFF1F3 100%);
+  --sky-fog:     linear-gradient(168deg, #DDDDD9 0%, #ECECE8 55%, #F7F6F2 100%);
+  --sky-snow:    linear-gradient(168deg, #DFE8EE 0%, #EFF4F7 55%, #F8FAFB 100%);
+  --sky-edge:    rgba(34, 37, 43, 0.10);
+  --sun:         #E09A32;
+  --arc:         rgba(34, 37, 43, 0.22);
+  --wet:         #3D5A80;       /* rain / volume readouts — fixed, not a person */
+
+  --night:    #101318;          /* the sleep overlay — never themed */
+
+  /* geometry */
+  --radius:   12px;
+  --radius-s: 8px;
+  --tap:      48px;
+  --tap-lg:   64px;
+  --rail:     20.5rem;
+  --side:     26rem;
+
+  /* type */
+  --sans: 'DM Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* Azeret carries every number on the panel — same roles, same sizes as the
+     face it replaced; its medium sits at 600, so emphasis reads 600 not 500. */
+  --mono: 'Azeret Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  color-scheme: light;
+}
+
+/* ---------------------------------------------------------------- night -- */
+/* Warm charcoal, not blue-black and not violet. Cards lift off the base so
+   the grid still reads from 3 m; hairlines get much lighter than the day
+   theme's, because a 1 px line at arm's length on near-black disappears. */
+
+html[data-theme="night"] {
+  --paper:    #111319;
+  --rail-bg:  #16181E;
+  --card:     #1E212A;
+  --card-2:   #262A34;
+  --ink:      #F2EDE3;
+  --ink-2:    #B3AC9F;
+  --ink-3:    #8A857B;
+  --hair:     #383D48;
+  --hair-2:   #2A2E37;
+
+  /* At night a cast shadow does nothing on near-black, so the elevation cue
+     is a lit top edge instead — the card catches the light, the depth below
+     it just deepens the base. */
+  --card-edge: rgba(255, 248, 235, 0.075);
+  --lift:      inset 0 1px 0 rgba(255, 248, 235, 0.05), 0 10px 24px -16px rgba(0, 0, 0, 0.85);
+  --lift-2:    inset 0 1px 0 rgba(255, 248, 235, 0.06), 0 26px 56px -26px rgba(0, 0, 0, 0.9);
+  --glow: none;
+
+  --fill:      #A85A34;
+  --on-fill:   #FDF2E6;
+  --on-accent: #16181D;
+  --label:     #9C9285;
+
+  --hero:     #E9A05A;
+  --hero-2:   #B87A47;
+  --star:     #F0B45C;
+  --ok:       #6FA37C;
+  --warn:     #E08A55;
+
+  --dinner-a: #2B2118;
+  --dinner-b: #1F2128;
+  --dinner-edge: #4A3A28;
+  --chore-star-bg: #2A2317;
+  --arm:      #2E323B;
+  --scrim:    rgba(6, 7, 9, 0.62);
+  --cam-bg:   #121519;
+  --np-vinyl: #0E1015;
+
+  --sky-clear:   linear-gradient(168deg, #3B2E20 0%, #2A2529 52%, #1E2128 100%);
+  --sky-partly:  linear-gradient(168deg, #322C29 0%, #26262E 52%, #1E2128 100%);
+  --sky-cloud:   linear-gradient(168deg, #2A2E35 0%, #23262E 52%, #1E2128 100%);
+  --sky-rain:    linear-gradient(168deg, #1E2E3D 0%, #1E2732 52%, #1E2128 100%);
+  --sky-storm:   linear-gradient(168deg, #1B2836 0%, #1B222C 52%, #1E2128 100%);
+  --sky-fog:     linear-gradient(168deg, #2B2C2C 0%, #23252A 52%, #1E2128 100%);
+  --sky-snow:    linear-gradient(168deg, #23303A 0%, #1F272F 52%, #1E2128 100%);
+  --sky-edge:    rgba(255, 250, 240, 0.09);
+  --sun:         #F2B45E;
+  --arc:         rgba(242, 237, 227, 0.20);
+  --wet:         #7FA6CF;
+
+  color-scheme: dark;
+}
+
+/* ============================================================================
+   SKINS — the same panel in a different material.
+
+   A skin is a NAMED FULL REPLACEMENT of both token sets: one block for its
+   day theme, one for its night theme. Nothing else moves — type, spacing,
+   radii and iconography are identical in every skin, because the panel is
+   one product wearing different stock, not five different products.
+
+   Two rules that keep this honest:
+     1. Every block below defines the COMPLETE token list. A missing token
+        falls back through to :root (or, worse, to the default night block,
+        which sits above these and loses on specificity only when the skin's
+        own night block names the token) — that reads as a subtle bug, not
+        as a theme.
+     2. Geometry, type, --fam1..4 and --night stay on :root. Skins own
+        colour and elevation, nothing else.
+
+   The default "Warm paper" skin is :root + html[data-theme="night"] above —
+   it deliberately has no block here, so it can never drift from the original.
+   ========================================================================= */
+
+/* ---------------------------------------------------------------- slate -- */
+/* The wallboard. Deep charcoal BY DAY, not just after dark — this is meant to
+   read as a premium wall display hanging in a bright kitchen, so the ground
+   stays dark and the cards do the lifting. Terracotta survives the move; it
+   is the panel's voice and a charcoal board with a warm accent is the whole
+   idea. Night just takes the same board two steps deeper. */
+
+html[data-skin="slate"] {
+  --paper:    #23262B;
+  --rail-bg:  #1B1E22;
+  --card:     #2C3037;
+  --card-2:   #343943;
+  --ink:      #F1EEE7;
+  --ink-2:    #B5B1A9;
+  --ink-3:    #8B8881;
+  --hair:     #414651;
+  --hair-2:   #333842;
+
+  /* dark ground: a cast shadow does nothing, so the card catches a lit top
+     edge instead and the depth below it only deepens the base */
+  --card-edge: rgba(255, 250, 242, 0.075);
+  --lift:      inset 0 1px 0 rgba(255, 250, 242, 0.055), 0 10px 24px -16px rgba(0, 0, 0, 0.8);
+  --lift-2:    inset 0 1px 0 rgba(255, 250, 242, 0.065), 0 26px 56px -26px rgba(0, 0, 0, 0.88);
+  --glow: none;
+
+  --fill:      #A85A34;
+  --on-fill:   #FDF2E6;
+  --on-accent: #1A1C20;
+  --label:     #A3957E;
+
+  --hero:     #E39A57;
+  --hero-2:   #B67746;
+  --star:     #F0B45C;
+  --ok:       #71A67E;
+  --warn:     #E08A55;
+
+  --dinner-a: #34281C;
+  --dinner-b: #2A2E35;
+  --dinner-edge: #574332;
+  --chore-star-bg: #33291C;
+  --arm:      #3B414B;
+  --scrim:    rgba(9, 10, 12, 0.60);
+  --cam-bg:   #15181C;
+  --np-vinyl: #16191E;
+
+  --sky-clear:   linear-gradient(168deg, #4A3924 0%, #35302E 52%, #2C3037 100%);
+  --sky-partly:  linear-gradient(168deg, #3D362E 0%, #313133 52%, #2C3037 100%);
+  --sky-cloud:   linear-gradient(168deg, #343A42 0%, #2E3239 52%, #2C3037 100%);
+  --sky-rain:    linear-gradient(168deg, #253849 0%, #29323C 52%, #2C3037 100%);
+  --sky-storm:   linear-gradient(168deg, #223141 0%, #262E38 52%, #2C3037 100%);
+  --sky-fog:     linear-gradient(168deg, #363736 0%, #303134 52%, #2C3037 100%);
+  --sky-snow:    linear-gradient(168deg, #2C3A45 0%, #2B333B 52%, #2C3037 100%);
+  --sky-edge:    rgba(255, 250, 240, 0.10);
+  --sun:         #F2B45E;
+  --arc:         rgba(242, 238, 230, 0.22);
+  --wet:         #83A9CF;
+
+  color-scheme: dark;
+}
+
+html[data-skin="slate"][data-theme="night"] {
+  --paper:    #15171B;
+  --rail-bg:  #101216;
+  --card:     #1C1F25;
+  --card-2:   #23272E;
+  --ink:      #EAE6DD;
+  --ink-2:    #A9A59D;
+  --ink-3:    #7F7C76;
+  --hair:     #343941;
+  --hair-2:   #272B32;
+
+  --card-edge: rgba(255, 250, 242, 0.07);
+  --lift:      inset 0 1px 0 rgba(255, 250, 242, 0.045), 0 10px 24px -16px rgba(0, 0, 0, 0.9);
+  --lift-2:    inset 0 1px 0 rgba(255, 250, 242, 0.055), 0 26px 56px -26px rgba(0, 0, 0, 0.92);
+  --glow: none;
+
+  --fill:      #9E5432;
+  --on-fill:   #FBEFE3;
+  --on-accent: #121419;
+  --label:     #948872;
+
+  --hero:     #DB9152;
+  --hero-2:   #AD7142;
+  --star:     #E7AC57;
+  --ok:       #689C75;
+  --warn:     #D6824E;
+
+  --dinner-a: #291F16;
+  --dinner-b: #1D2027;
+  --dinner-edge: #463628;
+  --chore-star-bg: #282016;
+  --arm:      #2C313A;
+  --scrim:    rgba(5, 6, 8, 0.66);
+  --cam-bg:   #0F1114;
+  --np-vinyl: #0C0E12;
+
+  --sky-clear:   linear-gradient(168deg, #37291A 0%, #262429 52%, #1C1F25 100%);
+  --sky-partly:  linear-gradient(168deg, #2E2822 0%, #232328 52%, #1C1F25 100%);
+  --sky-cloud:   linear-gradient(168deg, #262A31 0%, #21242B 52%, #1C1F25 100%);
+  --sky-rain:    linear-gradient(168deg, #1A2836 0%, #1D242D 52%, #1C1F25 100%);
+  --sky-storm:   linear-gradient(168deg, #182331 0%, #1A2028 52%, #1C1F25 100%);
+  --sky-fog:     linear-gradient(168deg, #272827 0%, #212227 52%, #1C1F25 100%);
+  --sky-snow:    linear-gradient(168deg, #202C35 0%, #1E252C 52%, #1C1F25 100%);
+  --sky-edge:    rgba(255, 250, 240, 0.085);
+  --sun:         #E9AC59;
+  --arc:         rgba(236, 231, 222, 0.20);
+  --wet:         #7BA1C6;
+
+  color-scheme: dark;
+}
+
+/* ------------------------------------------------------------- eucalypt -- */
+/* Sage and olive: warm grey-green stock, a deep green-black ink, and the
+   terracotta swapped for gum-leaf green. Star gold stays — a green star
+   would disappear into the hero. Dinner keeps a warm honey wash so the meal
+   card still reads as food and not as more foliage. */
+
+html[data-skin="eucalypt"] {
+  --paper:    #E4E7DB;
+  --rail-bg:  #D8DCCC;
+  --card:     #FAFBF3;
+  --card-2:   #EEF1E4;
+  --ink:      #1C231D;
+  --ink-2:    #535C50;
+  --ink-3:    #878E81;
+  --hair:     #D2D7C4;
+  --hair-2:   #E2E6D7;
+
+  --card-edge: rgba(40, 58, 38, 0.11);
+  --lift:      0 1px 1.5px rgba(38, 56, 36, 0.055), 0 6px 16px -9px rgba(38, 56, 36, 0.20);
+  --lift-2:    0 2px 4px rgba(38, 56, 36, 0.07), 0 18px 40px -18px rgba(38, 56, 36, 0.30);
+  --glow: none;
+
+  --fill:      #3F6B4A;
+  --on-fill:   #F1F7EE;
+  --on-accent: #FFFFFF;
+  --label:     #6F7B5D;
+
+  --hero:     #3F6B4A;
+  --hero-2:   #6E9366;
+  --star:     #D9A33C;
+  --ok:       #4A7B55;
+  --warn:     #A85F31;
+
+  --dinner-a: #F7F1D9;
+  --dinner-b: #FDFCF3;
+  --dinner-edge: #E2DBB6;
+  --chore-star-bg: #F8F2DE;
+  --arm:      #E6EADC;
+  --scrim:    rgba(24, 33, 24, 0.34);
+  --cam-bg:   #1A211C;
+  --np-vinyl: #232A24;
+
+  --sky-clear:   linear-gradient(168deg, #EFDFA8 0%, #F4EDCE 55%, #FAF8EC 100%);
+  --sky-partly:  linear-gradient(168deg, #E1E1C0 0%, #EEF0DE 55%, #F8F9EF 100%);
+  --sky-cloud:   linear-gradient(168deg, #D8DED4 0%, #E9EDE4 55%, #F5F7F1 100%);
+  --sky-rain:    linear-gradient(168deg, #C7D6D2 0%, #E0E9E4 55%, #F0F4F0 100%);
+  --sky-storm:   linear-gradient(168deg, #BCC8C4 0%, #D9E0DB 55%, #EDF0EB 100%);
+  --sky-fog:     linear-gradient(168deg, #D9DAD3 0%, #E9EAE3 55%, #F5F5EF 100%);
+  --sky-snow:    linear-gradient(168deg, #DBE7E3 0%, #ECF3EF 55%, #F6FAF7 100%);
+  --sky-edge:    rgba(28, 35, 29, 0.10);
+  --sun:         #C79331;
+  --arc:         rgba(28, 35, 29, 0.22);
+  --wet:         #3E6E77;
+
+  color-scheme: light;
+}
+
+html[data-skin="eucalypt"][data-theme="night"] {
+  --paper:    #12160F;
+  --rail-bg:  #0E1210;
+  --card:     #1C211A;
+  --card-2:   #242A21;
+  --ink:      #EDF0E3;
+  --ink-2:    #AFB5A5;
+  --ink-3:    #868C7D;
+  --hair:     #343B31;
+  --hair-2:   #272D24;
+
+  --card-edge: rgba(240, 248, 232, 0.075);
+  --lift:      inset 0 1px 0 rgba(240, 248, 232, 0.05), 0 10px 24px -16px rgba(0, 0, 0, 0.85);
+  --lift-2:    inset 0 1px 0 rgba(240, 248, 232, 0.06), 0 26px 56px -26px rgba(0, 0, 0, 0.9);
+  --glow: none;
+
+  --fill:      #4E8459;
+  --on-fill:   #EEF6EC;
+  --on-accent: #12160F;
+  --label:     #8D9779;
+
+  --hero:     #86B87F;
+  --hero-2:   #5C8A5A;
+  --star:     #E5B45C;
+  --ok:       #7DB287;
+  --warn:     #D68A50;
+
+  --dinner-a: #2A2617;
+  --dinner-b: #1E2319;
+  --dinner-edge: #4A4228;
+  --chore-star-bg: #282416;
+  --arm:      #2C3329;
+  --scrim:    rgba(6, 9, 6, 0.62);
+  --cam-bg:   #121711;
+  --np-vinyl: #0D110C;
+
+  --sky-clear:   linear-gradient(168deg, #3A3320 0%, #282A1F 52%, #1C211A 100%);
+  --sky-partly:  linear-gradient(168deg, #2F3124 0%, #242820 52%, #1C211A 100%);
+  --sky-cloud:   linear-gradient(168deg, #272E27 0%, #212721 52%, #1C211A 100%);
+  --sky-rain:    linear-gradient(168deg, #1D3230 0%, #1E2926 52%, #1C211A 100%);
+  --sky-storm:   linear-gradient(168deg, #1B2C2A 0%, #1C2523 52%, #1C211A 100%);
+  --sky-fog:     linear-gradient(168deg, #282A26 0%, #212421 52%, #1C211A 100%);
+  --sky-snow:    linear-gradient(168deg, #21332F 0%, #1E2925 52%, #1C211A 100%);
+  --sky-edge:    rgba(240, 248, 232, 0.09);
+  --sun:         #E0B25C;
+  --arc:         rgba(237, 240, 227, 0.20);
+  --wet:         #6FA8A6;
+
+  color-scheme: dark;
+}
+
+/* ---------------------------------------------------------------- coast -- */
+/* Noosa North Shore: warm sand stock, sea-slate ink, deep ocean blue where
+   the terracotta used to be, and the sky zones pulled towards aqua. The one
+   skin with a family reason behind it, so it stays warm — sand, not grey. */
+
+html[data-skin="coast"] {
+  --paper:    #EEE5D3;
+  --rail-bg:  #E4DAC4;
+  --card:     #FDFAF2;
+  --card-2:   #F4EEE1;
+  --ink:      #1D2A33;
+  --ink-2:    #4E606D;
+  --ink-3:    #85949E;
+  --hair:     #DBD1BB;
+  --hair-2:   #EAE2D2;
+
+  --card-edge: rgba(30, 52, 66, 0.12);
+  --lift:      0 1px 1.5px rgba(28, 50, 64, 0.06), 0 6px 16px -9px rgba(28, 50, 64, 0.22);
+  --lift-2:    0 2px 4px rgba(28, 50, 64, 0.08), 0 18px 40px -18px rgba(28, 50, 64, 0.32);
+  --glow: none;
+
+  --fill:      #0F6478;
+  --on-fill:   #EFF8FA;
+  --on-accent: #FFFFFF;
+  --label:     #8B7A5B;
+
+  --hero:     #0F6478;
+  --hero-2:   #2F93A6;
+  --star:     #E8A13D;
+  --ok:       #3E7F72;
+  --warn:     #C0633A;
+
+  --dinner-a: #FFEFD6;
+  --dinner-b: #FFFCF4;
+  --dinner-edge: #EDD6B0;
+  --chore-star-bg: #FDF2E0;
+  --arm:      #EDE4D4;
+  --scrim:    rgba(20, 35, 44, 0.34);
+  --cam-bg:   #16202A;
+  --np-vinyl: #1E2A33;
+
+  --sky-clear:   linear-gradient(168deg, #9FD9E4 0%, #D6EEF1 55%, #F4FBF9 100%);
+  --sky-partly:  linear-gradient(168deg, #BBD9DF 0%, #DEEDEE 55%, #F6FAF7 100%);
+  --sky-cloud:   linear-gradient(168deg, #CBD6DC 0%, #E4EAEC 55%, #F5F7F6 100%);
+  --sky-rain:    linear-gradient(168deg, #ABC4D6 0%, #D3E1E9 55%, #EEF4F6 100%);
+  --sky-storm:   linear-gradient(168deg, #9FB4C8 0%, #C9D6E0 55%, #E9EFF2 100%);
+  --sky-fog:     linear-gradient(168deg, #D0D6D6 0%, #E4E8E7 55%, #F4F6F4 100%);
+  --sky-snow:    linear-gradient(168deg, #CFE2EA 0%, #E7F1F5 55%, #F6FAFB 100%);
+  --sky-edge:    rgba(29, 42, 51, 0.11);
+  --sun:         #DE9430;
+  --arc:         rgba(29, 42, 51, 0.22);
+  --wet:         #14657A;
+
+  color-scheme: light;
+}
+
+html[data-skin="coast"][data-theme="night"] {
+  --paper:    #0E161C;
+  --rail-bg:  #0A1116;
+  --card:     #17222B;
+  --card-2:   #1E2B36;
+  --ink:      #EAF1F3;
+  --ink-2:    #A6B5BD;
+  --ink-3:    #7C8B94;
+  --hair:     #2F3E49;
+  --hair-2:   #223039;
+
+  --card-edge: rgba(226, 244, 250, 0.08);
+  --lift:      inset 0 1px 0 rgba(226, 244, 250, 0.055), 0 10px 24px -16px rgba(0, 0, 0, 0.85);
+  --lift-2:    inset 0 1px 0 rgba(226, 244, 250, 0.065), 0 26px 56px -26px rgba(0, 0, 0, 0.9);
+  --glow: none;
+
+  --fill:      #2D7E9F;
+  --on-fill:   #EEF8FB;
+  --on-accent: #0E161C;
+  --label:     #8A8B78;
+
+  --hero:     #5FB0CE;
+  --hero-2:   #3C7B95;
+  --star:     #EDB05C;
+  --ok:       #5FA096;
+  --warn:     #D9855A;
+
+  --dinner-a: #2C2318;
+  --dinner-b: #1A242C;
+  --dinner-edge: #4B3B28;
+  --chore-star-bg: #2A2317;
+  --arm:      #26333D;
+  --scrim:    rgba(4, 9, 13, 0.64);
+  --cam-bg:   #101920;
+  --np-vinyl: #0B1319;
+
+  --sky-clear:   linear-gradient(168deg, #1D4A5C 0%, #1B333F 52%, #17222B 100%);
+  --sky-partly:  linear-gradient(168deg, #21414D 0%, #1C3039 52%, #17222B 100%);
+  --sky-cloud:   linear-gradient(168deg, #23333D 0%, #1D2A33 52%, #17222B 100%);
+  --sky-rain:    linear-gradient(168deg, #17384F 0%, #182B39 52%, #17222B 100%);
+  --sky-storm:   linear-gradient(168deg, #16303F 0%, #172731 52%, #17222B 100%);
+  --sky-fog:     linear-gradient(168deg, #262D30 0%, #1D262B 52%, #17222B 100%);
+  --sky-snow:    linear-gradient(168deg, #1E3A45 0%, #1A2B34 52%, #17222B 100%);
+  --sky-edge:    rgba(226, 244, 250, 0.09);
+  --sun:         #EDAE58;
+  --arc:         rgba(234, 241, 243, 0.20);
+  --wet:         #6FB4D2;
+
+  color-scheme: dark;
+}
+
+/* ------------------------------------------------------------------ ink -- */
+/* The minimal one. Gallery paper, near-pure black type, and exactly one
+   accent: the terracotta hero. The selected fill goes back to near-black so
+   the panel's only colour is the date numeral and whatever the family's own
+   accents bring. At night the sheet inverts — near-white fill on a black
+   ground — because a near-black fill on a black wall is not a selection. */
+
+html[data-skin="ink"] {
+  --paper:    #F1F1EE;
+  --rail-bg:  #E9E9E5;
+  --card:     #FFFFFF;
+  --card-2:   #F6F6F3;
+  --ink:      #0B0B0D;
+  --ink-2:    #4A4A4E;
+  --ink-3:    #89898D;
+  --hair:     #DEDEDA;
+  --hair-2:   #EDEDE9;
+
+  --card-edge: rgba(12, 12, 14, 0.10);
+  --lift:      0 1px 1.5px rgba(12, 12, 14, 0.05), 0 6px 16px -9px rgba(12, 12, 14, 0.20);
+  --lift-2:    0 2px 4px rgba(12, 12, 14, 0.07), 0 18px 40px -18px rgba(12, 12, 14, 0.30);
+  --glow: none;
+
+  --fill:      #16161A;
+  --on-fill:   #FAFAF7;
+  --on-accent: #FFFFFF;
+  --label:     #6E6E72;
+
+  --hero:     #9E4B2C;
+  --hero-2:   #C97A44;
+  --star:     #C58A2E;
+  --ok:       #46704F;
+  --warn:     #A9502A;
+
+  --dinner-a: #FAF1E3;
+  --dinner-b: #FEFDFA;
+  --dinner-edge: #E7DCC8;
+  --chore-star-bg: #FAF3E4;
+  --arm:      #EAEAE6;
+  --scrim:    rgba(10, 10, 12, 0.34);
+  --cam-bg:   #101012;
+  --np-vinyl: #1A1A1D;
+
+  --sky-clear:   linear-gradient(168deg, #F0E7D3 0%, #F7F2E7 55%, #FCFAF5 100%);
+  --sky-partly:  linear-gradient(168deg, #E7E5DE 0%, #F2F1EC 55%, #FAFAF7 100%);
+  --sky-cloud:   linear-gradient(168deg, #DDDEDE 0%, #EDEDEC 55%, #F8F8F7 100%);
+  --sky-rain:    linear-gradient(168deg, #D0D6DB 0%, #E6EAED 55%, #F4F6F7 100%);
+  --sky-storm:   linear-gradient(168deg, #C4CACF 0%, #DDE0E3 55%, #F0F1F2 100%);
+  --sky-fog:     linear-gradient(168deg, #DCDCDA 0%, #EBEBE9 55%, #F7F7F5 100%);
+  --sky-snow:    linear-gradient(168deg, #DEE5E9 0%, #EEF2F4 55%, #F8FAFB 100%);
+  --sky-edge:    rgba(11, 11, 13, 0.10);
+  --sun:         #B8801F;
+  --arc:         rgba(11, 11, 13, 0.22);
+  --wet:         #3F4E5C;
+
+  color-scheme: light;
+}
+
+html[data-skin="ink"][data-theme="night"] {
+  --paper:    #0B0B0D;
+  --rail-bg:  #08080A;
+  --card:     #17171A;
+  --card-2:   #202024;
+  --ink:      #F4F4F1;
+  --ink-2:    #A9A9A6;
+  --ink-3:    #7C7C7A;
+  --hair:     #33333A;
+  --hair-2:   #24242A;
+
+  --card-edge: rgba(250, 250, 245, 0.08);
+  --lift:      inset 0 1px 0 rgba(250, 250, 245, 0.055), 0 10px 24px -16px rgba(0, 0, 0, 0.9);
+  --lift-2:    inset 0 1px 0 rgba(250, 250, 245, 0.065), 0 26px 56px -26px rgba(0, 0, 0, 0.92);
+  --glow: none;
+
+  --fill:      #EFEFEA;
+  --on-fill:   #101013;
+  --on-accent: #0B0B0D;
+  --label:     #8C8C88;
+
+  --hero:     #E0824F;
+  --hero-2:   #A9613B;
+  --star:     #DFA855;
+  --ok:       #6C9E77;
+  --warn:     #D5824F;
+
+  --dinner-a: #241C14;
+  --dinner-b: #19191D;
+  --dinner-edge: #3F3225;
+  --chore-star-bg: #232014;
+  --arm:      #26262C;
+  --scrim:    rgba(3, 3, 4, 0.66);
+  --cam-bg:   #0D0D10;
+  --np-vinyl: #08080A;
+
+  --sky-clear:   linear-gradient(168deg, #322717 0%, #22201F 52%, #17171A 100%);
+  --sky-partly:  linear-gradient(168deg, #2A2620 0%, #1F1E1E 52%, #17171A 100%);
+  --sky-cloud:   linear-gradient(168deg, #232326 0%, #1D1D20 52%, #17171A 100%);
+  --sky-rain:    linear-gradient(168deg, #1A2733 0%, #19202A 52%, #17171A 100%);
+  --sky-storm:   linear-gradient(168deg, #18222E 0%, #181D25 52%, #17171A 100%);
+  --sky-fog:     linear-gradient(168deg, #242422 0%, #1D1D1D 52%, #17171A 100%);
+  --sky-snow:    linear-gradient(168deg, #1F2A31 0%, #1A2126 52%, #17171A 100%);
+  --sky-edge:    rgba(250, 250, 245, 0.09);
+  --sun:         #DDA65A;
+  --arc:         rgba(244, 244, 241, 0.20);
+  --wet:         #7E9CB8;
+
+  color-scheme: dark;
+}
+
+/* 1 s cross-fade when the theme flips at dusk/dawn. The class is added for
+   the duration of the swap only, so nothing else in the panel pays for it. */
+html.theme-fading,
+html.theme-fading * {
+  transition: background-color 1s ease, background-image 1s ease,
+              color 1s ease, border-color 1s ease, fill 1s ease,
+              stroke 1s ease, opacity 1s ease !important;
+}
+
+html {
+  /* 16px at 1920x1080; floors at 11px so a 1280x800 tablet stays legible */
+  font-size: clamp(11px, min(0.834vw, 1.48vh), 16px);
+  -webkit-text-size-adjust: 100%;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 1rem;
+  line-height: 1.4;
+  font-synthesis-weight: none;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+input, textarea, select { user-select: text; }
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+:focus { outline: none; }
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+h1, h2, h3, p, ul, ol { margin: 0; padding: 0; }
+ul, ol { list-style: none; }
+
+.mono { font-family: var(--mono); font-feature-settings: 'tnum' 1; }
+
+/* small-caps section labels: EVENTS, CHORES, DINNER */
+.lbl {
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--label);
+  white-space: nowrap;
+}
+
+.muted  { color: var(--ink-2); }
+.muted2 { color: var(--ink-3); }
+.hide   { display: none !important; }
+
+/* ---------------------------------------------------------------- shell -- */
+
+.app {
+  display: grid;
+  grid-template-columns: var(--rail) minmax(0, 1fr);
+  height: 100vh;
+  width: 100vw;
+}
+
+/* ------------------------------------------------------------ left rail -- */
+
+.rail {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 2rem 1.5rem 1.25rem;
+  border-right: 1px solid var(--hair);
+  background: var(--rail-bg);
+}
+
+/* THE WHO'S-BUSY BAR — the band of colour on the seam between the rail and
+   the panel. It was four fixed bands of decoration; it is now a chart. One
+   segment per person, its length proportional to how much that person has on
+   today, their initial set into it. Discrete pills with gaps, never a
+   continuous ramp, so it reads as four quantities rather than as a scale
+   belonging to the time spine beside it — and the spine's now-arrow is held
+   back short of it so the two are never visually joined.
+
+   A person with nothing on keeps a short faded stub: the family always reads
+   as whole, the quiet ones just recede. */
+.fam-strip {
+  position: absolute;
+  top: 1.5rem;
+  bottom: 1.5rem;
+  right: 4px;
+  /* fixed-ish, but allowed to grow on a 1920 panel where the root font is
+     16 px rather than the 1280 tablet's floor of 11 px */
+  width: clamp(13px, 1.15rem, 18px);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.fam-seg {
+  flex: 0 0 auto;
+  min-height: 14px;
+  border-radius: 7px;
+  background: var(--c, var(--ink-3));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.fam-seg .fam-i {
+  font-family: var(--mono);
+  /* 0.5625rem lands at 6 px once the root font hits its 11 px floor — too
+     small to be a letter. Clamped so it stays a readable glyph at any size. */
+  font-size: clamp(9px, 0.72rem, 12px);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
+  color: var(--on-c, #FFFFFF);
+}
+
+.fam-seg.is-quiet { opacity: 0.3; }
+.fam-seg.is-quiet .fam-i { display: none; }
+
+.rail-date { position: relative; }
+
+.rail-weekday {
+  font-size: 1.375rem;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--hero-2);
+}
+
+/* the hero: oversized day numeral in the deep warm accent */
+.rail-day {
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 9.5rem;
+  line-height: 0.82;
+  letter-spacing: -0.06em;
+  margin: 0.5rem 0 0 -0.4rem;
+  font-feature-settings: 'tnum' 1;
+  color: var(--hero);
+}
+
+.rail-month {
+  font-size: 1.375rem;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--hero-2);
+  margin-top: 0.5rem;
+}
+
+.rail-full {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  color: var(--ink-3);
+  letter-spacing: 0.02em;
+  margin-top: 0.375rem;
+}
+
+/* the now-line spine — the signature element */
+
+.spine {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 4rem;
+  margin: 1.75rem 0 1.25rem;
+}
+
+.spine-line {
+  position: absolute;
+  left: 3.25rem;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--hair);
+}
+
+.spine-fill {
+  position: absolute;
+  left: 3.25rem;
+  top: 0;
+  width: 1px;
+  background: var(--ink-3);
+}
+
+.spine-tick {
+  position: absolute;
+  left: 0;
+  width: 2.5rem;
+  transform: translateY(-50%);
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--ink-3);
+  letter-spacing: 0.04em;
+}
+
+.spine-tick::after {
+  content: '';
+  position: absolute;
+  right: -0.875rem;
+  top: 50%;
+  width: 0.5rem;
+  height: 1px;
+  background: var(--hair);
+}
+
+.spine-dot {
+  position: absolute;
+  left: 3.25rem;
+  width: 7px;
+  height: 7px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: var(--c, var(--ink-3));
+}
+
+.spine-dot.is-past { opacity: 0.35; }
+
+.spine-now {
+  position: absolute;
+  left: 3.25rem;
+  /* clear of the busy bar on the rail edge — the arrow points into the
+     schedule, not at the family's pills */
+  right: 1.75rem;
+  height: 0;
+  /* No transition and no will-change: renderSpine() throws this element away
+     and builds a new one every tick, so there was never an old value to
+     animate from — the will-change just held a compositor layer open. */
+}
+
+.spine-now .knob {
+  position: absolute;
+  left: -3.5px;
+  top: -3.5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ink);
+}
+
+.spine-now::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: -1px;
+  width: 100%;
+  height: 2px;
+  background: var(--ink);
+}
+
+/* the arrow head points into the schedule — "now ─▶" */
+.spine-now::after {
+  content: '';
+  position: absolute;
+  right: -1px;
+  top: -4px;
+  border: 5px solid transparent;
+  border-left: 6px solid var(--ink);
+  border-right: 0;
+}
+
+.spine-now-time {
+  position: absolute;
+  left: 0.625rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: var(--rail-bg);
+  padding: 0 0.4375rem;
+}
+
+/* tabs */
+
+.tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 0.875rem;
+}
+
+.tab {
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  padding: 0 0.75rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-s);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--ink-2);
+  letter-spacing: 0.01em;
+}
+
+.tab.is-on {
+  background: var(--fill);
+  border-color: var(--fill);
+  color: var(--on-fill);
+  font-weight: 700;
+}
+
+.rail-foot { display: flex; flex-direction: column; gap: 6px; }
+
+.rail-btn {
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius-s);
+  font-size: 0.875rem;
+  color: var(--ink-2);
+  background: var(--card);
+}
+
+.rail-btn .badge {
+  margin-left: auto;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  background: var(--warn);
+  color: var(--on-accent);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  display: grid;
+  place-items: center;
+}
+
+.sync-note {
+  font-size: 0.75rem;
+  color: var(--ink-3);
+  letter-spacing: 0.01em;
+  padding: 0.25rem 0.125rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.sync-note .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--hair); flex: 0 0 auto;
+}
+.sync-note.is-stale { color: var(--warn); }
+.sync-note.is-stale .dot { background: var(--warn); }
+
+/* ---------------------------------------------------------------- stage -- */
+
+.stage {
+  min-width: 0;
+  min-height: 0;
+  padding: 1.5rem;
+  overflow: hidden;
+  background-image: var(--glow);
+}
+
+.view { height: 100%; min-height: 0; }
+
+/* cards */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--card-edge);
+  border-radius: var(--radius);
+  box-shadow: var(--lift);
+  padding: 1.125rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.875rem;
+  flex: 0 0 auto;
+}
+
+/* a whole card washed in one person's colour (the Chores view columns) */
+.card.person-card {
+  background: var(--c-wash, var(--card));
+  border-color: var(--c-line, var(--hair));
+}
+
+.card-head .spacer { flex: 1 1 auto; }
+
+.scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  flex: 1 1 auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hair) transparent;
+}
+.scroll::-webkit-scrollbar { width: 6px; }
+.scroll::-webkit-scrollbar-thumb { background: var(--hair); border-radius: 3px; }
+
+/* ------------------------------------------------------- today view grid - */
+
+.today {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--side);
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    "sched weather"
+    "sched chores"
+    "tomorrow dinner"
+    "ha ha";
+  gap: 1rem;
+  height: 100%;
+}
+
+.a-sched    { grid-area: sched; }
+.a-weather  { grid-area: weather; }
+.a-chores   { grid-area: chores; }
+/* the fade only belongs there when there is genuinely more list below —
+   applied unconditionally it dims the last row of a list that already fits */
+.a-chores .scroll.can-scroll {
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 2rem), transparent 100%);
+  mask-image: linear-gradient(180deg, #000 calc(100% - 2rem), transparent 100%);
+}
+.a-tomorrow { grid-area: tomorrow; justify-content: center; padding-top: 0.875rem; padding-bottom: 0.875rem; }
+.a-dinner   { grid-area: dinner; }
+.a-ha       { grid-area: ha; padding: 0.875rem 1rem; }
+
+/* countdown chips */
+
+.chips { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+.chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4375rem;
+  padding: 0.3125rem 0.6875rem;
+  border: 1px solid var(--dinner-edge);
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  color: var(--ink-2);
+  background: var(--chore-star-bg);
+  white-space: nowrap;
+}
+
+.chip b {
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--hero);
+}
+
+/* neutral meta chip (recipe times, servings) */
+.mchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  padding: 0.1875rem 0.5rem;
+  border: 1px solid var(--hair-2);
+  border-radius: 999px;
+  background: var(--card-2);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.mchip.warm { background: var(--chore-star-bg); border-color: var(--dinner-edge); color: var(--hero); }
+.mchip.src  { font-family: var(--sans); letter-spacing: 0.02em; }
+
+/* event rows */
+
+.ev {
+  display: grid;
+  grid-template-columns: 5px 6.5rem minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0 1rem;
+  width: 100%;
+  padding: 0.875rem 0.5rem 0.875rem 0;
+  border-radius: var(--radius-s);
+  min-height: var(--tap);
+}
+
+.ev + .ev { border-top: 1px solid var(--hair-2); }
+
+.ev-bar {
+  align-self: stretch;
+  border-radius: 3px;
+  background: var(--c, var(--ink-3));
+  min-height: 1.75rem;
+}
+
+/* person chip: tinted pill + initials disc, the accent carrying the row */
+.who-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4375rem;
+  padding: 0.1875rem 0.625rem 0.1875rem 0.1875rem;
+  border-radius: 999px;
+  background: var(--c-tint, var(--card-2));
+  color: var(--c-ink, var(--ink-2));
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.who-chip .av {
+  flex: 0 0 auto;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  background: var(--c, var(--ink-3));
+  color: var(--c-on, #fff);
+  display: grid;
+  place-items: center;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.who-chip.bare { background: none; padding-left: 0; }
+
+.ev-time {
+  font-family: var(--mono);
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  padding-top: 0.125rem;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.ev-body { min-width: 0; display: block; }
+
+.ev-title {
+  display: block;
+  font-size: 1.125rem;
+  font-weight: 500;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ev-sub {
+  display: block;
+  font-size: 0.8125rem;
+  color: var(--ink-3);
+  margin-top: 0.1875rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ev-who {
+  padding-top: 0.125rem;
+  white-space: nowrap;
+}
+
+/* The first event after the now line: the one thing the panel is actually
+   asking the house to remember. Washed in that person's colour so it reads
+   as theirs from across the room, and its accent bar runs the full row. */
+.ev.is-next {
+  background: var(--c-wash, var(--card-2));
+}
+.ev.is-next .ev-title { font-weight: 600; }
+.ev.is-next .ev-bar { min-height: 100%; }
+
+.ev.is-past { opacity: 0.42; }
+.ev.is-allday .ev-time { color: var(--ink-3); font-size: 0.8125rem; }
+
+.now-rule {
+  display: grid;
+  grid-template-columns: 3px 6.5rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0 1rem;
+  padding: 0.1875rem 0;
+}
+
+.now-rule .now-label {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-align: right;
+}
+
+.now-rule .now-bar {
+  height: 2px;
+  background: var(--ink);
+  border-radius: 1px;
+}
+
+/* empty states */
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: 1.25rem 0.25rem;
+  color: var(--ink-3);
+  font-size: 1rem;
+}
+
+/* tomorrow strip */
+
+.tmw { display: flex; align-items: center; gap: 1rem; }
+.tmw .lbl { flex: 0 0 auto; width: 8.5rem; }
+
+.tmw-list {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  flex: 1 1 auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 3rem), transparent 100%);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 3rem), transparent 100%);
+}
+.tmw-list::-webkit-scrollbar { display: none; }
+
+.tmw-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4375rem 0.75rem 0.4375rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--c-tint, var(--card-2));
+  white-space: nowrap;
+  min-height: 2.25rem;
+}
+
+.tmw-item .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c); flex: 0 0 auto; }
+.tmw-item .t { font-family: var(--mono); font-size: 0.8125rem; color: var(--c-ink, var(--ink-2)); font-weight: 600; }
+.tmw-item .n { font-size: 0.875rem; font-weight: 500; }
+
+/* weather — the card gets a sky zone that follows the current condition,
+   with the day's sun path drawn across it. */
+
+.card.wx { padding: 0; overflow: hidden; }
+
+.wx-sky {
+  flex: 0 0 auto;
+  padding: 0.875rem 1.25rem 0.625rem;
+  background: var(--sky-cloud);
+  border-bottom: 1px solid var(--sky-edge);
+}
+.wx-sky.is-clear   { background: var(--sky-clear); }
+.wx-sky.is-mostly  { background: var(--sky-clear); }
+.wx-sky.is-partly  { background: var(--sky-partly); }
+.wx-sky.is-cloud   { background: var(--sky-cloud); }
+.wx-sky.is-fog     { background: var(--sky-fog); }
+.wx-sky.is-drizzle,
+.wx-sky.is-rain,
+.wx-sky.is-showers { background: var(--sky-rain); }
+.wx-sky.is-storm   { background: var(--sky-storm); }
+.wx-sky.is-snow    { background: var(--sky-snow); }
+
+.wx-body { padding: 0.75rem 1.25rem 1rem; flex: 1 1 auto; min-height: 0; }
+
+.wx-now { display: flex; align-items: center; gap: 1rem; }
+
+/* sun path: a shallow parabola from sunrise to sunset with the sun on it.
+   --arch is the drawn height; the sun's inline top is a fraction of it. */
+.wx-arc {
+  --arch: 2.25rem;
+  position: relative;
+  height: calc(var(--arch) + 1rem);
+  margin: 0.25rem 0 0;
+}
+.wx-arc svg { display: block; width: 100%; height: var(--arch); overflow: visible; }
+.wx-arc svg path { stroke: var(--arc); }
+.wx-arc .sun {
+  position: absolute;
+  width: 0.75rem;
+  height: 0.75rem;
+  margin: -0.375rem 0 0 -0.375rem;
+  border-radius: 50%;
+  background: var(--sun);
+}
+.wx-arc .sun.is-down { background: var(--ink-3); opacity: 0.6; }
+.wx-arc .end {
+  position: absolute;
+  bottom: 0;
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  color: var(--ink-2);
+  letter-spacing: 0.02em;
+}
+.wx-arc .end.a { left: 0; }
+.wx-arc .end.b { right: 0; }
+/* the arc's own ends carry the times; the words only appear when it folds */
+.wx-arc .end i { display: none; }
+
+.wx-temp {
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 3rem;
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.wx-glyph { flex: 0 0 auto; color: var(--sun); }
+.wx-glyph svg { display: block; width: 3rem; height: 3rem; }
+.wx-sky.is-cloud .wx-glyph,
+.wx-sky.is-fog .wx-glyph,
+.wx-sky.is-rain .wx-glyph,
+.wx-sky.is-drizzle .wx-glyph,
+.wx-sky.is-showers .wx-glyph,
+.wx-sky.is-storm .wx-glyph,
+.wx-sky.is-snow .wx-glyph { color: var(--ink-2); }
+
+.wx-meta { font-size: 0.9375rem; color: var(--ink-2); }
+.wx-meta .d { font-weight: 500; color: var(--ink); }
+
+.wx-stats {
+  display: flex;
+  gap: 1.25rem;
+}
+
+.wx-stat .k { font-size: 0.6875rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); }
+.wx-stat .v { font-family: var(--mono); font-size: 1.0625rem; font-weight: 600; }
+.wx-stat.is-wet .v { color: var(--wet); }
+.wx-stat.is-hot .v { color: var(--warn); }
+
+.wx-week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.25rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--hair-2);
+}
+
+.wx-day { text-align: center; min-width: 0; border-radius: var(--radius-s); padding: 0.125rem 0; }
+.wx-day.is-today { background: var(--chore-star-bg); }
+.wx-day .wd { font-size: 0.6875rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+.wx-day.is-today .wd { color: var(--hero); font-weight: 700; }
+.wx-day svg { width: 1.5rem; height: 1.5rem; margin: 0.125rem auto; display: block; color: var(--ink-2); }
+.wx-day.is-sun svg { color: var(--sun); }
+.wx-day .hi { font-family: var(--mono); font-size: 0.875rem; font-weight: 600; }
+.wx-day .lo { font-family: var(--mono); font-size: 0.75rem; color: var(--ink-3); }
+
+/* ------------------------------------------------------------- chores ---- */
+
+/* each person's chores sit in their own softly tinted block */
+.chore-person {
+  background: var(--c-tint, var(--card-2));
+  border-radius: var(--radius);
+  padding: 0.625rem 0.75rem 0.5rem;
+}
+.chore-person + .chore-person { margin-top: 0.625rem; }
+
+.chore-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.375rem;
+}
+
+.chore-head .who {
+  font-size: 1rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--c-ink, var(--ink));
+}
+
+.chore-head .who .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c); }
+
+.stars {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.3125rem;
+  font-family: var(--mono);
+  font-size: 1rem;
+  font-weight: 600;
+}
+.stars svg { width: 1.0625rem; height: 1.0625rem; color: var(--star); }
+
+/* the week's stars, spelled out in gold — the kid-facing scoreboard */
+.star-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+  padding: 0.1875rem 0.5rem 0.1875rem 0.4375rem;
+  border-radius: 999px;
+  background: var(--chore-star-bg);
+}
+.star-row .pips { display: flex; gap: 2px; }
+.star-row svg { width: 0.9375rem; height: 0.9375rem; color: var(--star); display: block; }
+.star-row svg.off { color: var(--star); opacity: 0.24; }
+.star-row .n {
+  font-family: var(--mono);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--hero);
+}
+.star-row.big svg { width: 1.125rem; height: 1.125rem; }
+.star-row.big .n { font-size: 1.125rem; }
+
+.chore {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  width: 100%;
+  padding: 0.25rem 0;
+  min-height: var(--tap-lg);
+}
+
+.tick {
+  position: relative;
+  flex: 0 0 auto;
+  width: var(--tap-lg);
+  height: var(--tap-lg);
+  border: 2px solid var(--c-line, var(--hair));
+  border-radius: var(--radius);
+  background: var(--card);
+  display: grid;
+  place-items: center;
+  color: transparent;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.tick svg { width: 2rem; height: 2rem; }
+
+.chore.is-done .tick {
+  background: var(--c, var(--ink));
+  border-color: var(--c, var(--ink));
+  color: var(--c-on, #fff);
+}
+
+.chore-name { font-size: 1.0625rem; font-weight: 500; line-height: 1.2; }
+.chore.is-done .chore-name { color: var(--ink-3); text-decoration: line-through; }
+.chore-slot { font-size: 0.75rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-3); }
+.chore-stars { margin-left: auto; display: flex; align-items: center; gap: 0.25rem; color: var(--star); font-family: var(--mono); font-size: 0.9375rem; }
+.chore-stars svg { width: 0.9375rem; height: 0.9375rem; }
+
+/* compact variant used on the Today card */
+.chore.compact { min-height: var(--tap); gap: 0.625rem; }
+.chore.compact .tick { width: var(--tap); height: var(--tap); border-radius: var(--radius-s); }
+.chore.compact .tick svg { width: 1.5rem; height: 1.5rem; }
+.chore.compact .chore-name { font-size: 0.9375rem; }
+
+/* star burst */
+
+.burst {
+  position: absolute;
+  left: calc(var(--tap-lg) / 2);
+  top: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.chore.compact .burst { left: calc(var(--tap) / 2); }
+
+.burst i {
+  position: absolute;
+  left: -2px;
+  top: -9px;
+  width: 4px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--star);
+  transform-origin: 50% 100%;
+  animation: burst 0.62s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+}
+
+@keyframes burst {
+  0%   { transform: rotate(var(--r)) translateY(0) scaleY(0.35); opacity: 0; }
+  22%  { opacity: 1; }
+  100% { transform: rotate(var(--r)) translateY(-2.25rem) scaleY(1); opacity: 0; }
+}
+
+/* -------------------------------------------------------------- dinner --- */
+
+.card.dinner-card {
+  background: linear-gradient(150deg, var(--dinner-a) 0%, var(--dinner-b) 72%);
+  border-color: var(--dinner-edge);
+}
+
+.dinner-name {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+.dinner-sub { font-size: 0.875rem; color: var(--ink-2); margin-top: 0.25rem; }
+.dinner-card .lbl { color: var(--hero); }
+.dinner-meta { display: flex; gap: 0.375rem; flex-wrap: wrap; margin-top: 0.5rem; }
+
+/* -------------------------------------------------------------- HA row --- */
+
+.ha-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: stretch;
+  overflow-x: auto;
+  scrollbar-width: none;
+  /* keep a sideways drag from turning into a browser back-swipe on the
+     tablet, and stop it rubber-banding the page */
+  overscroll-behavior-x: contain;
+}
+.ha-row::-webkit-scrollbar { display: none; }
+
+/* The shelf fades on whichever side still has tiles in it — the same idiom
+   the chores list uses down its bottom edge. Classes come from paintShelf(). */
+.ha-row.can-x {
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 1.75rem,
+    #000 calc(100% - 1.75rem), transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 1.75rem,
+    #000 calc(100% - 1.75rem), transparent 100%);
+}
+.ha-row.can-x.at-start {
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 1.75rem), transparent 100%);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 1.75rem), transparent 100%);
+}
+.ha-row.can-x.at-end {
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 1.75rem, #000 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 1.75rem, #000 100%);
+}
+.ha-row.can-x.at-start.at-end { -webkit-mask-image: none; mask-image: none; }
+
+.tile {
+  flex: 1 1 0;
+  min-width: 9.5rem;
+  border: 1px solid var(--card-edge);
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--lift);
+  padding: 0.75rem 0.875rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-height: 5.5rem;
+}
+
+.tile .t-label { font-size: 0.6875rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--label); }
+.tile .t-value { font-family: var(--mono); font-size: 1.375rem; font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; }
+.tile .t-sub { font-size: 0.8125rem; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* wrap rather than squeeze: a narrow tile puts its second row of keys
+   underneath (the fan's four, the media tile's three on a 1280 panel) */
+.tile-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 0.5rem; }
+
+.t-btn {
+  flex: 1 1 auto;
+  min-height: var(--tap);
+  border: 1px solid var(--hair);
+  border-radius: var(--radius-s);
+  background: var(--card-2);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--ink-2);
+  display: grid;
+  place-items: center;
+  padding: 0 0.375rem;
+  text-align: center;
+}
+
+.t-btn[data-armed='1'] {
+  background: var(--fill);
+  border-color: var(--fill);
+  color: var(--on-fill);
+  font-size: 0.75rem;
+}
+
+.t-btn.vol { flex: 0 0 auto; min-width: var(--tap); font-size: 1.125rem; font-family: var(--mono); }
+
+/* media volume read-out */
+.vol-wrap { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.375rem; }
+.vol-bar {
+  flex: 1 1 auto;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--hair-2);
+  overflow: hidden;
+}
+.vol-bar i { display: block; height: 100%; background: var(--hero); border-radius: 3px; }
+.vol-pct { font-family: var(--mono); font-size: 0.75rem; color: var(--ink-2); min-width: 2.5rem; text-align: right; }
+
+/* the two tiles carrying a row of keys ask for a bigger share of the row,
+   so a full house of tiles doesn't push their controls onto a second line */
+.tile.is-fan { min-width: 11.5rem; flex-grow: 1.3; }
+/* the media tile is tap-anywhere-to-open, so it has to keep a strip that is
+   not a button — with three Sensibos in the row it was squeezed to the point
+   where its own keys covered the whole tile */
+.tile.is-media { min-width: 13rem; flex-grow: 1.4; }
+/* a read-out with no keys needs no width at all */
+.tile.is-climate { min-width: 8rem; }
+
+/* ---- solar: read at 3 m, tap anywhere for the power-flow overlay ---- */
+.tile.is-solar { min-width: 12.5rem; flex-grow: 1.25; cursor: pointer; justify-content: center; }
+.sol-main { display: flex; align-items: baseline; gap: 0.5rem; margin-top: 0.125rem; }
+.sol-sun { color: var(--ink-3); align-self: center; display: grid; place-items: center; }
+.sol-sun svg { width: 1.5rem; height: 1.5rem; display: block; }
+.sol-sun.is-on { color: var(--star); }
+.sol-pv {
+  font-family: var(--mono); font-size: 1.75rem; font-weight: 600;
+  letter-spacing: -0.03em; line-height: 1.1; color: var(--ink);
+}
+.sol-u { font-size: 0.8125rem; color: var(--ink-3); }
+.sol-chips { display: flex; align-items: center; gap: 0.375rem; margin-top: 0.375rem; flex-wrap: wrap; }
+.sol-batt {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  padding: 0.0625rem 0.4375rem 0.0625rem 0.3125rem;
+  border-radius: 999px; border: 1px solid var(--hair);
+  background: var(--card-2); color: var(--ink-2);
+  font-size: 0.875rem;
+}
+.sol-batt b { font-size: 0.875rem; font-weight: 700; }
+.sol-arw { display: grid; place-items: center; }
+.sol-arw svg { width: 0.625rem; height: 0.625rem; display: block; }
+.sol-batt.is-chg { color: var(--ok); border-color: var(--ok); }
+.sol-batt.is-dis { color: var(--hero); border-color: var(--dinner-edge); }
+.sol-grid {
+  display: inline-flex; align-items: baseline; gap: 0.3125rem;
+  font-size: 0.875rem; color: var(--ink-3);
+}
+.sol-grid .d { letter-spacing: 0.02em; }
+.sol-grid b { color: var(--ink-2); font-weight: 700; }
+.sol-grid .u { font-size: 0.6875rem; }
+.tile .t-pct { color: var(--ink-2); }
+.t-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.0625rem 0.4375rem;
+  border-radius: 999px;
+  background: var(--chore-star-bg);
+  border: 1px solid var(--dinner-edge);
+  color: var(--hero);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+/* ------------------------------------------------- grouped: aircon tile -- */
+/* Every Sensibo in one tile — how many rooms are running, the warmest room
+   as the figure, and the room-by-room read-out underneath. The whole tile is
+   the tap target for the all-rooms sheet, which is where the controls live.
+   Same card, same hairline, same quiet label as every other tile. */
+
+.tile.is-aircon { min-width: 11.5rem; flex-grow: 1.15; cursor: pointer; }
+
+/* the channel/room count beside the tile's label — a hairline pill, not a
+   notification badge; nothing here is asking to be answered */
+.tile .t-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.125rem;
+  margin-left: 0.375rem;
+  padding: 0 0.3125rem;
+  border-radius: 999px;
+  border: 1px solid var(--hair);
+  background: var(--card-2);
+  font-family: var(--mono);
+  font-feature-settings: 'tnum' 1;
+  font-size: 0.625rem;
+  color: var(--ink-3);
+  vertical-align: 1px;
+}
+
+.ac-head { display: flex; align-items: baseline; gap: 0.5rem; }
+
+.ac-on {
+  font-size: 0.6875rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.0625rem 0.4375rem;
+  border: 1px solid var(--hair);
+  border-radius: 999px;
+  background: var(--card-2);
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.ac-on.is-live { color: var(--ok); border-color: var(--ok); }
+
+.ac-rows { margin-top: 0.1875rem; display: flex; flex-direction: column; gap: 1px; }
+
+/* the same dot the whole-house sheet uses for a running room */
+.ac-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4375rem;
+  font-size: 0.8125rem;
+  color: var(--ink-3);
+  line-height: 1.35;
+}
+.ac-row.is-on { color: var(--ink-2); }
+.ac-dot {
+  flex: 0 0 auto;
+  width: 0.5rem; height: 0.5rem;
+  border-radius: 50%;
+  background: var(--hair);
+}
+.ac-row.is-on .ac-dot { background: var(--ok); }
+.ac-n { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ac-t { flex: 0 0 auto; letter-spacing: -0.02em; }
+.ac-row.is-on .ac-t { color: var(--ink); }
+.ac-more { font-size: 0.6875rem; color: var(--ink-3); padding-left: 0.9375rem; }
+
+/* ------------------------------------------------ grouped: cameras tile -- */
+/* One tile, stepping through the channels on the same 10 s beat the snapshots
+   refresh on, with the channel count in the corner. Tapping opens the wall. */
+
+.tile.is-cams { padding: 0; overflow: hidden; flex: 0 0 auto; width: 13rem; }
+.tile.is-cams img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tile.is-cams .cam-wrap { position: relative; width: 100%; height: 100%; background: var(--cam-bg); }
+
+.cam-label {
+  position: absolute; left: 0.5rem; bottom: 0.4375rem;
+  font-size: 0.6875rem; letter-spacing: 0.12em; text-transform: uppercase;
+  color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.7);
+}
+
+/* a paper chip on the picture, so the count reads as part of the panel
+   rather than part of the footage */
+.cam-count {
+  position: absolute; right: 0.4375rem; top: 0.4375rem;
+  min-width: 1.25rem;
+  display: grid; place-items: center;
+  padding: 0.0625rem 0.375rem;
+  border-radius: 999px;
+  border: 1px solid var(--hair);
+  background: var(--card);
+  color: var(--ink-2);
+  font-size: 0.6875rem;
+}
+
+/* a channel the recorder has stopped answering for */
+.cam-dead {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--cam-bg);
+}
+.cam-dead span {
+  font-size: 0.75rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.tile.is-off { opacity: 0.45; }
+
+.ha-offline {
+  align-self: center;
+  font-size: 0.8125rem;
+  color: var(--warn);
+  white-space: nowrap;
+  padding-left: 0.25rem;
+}
+
+.presence-dot { width: 0.75rem; height: 0.75rem; border-radius: 50%; display: inline-block; }
+
+/* ------------------------------------------------------- day / week / month */
+
+.hdr {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  flex: 0 0 auto;
+}
+
+.hdr h2 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+.hdr .sub { font-family: var(--mono); font-size: 0.9375rem; color: var(--ink-3); }
+.hdr .spacer { flex: 1 1 auto; }
+
+.btn {
+  min-height: var(--tap);
+  min-width: var(--tap);
+  padding: 0 1rem;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius-s);
+  background: var(--card);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.btn svg { width: 1.125rem; height: 1.125rem; }
+.btn.primary { background: var(--fill); border-color: var(--fill); color: var(--on-fill); }
+.btn.accent { background: var(--hero); border-color: var(--hero); color: var(--on-accent); font-weight: 700; }
+.btn.ghost { border-color: transparent; background: none; color: var(--ink-2); }
+.btn.danger { color: var(--warn); border-color: var(--hair); }
+.btn[disabled] { opacity: 0.4; }
+.btn.sm { min-height: 2.25rem; padding: 0 0.75rem; font-size: 0.8125rem; }
+
+.stack { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+
+/* week */
+
+.week-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.625rem;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.wk-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--card);
+  overflow: hidden;
+}
+
+.wk-col.is-today { border-color: var(--hero); }
+
+.wk-head {
+  padding: 0.625rem 0.75rem;
+  border-bottom: 1px solid var(--hair-2);
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+}
+.wk-head .wd { font-size: 0.6875rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); }
+.wk-head .dd { font-family: var(--mono); font-size: 1.25rem; font-weight: 600; margin-left: auto; }
+.wk-col.is-today .wk-head { background: var(--hero); border-bottom-color: var(--hero); }
+.wk-col.is-today .wk-head .wd,
+.wk-col.is-today .wk-head .dd { color: var(--on-accent); font-weight: 700; }
+
+.wk-body { padding: 0.5rem; display: flex; flex-direction: column; gap: 0.3125rem; overflow-y: auto; flex: 1 1 auto; min-height: 0; scrollbar-width: none; }
+.wk-body::-webkit-scrollbar { display: none; }
+
+.wk-ev {
+  border-left: 4px solid var(--c, var(--ink-3));
+  border-radius: 5px;
+  background: var(--c-tint, var(--card-2));
+  padding: 0.3125rem 0.4375rem;
+  min-height: 2.75rem;
+  width: 100%;
+}
+.wk-ev .t { font-family: var(--mono); font-size: 0.6875rem; font-weight: 600; color: var(--c-ink, var(--ink-3)); }
+.wk-ev .n { font-size: 0.8125rem; font-weight: 500; line-height: 1.2; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.wk-ev.is-past { opacity: 0.45; }
+
+.wk-foot {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--hair-2);
+  padding: 0.5rem 0.75rem;
+  background: var(--card-2);
+  min-height: 3.25rem;
+}
+.wk-foot .k { font-size: 0.625rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); }
+.wk-foot .v { font-size: 0.8125rem; font-weight: 500; line-height: 1.2; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+
+/* ----------------------------------------------- week: the time grid ----- */
+/* Landscape only (the JS picks the layout). One shared axis down the left,
+   seven columns of absolutely-placed blocks, an all-day row pinned above and
+   the dinner row pinned below. Hour rules are painted as a background
+   gradient rather than 98 divs — every hour is the same height, so one
+   background-size does the whole column. */
+
+.wg {
+  --wg-gut: 3.5rem;
+  --wg-hour-min: 3.25rem;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.wg-head,
+.wg-allday,
+.wg-canvas,
+.wg-foot {
+  display: grid;
+  grid-template-columns: var(--wg-gut) repeat(7, minmax(0, 1fr));
+  gap: 0 0.375rem;
+}
+
+.wg-head, .wg-allday, .wg-foot { flex: 0 0 auto; }
+
+.wg-gut {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 0.5rem;
+  font-size: 0.5625rem;
+  letter-spacing: 0.12em;
+  text-align: right;
+  color: var(--ink-3);
+}
+
+.wg-hd {
+  display: flex;
+  align-items: baseline;
+  gap: 0.375rem;
+  padding: 0.375rem 0.5rem;
+  border-radius: var(--radius-s) var(--radius-s) 0 0;
+  border-bottom: 2px solid var(--hair);
+}
+.wg-hd .wd { font-size: 0.6875rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); }
+.wg-hd .dd { font-family: var(--mono); font-size: 1.25rem; font-weight: 600; margin-left: auto; }
+.wg-hd.is-today { background: var(--hero); border-bottom-color: var(--hero); }
+.wg-hd.is-today .wd,
+.wg-hd.is-today .dd { color: var(--on-accent); font-weight: 700; }
+
+/* all-day + holidays live above the axis, never inside it */
+.wg-allday {
+  align-items: start;
+  padding: 0.3125rem 0 0.375rem;
+  border-bottom: 1px solid var(--hair);
+  margin-bottom: 0.25rem;
+}
+.wg-allday .wg-gut { align-items: flex-start; padding-top: 0.1875rem; }
+
+.wg-adc {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  min-height: 1.5rem;
+  min-width: 0;
+}
+.wg-adc.is-today { border-radius: var(--radius-s); background: var(--chore-star-bg); padding: 2px; }
+
+.wg-ad {
+  max-width: 100%;
+  border-left: 4px solid var(--c, var(--ink-3));
+  border-radius: 4px;
+  background: var(--c-tint, var(--card-2));
+  padding: 0.125rem 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wg-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: none; }
+.wg-body::-webkit-scrollbar { display: none; }
+
+.wg-canvas {
+  position: relative;
+  height: 100%;
+  min-height: calc(var(--wg-hrs) * var(--wg-hour-min));
+}
+
+.wg-axis { position: relative; }
+
+.wg-tick {
+  position: absolute;
+  right: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--ink-3);
+  padding-top: 0.125rem;
+  line-height: 1;
+}
+
+.wg-col {
+  position: relative;
+  border-left: 1px solid var(--hair);
+  border-radius: 0 0 var(--radius-s) var(--radius-s);
+  /* the hour rules: --hair, not --hair-2, because a 1 px line on the night
+     theme's near-black ground vanishes at the lighter weight */
+  background-image: linear-gradient(to bottom, var(--hair) 1px, transparent 1px);
+  background-size: 100% calc(100% / var(--wg-hrs));
+}
+.wg-col:last-child { border-right: 1px solid var(--hair); }
+/* today gets the faintest lift only — the solid header and the now line say
+   which day it is, and a strong wash drowns the blocks sitting on it */
+.wg-col.is-today { background-color: var(--card-2); }
+
+.wg-ev {
+  position: absolute;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--c-line, var(--hair));
+  border-radius: 5px;
+  background: var(--c-tint, var(--card-2));
+  padding: 0.1875rem 0.375rem 0.1875rem 0.5rem;
+}
+.wg-ev .wg-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--c, var(--ink-3));
+}
+.wg-ev .wg-n {
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.2;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+.wg-ev .wg-t {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--c-ink, var(--ink-2));
+  margin-top: 1px;
+  white-space: nowrap;
+}
+.wg-ev.is-short .wg-n { -webkit-line-clamp: 2; }
+/* a third of a column is barely wider than the clock face it would carry —
+   the name wins and the time goes back to the detail sheet */
+.wg-ev.is-narrow { padding-left: 0.4375rem; padding-right: 0.25rem; }
+.wg-ev.is-narrow .wg-t { display: none; }
+.wg-ev.is-narrow .wg-n { font-size: 0.8125rem; overflow-wrap: anywhere; }
+/* under ~40 minutes there is only room for the name */
+.wg-ev.is-tiny { padding-top: 0; padding-bottom: 0; justify-content: center; }
+.wg-ev.is-tiny .wg-t { display: none; }
+.wg-ev.is-tiny .wg-n { -webkit-line-clamp: 1; font-size: 0.8125rem; }
+.wg-ev.is-past { opacity: 0.45; }
+
+/* a fourth overlapping event folds into this, which opens the day peek */
+.wg-more {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--hair);
+  border-radius: 5px;
+  background: var(--card-2);
+  color: var(--ink-2);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.wg-now {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 2px solid var(--hero);
+  z-index: 3;
+  pointer-events: none;
+  /* The line crawls on transform rather than top — top relaid out the whole
+     column on every step of the animation. */
+  transition: transform 0.6s linear;
+}
+.wg-now .wg-now-k {
+  position: absolute;
+  left: -3px;
+  top: -5px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--hero);
+}
+
+.wg-foot { margin-top: 0.375rem; padding-top: 0.375rem; border-top: 1px solid var(--hair); }
+.wg-foot .wg-gut { align-items: flex-start; padding-top: 0.375rem; }
+
+.wg-ftc {
+  min-height: 2.75rem;
+  padding: 0.3125rem 0.5rem;
+  border: 1px solid var(--hair-2);
+  border-radius: var(--radius-s);
+  background: var(--card-2);
+  overflow: hidden;
+}
+.wg-ftc.is-today { border-color: var(--hero); }
+.wg-ftc .k { font-size: 0.625rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); }
+.wg-ftc .v { font-size: 0.8125rem; font-weight: 500; line-height: 1.2; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+
+/* ------------------------------------------------------ public holidays -- */
+/* Not a person's event: no accent, no fill — a hairline pill with a pennant.
+   The same chip serves the week's all-day row, the Today/Day strip and the
+   month peek, so the day always reads the same wherever it is seen. */
+
+.hol {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0.1875rem 0.5rem;
+  border: 1px solid var(--hair);
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-2);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+.hol .hol-g { flex: 0 0 auto; width: 0.8125rem; height: 0.8125rem; color: var(--ink-3); }
+.hol .hol-g svg { display: block; width: 100%; height: 100%; }
+.hol .hol-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.hol.wide {
+  width: 100%;
+  min-height: 2.25rem;
+  padding: 0.3125rem 0.75rem;
+  border-radius: var(--radius-s);
+  font-size: 0.875rem;
+}
+
+.hol-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  flex: 0 0 auto;
+  margin-bottom: 0.5rem;
+}
+
+.hol-h { font-size: 1.75rem; font-weight: 700; line-height: 1.15; margin-bottom: 1rem; }
+
+/* month */
+
+.mo-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 1px;
+  background: var(--hair);
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  overflow: hidden;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.mo-dow {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 1px;
+  margin-bottom: 0.5rem;
+  flex: 0 0 auto;
+}
+.mo-dow div { text-align: center; font-size: 0.6875rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); }
+
+.mo-cell {
+  background: var(--card);
+  padding: 0.375rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+}
+.mo-cell.is-out { background: var(--card-2); }
+.mo-cell.is-out .mo-n { color: var(--ink-3); }
+.mo-cell.is-today { background: var(--chore-star-bg); }
+.mo-cell.is-today .mo-n {
+  background: var(--hero); color: var(--on-accent); font-weight: 700;
+  border-radius: 999px; padding: 0 0.4375rem; margin-left: -0.1875rem;
+}
+.mo-n { font-family: var(--mono); font-size: 0.9375rem; font-weight: 600; align-self: flex-start; }
+.mo-ev {
+  font-size: 0.75rem;
+  line-height: 1.25;
+  padding: 0.125rem 0.3125rem 0.125rem 0.375rem;
+  border-left: 3px solid var(--c, var(--ink-3));
+  border-radius: 3px;
+  background: var(--c-tint, transparent);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mo-ev .mono { color: var(--c-ink, var(--ink-3)); font-weight: 600; }
+.mo-more { font-size: 0.6875rem; color: var(--ink-3); padding-left: 0.4375rem; }
+
+/* a public holiday bands the whole cell instead of taking one of its pills */
+.mo-hol {
+  width: 100%;
+  padding: 0.0625rem 0.25rem;
+  border-top: 1px solid var(--hair);
+  border-bottom: 1px solid var(--hair);
+  font-size: 0.625rem;
+  font-weight: 500;
+  color: var(--ink-2);
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mo-hol .g {
+  display: inline-block;
+  width: 0.625rem;
+  height: 0.625rem;
+  margin-right: 0.1875rem;
+  vertical-align: -1px;
+  color: var(--ink-3);
+}
+.mo-hol .g svg { display: block; width: 100%; height: 100%; }
+
+/* ------------------------------------------------------------- screens --- */
+
+.cols {
+  display: grid;
+  gap: 1rem;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.list-add { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; flex: 0 0 auto; }
+
+.inp {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: var(--tap);
+  padding: 0 0.875rem;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius-s);
+  background: var(--card-2);
+  font-family: var(--sans);
+  font-size: 1rem;
+  color: var(--ink);
+}
+.inp::placeholder { color: var(--ink-3); }
+.inp:focus { border-color: var(--ink-3); }
+
+textarea.inp { padding: 0.625rem 0.875rem; min-height: 5rem; resize: none; line-height: 1.4; }
+select.inp {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 2.25rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235A5F69' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0.25rem 0;
+}
+.item + .item { border-top: 1px solid var(--hair-2); }
+
+.box {
+  flex: 0 0 auto;
+  width: 1.75rem; height: 1.75rem;
+  border: 2px solid var(--hair);
+  border-radius: 6px;
+  display: grid; place-items: center;
+  color: transparent;
+}
+.box svg { width: 1.125rem; height: 1.125rem; }
+.item.is-done .box { background: var(--ok); border-color: var(--ok); color: var(--on-accent); }
+.item.is-done .item-text { color: var(--ink-3); text-decoration: line-through; }
+.item.is-arm { background: var(--arm); border-radius: var(--radius-s); }
+
+.item-text { font-size: 1rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.item-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0 2rem;
+  align-content: start;
+}
+.item-grid .item + .item { border-top: 0; }
+.item-grid .item { border-bottom: 1px solid var(--hair-2); }
+
+/* meal planner */
+
+.meal-grid {
+  display: grid;
+  grid-template-columns: 7.5rem repeat(7, minmax(0, 1fr));
+  gap: 0.625rem;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.meal-hd { text-align: center; padding-bottom: 0.25rem; align-self: end; }
+.meal-hd .wd { font-size: 0.6875rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); }
+.meal-hd .dd { font-family: var(--mono); font-size: 1.25rem; font-weight: 600; }
+.meal-hd.is-today .dd,
+.meal-hd.is-today .wd { color: var(--hero); font-weight: 700; }
+
+.meal-rowlbl { display: flex; align-items: flex-start; padding-top: 0.875rem; }
+
+.meal-cell {
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--card);
+  min-height: var(--tap);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+.meal-cell.is-today { border-color: var(--hero); }
+
+/* a planned dinner wears the same warm tint as the Dinner-tonight card, so
+   the week's cooking reads as one warm band across the grid */
+.meal-cell.has-recipe {
+  background: linear-gradient(150deg, var(--dinner-a) 0%, var(--dinner-b) 72%);
+  border-color: var(--dinner-edge);
+}
+.meal-cell.has-recipe .push { background: none; border-top-color: var(--dinner-edge); color: var(--hero); }
+.meal-meta { display: flex; gap: 0.3125rem; flex-wrap: wrap; }
+
+.meal-pick {
+  flex: 1 1 auto;
+  min-height: var(--tap);
+  padding: 0.75rem 0.875rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  text-align: left;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.meal-cell .n { font-size: 1.125rem; font-weight: 500; line-height: 1.2; }
+.meal-cell.small .n { font-size: 0.9375rem; }
+.meal-cell .free { font-weight: 400; color: var(--ink-2); }
+.meal-cell .ph { color: var(--ink-3); font-size: 0.875rem; }
+.meal-cell .ing {
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--ink-3);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+}
+.meal-cell .push {
+  flex: 0 0 auto;
+  min-height: var(--tap);
+  border-top: 1px solid var(--hair-2);
+  background: var(--card-2);
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  display: flex;
+  align-items: center;
+  padding: 0 0.875rem;
+}
+
+/* imports */
+
+.imp {
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--card);
+  padding: 1rem 1.125rem;
+  margin-bottom: 0.875rem;
+}
+.imp-head { display: flex; align-items: baseline; gap: 0.625rem; flex-wrap: wrap; }
+.imp-head .subj { font-size: 1.125rem; font-weight: 700; }
+.imp-head .from { font-size: 0.8125rem; color: var(--ink-3); }
+.imp-excerpt {
+  font-size: 0.875rem; color: var(--ink-2); margin: 0.5rem 0 0.875rem;
+  padding-left: 0.75rem; border-left: 2px solid var(--hair);
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+.imp-ev {
+  display: grid;
+  grid-template-columns: var(--tap) minmax(0, 1fr) 12rem;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 0.5rem 0;
+  min-height: var(--tap);
+}
+.imp-ev + .imp-ev { border-top: 1px solid var(--hair-2); }
+.imp-ev .n { font-size: 1rem; font-weight: 500; }
+.imp-ev .when { font-family: var(--mono); font-size: 0.8125rem; color: var(--ink-3); }
+.imp-ev.is-off { opacity: 0.4; }
+
+.imp-acts { display: flex; gap: 0.625rem; margin-top: 0.875rem; padding-top: 0.875rem; border-top: 1px solid var(--hair-2); }
+
+/* ------------------------------------------------------------- overlays -- */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+  display: flex;
+  justify-content: flex-end;
+  z-index: 40;
+}
+
+.sheet {
+  width: min(46rem, 92vw);
+  height: 100%;
+  background: var(--paper);
+  border-left: 1px solid var(--hair);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.sheet.wide { width: min(78rem, 96vw); }
+
+.sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--hair);
+  flex: 0 0 auto;
+}
+.sheet-head h2 { font-size: 1.375rem; font-weight: 700; letter-spacing: -0.01em; }
+.sheet-head .spacer { flex: 1 1 auto; }
+
+.sheet-body { padding: 1.5rem; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+.sheet-foot { padding: 1rem 1.5rem; border-top: 1px solid var(--hair); display: flex; gap: 0.625rem; flex: 0 0 auto; }
+
+.close-x {
+  width: var(--tap); height: var(--tap);
+  border: 1px solid var(--hair); border-radius: var(--radius-s);
+  display: grid; place-items: center; background: var(--card);
+}
+.close-x svg { width: 1.25rem; height: 1.25rem; }
+
+.field { margin-bottom: 1rem; }
+.field > label { display: block; font-size: 0.75rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 0.375rem; }
+.field > .inp { width: 100%; }
+.field .hint { font-size: 0.8125rem; color: var(--ink-3); margin-top: 0.3125rem; }
+.field-row { display: flex; gap: 0.75rem; }
+.field-row > .field { flex: 1 1 0; min-width: 0; }
+.field-row.is-allday .field.timed { display: none; }
+
+.pick { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+.pick-btn {
+  min-height: var(--tap);
+  padding: 0 1rem;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius-s);
+  background: var(--card);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9375rem;
+}
+.pick-btn .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c); }
+.pick-btn.is-on { border-color: var(--ink); border-width: 2px; font-weight: 700; }
+
+.pick-btn.sm { min-height: 2.5rem; padding: 0 0.625rem; font-size: 0.8125rem; }
+
+.switch {
+  display: flex; align-items: center; gap: 0.75rem;
+  min-height: var(--tap); font-size: 1rem;
+}
+.switch .track {
+  width: 3.25rem; height: 1.875rem; border-radius: 999px;
+  border: 1px solid var(--hair); background: var(--card-2); position: relative; flex: 0 0 auto;
+}
+.switch .track::after {
+  content: ''; position: absolute; top: 2px; left: 2px;
+  width: calc(1.875rem - 6px); height: calc(1.875rem - 6px);
+  border-radius: 50%; background: var(--ink-3); transition: transform 0.15s ease;
+}
+.switch.is-on .track { background: var(--ok); border-color: var(--ok); }
+.switch.is-on .track::after { background: var(--on-accent); transform: translateX(1.375rem); }
+
+.detail-row { display: flex; gap: 1rem; padding: 0.75rem 0; border-bottom: 1px solid var(--hair-2); }
+.detail-row .k { width: 7rem; flex: 0 0 auto; font-size: 0.75rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-3); padding-top: 0.1875rem; }
+.detail-row .v { font-size: 1.0625rem; }
+
+.note {
+  border: 1px solid var(--hair);
+  border-radius: var(--radius-s);
+  background: var(--card-2);
+  padding: 0.75rem 0.875rem;
+  font-size: 0.9375rem;
+  color: var(--ink-2);
+  margin-top: 1rem;
+}
+
+.cam-full {
+  width: min(72vw, 1100px);
+  height: auto;
+  max-height: 80vh;
+  object-fit: contain;
+  background: var(--cam-bg);
+  border-radius: var(--radius);
+  border: 1px solid var(--hair);
+  display: block;
+}
+.scrim.centre { justify-content: center; align-items: center; }
+
+/* the label and the keys that sit around a single full-size channel — paper
+   chips on the scrim, same card/hairline as everything else */
+.cam-full-lab {
+  display: inline-block;
+  margin-bottom: 0.625rem;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--hair);
+  border-radius: 999px;
+  background: var(--card);
+  font-size: 0.75rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.cam-full-acts { margin-top: 1rem; display: flex; gap: 0.625rem; justify-content: center; }
+
+/* ---------------------------------------------------------- camera wall -- */
+/* Every configured channel at once — the thing one button was asked to open.
+   A panel sized to the feeds, in the same shape the now-playing overlay uses:
+   paper, one hairline, 12 px, close key in the corner. */
+
+.cam-wall {
+  position: relative;
+  width: min(68rem, 92vw);
+  max-height: 92vh;
+  overflow: auto;
+  padding: 2.25rem;
+  background: var(--paper);
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+}
+
+.cam-wall-close { position: absolute; top: 1rem; right: 1rem; }
+
+.cam-wall-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding-right: 3.5rem;
+}
+.cam-wall-n { font-size: 0.9375rem; color: var(--ink-2); }
+.cam-wall-note { font-size: 0.8125rem; color: var(--warn); margin-top: 1rem; }
+
+.cam-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
+  gap: 1rem;
+}
+
+.cam-cell {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--cam-bg);
+}
+.cam-cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cam-cell.is-dead { opacity: 0.55; }
+
+/* toasts */
+
+.toast-host {
+  position: fixed;
+  left: 50%;
+  bottom: 1.75rem;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: center;
+  pointer-events: none;
+}
+
+.toast {
+  background: var(--fill);
+  color: var(--on-fill);
+  border: 1px solid var(--hair);
+  border-radius: 999px;
+  padding: 0.75rem 1.375rem;
+  font-size: 0.9375rem;
+  max-width: 44rem;
+}
+
+/* ---------------------------------------------------------- screensaver -- */
+/* The wall-display look: one full-bleed photograph, a soft scrim along the
+   bottom, and only the two things anybody wants from across a room — what
+   time it is and what is on next. No tiles, no navigation, no chrome. It sits
+   below the sleep overlay on purpose: at 9 pm the screen goes dark, photos or
+   not. Deliberately unthemed — a photograph brings its own palette and a
+   tinted frame around it just looks like a mistake. */
+
+.saver {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: #07080A;
+  overflow: hidden;
+  cursor: none;
+}
+
+.saver[hidden] { display: none; }
+
+/* Two layers, one fading into the other. The outgoing layer keeps its image
+   until the fade finishes, so there is never a flash of the background. */
+.sv-layer {
+  position: absolute;
+  inset: 0;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  opacity: 0;
+  transition: opacity 1.2s ease;
+  will-change: opacity, transform;
+}
+
+.sv-layer.is-on { opacity: 1; }
+
+/* A very slow drift — six percent over a whole slide. Enough that the wall
+   is alive, far too slow to read as an animation. Off entirely for anyone
+   who has asked the system for less motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .sv-layer.is-on { animation: sv-drift linear forwards; }
+}
+
+@keyframes sv-drift {
+  from { transform: scale(1); }
+  to   { transform: scale(1.06); }
+}
+
+.sv-scrim {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 46%;
+  background: linear-gradient(180deg, rgba(6, 8, 11, 0) 0%,
+              rgba(6, 8, 11, 0.34) 46%, rgba(6, 8, 11, 0.78) 100%);
+  pointer-events: none;
+}
+
+.sv-foot {
+  position: absolute;
+  inset: auto 0 0 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 2rem;
+  padding: 0 3.5rem 3rem;
+  pointer-events: none;
+}
+
+.sv-clock {
+  font-family: var(--mono);
+  font-weight: 400;
+  font-size: 6.5rem;
+  line-height: 0.94;
+  letter-spacing: -0.035em;
+  color: #FFFFFF;
+  text-shadow: 0 2px 24px rgba(0, 0, 0, 0.5);
+}
+
+.sv-clock i {
+  font-style: normal;
+  font-size: 0.28em;
+  letter-spacing: 0.1em;
+  margin-left: 0.35em;
+  vertical-align: 0.5em;
+}
+
+.sv-date {
+  margin-top: 0.75rem;
+  font-size: 1rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.78);
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.5);
+}
+
+/* the next-up chip: a smoked pane rather than a card, so the photograph is
+   still doing the work behind it */
+.sv-next {
+  display: none;
+  align-items: center;
+  gap: 0.875rem;
+  max-width: 40vw;
+  padding: 0.875rem 1.25rem;
+  border-radius: 999px;
+  /* No backdrop-filter. This chip sits on top of .sv-layer, which is scaling
+     and fading the whole time the frame is up, so a blur here made the tablet
+     re-filter a full-screen photograph every frame all night — the single most
+     expensive thing the panel could be asked to do. A heavier ground reads the
+     same against a photo and costs nothing. */
+  background: rgba(12, 14, 18, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #FFFFFF;
+}
+
+.sv-next.is-on { display: inline-flex; }
+
+.sv-next .dot {
+  flex: 0 0 auto;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  background: var(--c, #FFFFFF);
+}
+
+.sv-next .t {
+  font-family: var(--mono);
+  font-size: 1.0625rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+.sv-next .n {
+  font-size: 1.0625rem;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sv-next .w {
+  font-size: 0.75rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.62);
+  white-space: nowrap;
+}
+
+/* the dismissing tap: fade out, but keep swallowing input until it is gone,
+   so the tap that woke the panel never also presses something */
+.saver.is-going { opacity: 0; transition: opacity 0.22s ease; }
+
+@media (orientation: portrait) {
+  .sv-foot {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1.25rem;
+    padding: 0 1.75rem 2.25rem;
+  }
+  .sv-clock { font-size: 4.75rem; }
+  .sv-next { max-width: 100%; }
+}
+
+/* sleep overlay */
+
+.sleep {
+  position: fixed;
+  inset: 0;
+  background: var(--night);
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  color: #4A525E;
+}
+
+.sleep[hidden] { display: none; }
+[hidden] { display: none !important; }
+
+.sleep-clock {
+  font-family: var(--mono);
+  font-weight: 400;
+  font-size: 8rem;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  text-align: center;
+}
+
+.sleep-clock i {
+  font-style: normal;
+  font-size: 0.3em;
+  letter-spacing: 0.1em;
+  margin-left: 0.35em;
+  vertical-align: 0.35em;
+}
+
+.sleep-date {
+  font-size: 1rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  text-align: center;
+  margin-top: 1rem;
+  color: #3A414B;
+}
+
+/* ------------------------------------------------------------- recipes --- */
+
+.rp-bar {
+  display: flex;
+  gap: 0.625rem;
+  align-items: center;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.rp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 0.875rem;
+}
+
+.rp-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 8.5rem;
+  padding: 0;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--card);
+  text-align: left;
+  overflow: hidden;
+}
+
+.rp-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4375rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0.8125rem 1rem 0.875rem;
+}
+
+/* photo zone: 4:3, cover-fit, and the card's own radius at the top corners.
+   The illustrated tile is drawn underneath every photo, so a cached image
+   that has gone missing degrades to the drawing rather than a broken icon. */
+.rp-media {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  flex: 0 0 auto;
+  background: var(--card-2);
+  border-bottom: 1px solid var(--hair-2);
+  overflow: hidden;
+}
+
+.rp-media > svg,
+.rp-media > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+/* the detail sheet leads with the photo — wide, and taller on a phone */
+.rp-hero {
+  aspect-ratio: 16 / 7;
+  max-height: 20rem;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  margin-bottom: 1.25rem;
+}
+
+.rp-h { font-size: 1.75rem; font-weight: 700; line-height: 1.15; }
+.rp-note { margin-top: 1.25rem; font-size: 1rem; }
+
+/* imported recipes wear the warm dinner tint so the two kinds read apart */
+.rp-card.is-imported {
+  border-color: var(--dinner-edge);
+  background: linear-gradient(150deg, var(--dinner-a) 0%, var(--dinner-b) 72%);
+}
+.rp-card.is-imported .rp-media { border-bottom-color: var(--dinner-edge); }
+
+.rp-name { font-size: 1.0625rem; font-weight: 700; line-height: 1.2; }
+.rp-notes {
+  font-size: 0.8125rem;
+  color: var(--ink-2);
+  line-height: 1.35;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.rp-chips { display: flex; gap: 0.375rem; flex-wrap: wrap; margin-top: auto; padding-top: 0.25rem; }
+
+.rp-badge {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  align-self: flex-start;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  background: var(--hero);
+  color: var(--on-accent);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.rp-url {
+  min-height: var(--tap-lg);
+  font-family: var(--mono);
+  font-size: 1.0625rem;
+  padding: 0 1rem;
+}
+
+.rp-source-note {
+  margin-top: 1rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--dinner-edge);
+  border-radius: var(--radius-s);
+  background: linear-gradient(150deg, var(--dinner-a) 0%, var(--dinner-b) 72%);
+}
+.rp-source-note .k {
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--hero);
+  font-weight: 700;
+}
+.rp-source-note .v {
+  font-family: var(--mono);
+  font-size: 0.9375rem;
+  color: var(--ink-2);
+  margin-top: 0.25rem;
+  word-break: break-all;
+}
+
+.err-note {
+  margin-top: 0.875rem;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius-s);
+  color: var(--warn);
+  font-size: 0.9375rem;
+}
+
+.ing-list { columns: 2; column-gap: 2rem; }
+.ing-list li {
+  font-size: 1rem;
+  padding: 0.3125rem 0;
+  border-bottom: 1px solid var(--hair-2);
+  break-inside: avoid;
+}
+
+/* the method: numbered in the mono face, set loose enough to follow with wet
+   hands from half a metre away — this is what the panel is for at 6pm */
+.step-list { display: flex; flex-direction: column; gap: 0.875rem; margin-top: 0.375rem; }
+
+.step-list li { display: flex; gap: 0.875rem; align-items: baseline; }
+
+.step-list .sn {
+  flex: 0 0 auto;
+  width: 1.5rem;
+  text-align: right;
+  font-family: var(--mono);
+  font-feature-settings: 'tnum' 1;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--hero);
+}
+
+.step-list .st { font-size: 1rem; line-height: 1.6; }
+
+/* ------------------------------------------------------ whole-house aircon */
+/* One row per Sensibo: name and mode on the left, the room's real temperature
+   in the middle at reading-across-the-kitchen size, the setpoint stepper
+   (which acts on the first tap) and the on/off (which does not). */
+
+.cl-list { display: flex; flex-direction: column; gap: 0.75rem; }
+
+.cl-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--hair);
+  border-left: 3px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--card-2);
+}
+.cl-row.is-on { border-left-color: var(--ok); }
+
+.cl-name { font-size: 1.25rem; font-weight: 700; line-height: 1.15; }
+
+.cl-mode {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.25rem;
+  font-size: 0.8125rem;
+  color: var(--ink-3);
+}
+.cl-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--hair); flex: 0 0 auto; }
+.cl-row.is-on .cl-dot { background: var(--ok); }
+
+.cl-now { text-align: center; }
+.cl-now .v {
+  font-family: var(--mono);
+  font-size: 2.25rem;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.cl-now .k,
+.cl-sp .k {
+  margin-top: 0.3125rem;
+  font-size: 0.625rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.cl-set { display: flex; align-items: center; gap: 0.625rem; }
+.cl-sp { text-align: center; min-width: 3.25rem; }
+.cl-sp .v { font-family: var(--mono); font-size: 1.625rem; font-weight: 600; line-height: 1; color: var(--hero); }
+
+.t-btn.cl-step {
+  flex: 0 0 auto;
+  width: var(--tap-lg);
+  height: var(--tap-lg);
+  font-family: var(--mono);
+  font-size: 1.5rem;
+}
+
+.t-btn.cl-pow { min-width: 8rem; min-height: var(--tap-lg); }
+.cl-ro { font-size: 0.8125rem; }
+.cl-foot { font-size: 0.8125rem; margin-top: 1rem; }
+
+/* the tile itself is a read-out that opens the sheet */
+.tile.is-climate { cursor: pointer; }
+.tile.is-climate .t-more {
+  margin-top: auto;
+  padding-top: 0.375rem;
+  font-size: 0.6875rem;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+}
+
+/* the select chevron has to invert with the theme */
+html[data-theme="night"] select.inp {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23B3AC9F' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+}
+
+/* ------------------------------------------------------ now playing ------ */
+/* The media tile, blown up to be read and driven from across the room. */
+
+.tile.is-media { cursor: pointer; }
+
+.np {
+  position: relative;
+  width: min(56rem, 92vw);
+  max-height: 92vh;
+  overflow: auto;
+  display: grid;
+  grid-template-columns: 17rem minmax(0, 1fr);
+  gap: 2.25rem;
+  padding: 2.25rem;
+  background: var(--paper);
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+}
+
+.np-close { position: absolute; top: 1rem; right: 1rem; }
+
+.np-art {
+  width: 17rem; height: 17rem;
+  border-radius: var(--radius);
+  background: var(--card-2);
+  border: 1px solid var(--hair);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  position: relative;
+}
+
+.np-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.np-disc { position: relative; width: 90%; }
+.np-disc svg { display: block; width: 100%; height: auto; }
+.np-disc .np-vinyl { fill: var(--np-vinyl); }
+.np-disc .np-spindle { fill: var(--card); }
+.np-disc.is-spin svg { animation: np-spin 9s linear infinite; transform-origin: 50% 50%; }
+
+.np-glyph { color: var(--ink-3); opacity: 0.5; }
+.np-glyph svg { width: 5rem; height: 5rem; }
+
+@keyframes np-spin { to { transform: rotate(360deg); } }
+
+.np-info { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+
+.np-label {
+  font-size: 0.75rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.np-title {
+  font-size: 2.5rem;
+  font-weight: 700;
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  margin-top: 0.5rem;
+}
+
+.np-artist { font-size: 1.25rem; color: var(--ink-2); margin-top: 0.375rem; }
+.np-ro { margin-top: 1.5rem; font-size: 0.9375rem; }
+
+.np-transport { display: flex; align-items: center; gap: 0.75rem; padding-top: 1.5rem; }
+
+/* skip keys flank the transport — same height as play, deliberately quieter */
+.np-skip {
+  flex: 0 0 auto;
+  width: var(--tap-lg);
+  height: 4.5rem;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--ink);
+  display: grid;
+  place-items: center;
+}
+.np-skip svg { width: 1.5rem; height: 1.5rem; }
+
+.np-play {
+  min-height: 4.5rem;
+  min-width: 11rem;
+  padding: 0 2rem;
+  border: 1px solid var(--fill);
+  border-radius: var(--radius);
+  background: var(--fill);
+  color: var(--on-fill);
+  font-family: var(--sans);
+  font-size: 1.25rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+}
+.np-play svg { width: 1.75rem; height: 1.75rem; }
+
+.np-vol { display: flex; align-items: center; gap: 0.75rem; margin-top: 1.25rem; }
+
+.np-vbtn {
+  flex: 0 0 auto;
+  width: var(--tap-lg); height: var(--tap-lg);
+  /* the global button reset is text-align:left with no padding, so a square
+     button has to centre its own glyph — otherwise − and + sit hard against
+     the left edge */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 1.75rem;
+  line-height: 1;
+}
+
+.np-bar {
+  flex: 1 1 auto;
+  height: 1.25rem;
+  border-radius: 0.625rem;
+  background: var(--hair-2);
+  border: 1px solid var(--hair);
+  overflow: hidden;
+  min-width: 4rem;
+}
+.np-bar i { display: block; height: 100%; background: var(--hero); }
+.np-pct { flex: 0 0 auto; font-size: 1rem; color: var(--ink-2); min-width: 3.25rem; text-align: right; }
+
+/* --- "Play something": the speaker's own favourites as big touch rows --- */
+
+.np-sources {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin-top: 1.5rem;
+  padding-top: 1.125rem;
+  border-top: 1px solid var(--hair);
+}
+
+.np-sec {
+  font-size: 0.75rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: 0.625rem;
+  flex: 0 0 auto;
+}
+
+.np-none { font-size: 0.9375rem; }
+
+.np-src-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.5rem;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--hair) transparent;
+}
+
+.np-src {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: var(--tap-lg);
+  padding: 0 0.875rem;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--ink);
+}
+
+.np-src-ic { flex: 0 0 auto; color: var(--ink-3); display: grid; place-items: center; }
+.np-src-ic svg { width: 1.375rem; height: 1.375rem; display: block; }
+.np-src-n {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 1.0625rem;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.np-src-tag {
+  flex: 0 0 auto;
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.np-src-tag.is-on { color: var(--hero); font-weight: 700; }
+
+.np-src.is-on { border-color: var(--hero); background: var(--chore-star-bg); }
+.np-src.is-on .np-src-ic { color: var(--hero); }
+.np-src.is-starting { border-color: var(--ink-3); opacity: 0.75; }
+
+/* ------------------------------------------------------- power flow ------ */
+/* The solar overlay: a diamond of four nodes with the live arms carrying
+   dashes in the direction the power is going. Sun-sourced arms take --star,
+   anything to or from the battery takes --ok, the grid stays neutral. */
+
+.pf {
+  position: relative;
+  width: min(61rem, 93vw);
+  max-height: 92vh;
+  overflow: auto;
+  display: grid;
+  grid-template-columns: 25rem minmax(0, 1fr);
+  gap: 2rem;
+  padding: 2.25rem;
+  background: var(--paper);
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+}
+
+.pf-close { position: absolute; top: 1rem; right: 1rem; }
+
+.pf-diagram {
+  background: var(--card);
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  padding: 0.625rem 0.375rem 0.25rem;
+  display: grid;
+  place-items: center;
+}
+.pf-svg { display: block; width: 100%; height: auto; color: var(--ink-2); }
+.pf-svg.is-ghost { opacity: 0.38; }
+
+/* nodes */
+.pf-ring { fill: var(--card-2); stroke: var(--hair); stroke-width: 1.6; }
+.pf-node { color: var(--ink-3); }
+.pf-node.is-on { color: var(--ink); }
+.pf-node.is-on .pf-ring { stroke: var(--ink-3); }
+#pfN_solar.is-on { color: var(--star); }
+#pfN_solar.is-on .pf-ring { stroke: var(--star); }
+#pfN_bat.is-chg { color: var(--ok); }
+#pfN_bat.is-chg .pf-ring { stroke: var(--ok); }
+.pf-gl { stroke: currentColor; fill: none; }
+.pf-nlab {
+  font-family: var(--sans); font-size: 13px; font-weight: 500;
+  letter-spacing: 0.04em; fill: var(--ink-2); stroke: none;
+}
+.pf-node.is-on .pf-nlab { fill: var(--ink); }
+
+/* the battery cell + its fill level */
+.pf-cell { fill: var(--card); stroke: var(--ink-3); stroke-width: 1.7; }
+.pf-cap { fill: var(--ink-3); stroke: none; }
+.pf-fill { fill: var(--ok); stroke: none; opacity: 0.85; }
+
+/* arms */
+.pf-arm { --pf-c: var(--ink-3); }
+.pf-arm.f-sun { --pf-c: var(--star); }
+.pf-arm.f-bat { --pf-c: var(--ok); }
+.pf-arm.f-grid { --pf-c: var(--ink-2); }
+/* selling out of the battery after dark — see paintSolar() */
+.pf-arm.f-sun.is-alt { --pf-c: var(--ok); }
+
+.pf-path { fill: none; stroke: var(--hair); stroke-width: 1.6; }
+.pf-arrow { fill: var(--pf-c); stroke: none; opacity: 0; }
+.pf-lab { opacity: 0; }
+.pf-lab rect { fill: var(--card); stroke: none; }
+.pf-lab text {
+  font-family: var(--mono); font-size: 12.5px; font-weight: 600;
+  fill: var(--ink-2); stroke: none;
+}
+
+.pf-arm.is-live .pf-path {
+  stroke: var(--pf-c);
+  stroke-width: 3.25;
+  stroke-dasharray: 9 12;
+  animation: pf-dash 1.15s linear infinite;
+}
+.pf-arm.is-live .pf-arrow { opacity: 1; }
+.pf-arm.is-live .pf-lab { opacity: 1; }
+.pf-arm.is-live .pf-lab text { fill: var(--ink); }
+
+@keyframes pf-dash { to { stroke-dashoffset: -21; } }
+
+/* figures */
+.pf-side { display: flex; flex-direction: column; min-width: 0; }
+.pf-title {
+  font-size: 0.75rem; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--ink-3); padding-right: 3rem;
+}
+/* the figures carry the same height as the diagram beside them, so the
+   overlay reads as two halves of one object rather than a drawing with a
+   list stuck next to it */
+.pf-figs {
+  display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 1fr;
+  gap: 0.75rem; margin-top: 0.875rem; flex: 1 1 auto;
+}
+.pf-fig {
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--card);
+  padding: 0.875rem 1.125rem;
+  min-width: 0;
+  display: flex; flex-direction: column; justify-content: center;
+}
+.pf-fig .k {
+  font-size: 0.6875rem; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink-3);
+}
+.pf-fig .v {
+  font-size: 2.125rem; font-weight: 600; letter-spacing: -0.02em;
+  line-height: 1.15; margin-top: 0.25rem; color: var(--ink);
+}
+.pf-fig .s { font-size: 0.875rem; color: var(--ink-2); margin-top: 0.25rem; }
+#pfF_pv.is-on .v { color: var(--star); }
+#pfF_bat.is-on .v { color: var(--ok); }
+#pfF_grid.is-on { border-color: var(--hair); }
+
+.pf-note { font-size: 0.8125rem; color: var(--ink-3); margin-top: auto; padding-top: 1rem; }
+.pf-note.is-warn { color: var(--warn); font-size: 0.9375rem; }
+
+/* ------------------------------------------------------ month day peek --- */
+
+.scrim.plain { display: block; }
+
+.peek {
+  position: fixed;
+  width: min(24rem, 92vw);
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.peek-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid var(--hair);
+}
+.peek-head .spacer { flex: 1 1 auto; }
+.peek-dow { font-size: 1.0625rem; font-weight: 700; letter-spacing: -0.01em; }
+.peek-date { font-size: 0.8125rem; color: var(--ink-3); }
+.peek-head .close-x { width: 2.25rem; height: 2.25rem; }
+.peek-head .close-x svg { width: 1rem; height: 1rem; }
+
+.peek-body { padding: 0.25rem 1rem; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+
+.peek-ev {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0.375rem 0;
+  text-align: left;
+}
+.peek-ev + .peek-ev { border-top: 1px solid var(--hair-2); }
+.peek-ev .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c); flex: 0 0 auto; }
+.peek-ev .t { font-size: 0.8125rem; color: var(--c-ink, var(--ink-2)); flex: 0 0 5rem; }
+.peek-ev .n { font-size: 0.9375rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.peek-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--hair);
+}
+
+/* --------------------------------------------------------- chore defs ---- */
+
+.chore-def { cursor: pointer; }
+.chore-def .cd-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c); flex: 0 0 auto; }
+.chore-def .cd-edit {
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.chore-def.is-arm { background: var(--arm); border-radius: var(--radius-s); }
+
+/* a list the family made themselves can be held down and deleted */
+.lbl.holdable { display: inline-flex; align-items: baseline; gap: 0.5rem; padding: 0.125rem 0.25rem; margin-left: -0.25rem; border-radius: var(--radius-s); }
+.lbl.holdable.is-arm { background: var(--arm); }
+.hold-hint { font-size: 0.625rem; letter-spacing: 0.08em; color: var(--ink-3); text-transform: none; }
+
+/* ---------------------------------------------------------- more sheet --- */
+/* Portrait's overflow drawer. Rows, not a grid of little buttons — it is
+   read one-handed with a thumb. */
+
+.more-grid { display: flex; flex-direction: column; gap: 0.625rem; }
+
+.more-row {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.1875rem;
+  width: 100%;
+  min-height: 4rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+.more-n { font-size: 1.125rem; font-weight: 500; }
+.more-s { font-size: 0.8125rem; color: var(--ink-3); }
+.more-badge { color: var(--warn); font-weight: 700; }
+
+/* ------------------------------------------------------------- assist ---- */
+/* A conversation, not a console: bubbles in the body, the tap-to-talk key
+   under them, and the text field permanently in the foot — typing is a first
+   way in, not a consolation prize when the microphone is missing. */
+
+.rb-ic { display: inline-flex; }
+.rb-ic svg { width: 1.125rem; height: 1.125rem; }
+
+/* the sheet body becomes the column: transcript takes whatever room is
+   going, the key sits just above the foot where a thumb expects it */
+.as-scrim .sheet-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.as-log {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  flex: 1 1 auto;
+  min-height: 8rem;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.as-empty {
+  color: var(--ink-3);
+  font-size: 0.9375rem;
+  margin: auto 0;
+  text-align: center;
+  padding: 2rem 1rem;
+}
+
+.as-b {
+  max-width: 78%;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius);
+  font-size: 1rem;
+  line-height: 1.45;
+  border: 1px solid var(--hair-2);
+  background: var(--card);
+  box-shadow: var(--lift);
+}
+
+.as-b p { margin: 0; }
+
+.as-b.is-you {
+  align-self: flex-end;
+  background: var(--fill);
+  border-color: var(--fill);
+  color: var(--on-fill);
+  border-bottom-right-radius: 4px;
+}
+
+.as-b.is-panel {
+  align-self: flex-start;
+  border-bottom-left-radius: 4px;
+}
+
+.as-b.is-warn {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+/* what the microphone thought it heard — said back plainly, quieter than a
+   line somebody actually typed */
+.as-b.is-heard {
+  background: var(--card-2);
+  border-color: var(--hair);
+  color: var(--ink-2);
+}
+
+.as-tag {
+  display: block;
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin-bottom: 0.25rem;
+}
+
+.as-key-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 0 0 auto;
+  margin-top: 1.75rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--hair-2);
+}
+
+.as-key {
+  position: relative;
+  width: 8.5rem;
+  height: 8.5rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--card);
+  border: 1px solid var(--hair);
+  color: var(--ink);
+  box-shadow: var(--lift);
+}
+
+.as-key svg { width: 3rem; height: 3rem; position: relative; }
+
+.as-key.is-live {
+  background: var(--fill);
+  border-color: var(--fill);
+  color: var(--on-fill);
+}
+
+/* the pulse only exists while it is actually listening — a ring that breathes
+   at rest would just be noise on a kitchen wall */
+.as-ring {
+  position: absolute;
+  inset: -0.5rem;
+  border-radius: 50%;
+  border: 2px solid var(--fill);
+  opacity: 0;
+}
+
+.as-key.is-live .as-ring { animation: as-pulse 1.6s ease-out infinite; }
+
+@keyframes as-pulse {
+  0%   { transform: scale(0.92); opacity: 0.55; }
+  100% { transform: scale(1.22); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .as-key.is-live .as-ring { animation: none; opacity: 0.55; }
+}
+
+.as-key.is-busy { opacity: 0.6; }
+.as-key[disabled] { opacity: 0.45; }
+
+.as-hint {
+  font-size: 0.875rem;
+  color: var(--ink-3);
+  text-align: center;
+  max-width: 24rem;
+  margin: 0;
+}
+
+.as-form {
+  display: flex;
+  gap: 0.625rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.as-form .inp { flex: 1 1 auto; min-width: 0; }
+
+/* -------------------------------------------------------- skin picker ---- */
+/* Five cards, each a miniature of its own skin: ground, card, hero, in that
+   order, drawn with the skin's real token values. Tap applies instantly —
+   there is nothing to confirm about a colour you can change back. */
+
+.skin-pick {
+  display: grid;
+  /* five across on the landscape sheet, two across on a phone — auto-fit does
+     both from the one rule */
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: 0.625rem;
+}
+
+.skin-sw {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 0.5rem 0.5rem 0.625rem;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius-s);
+  background: var(--card);
+  min-height: var(--tap-lg);
+}
+
+.skin-sw.is-on {
+  border-color: var(--fill);
+  box-shadow: 0 0 0 2px var(--fill) inset;
+}
+
+.skin-bands {
+  display: flex;
+  height: 2.75rem;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--card-edge);
+}
+.skin-bands i { display: block; }
+.skin-bands i:nth-child(1) { flex: 1.4 1 0; background: var(--sw-1); }
+.skin-bands i:nth-child(2) { flex: 1.4 1 0; background: var(--sw-2); }
+.skin-bands i:nth-child(3) { flex: 1 1 0;   background: var(--sw-3); }
+
+.skin-n { font-size: 0.9375rem; font-weight: 600; }
+.skin-s { font-size: 0.75rem; color: var(--ink-3); }
+
+/* ------------------------------------------------------- sync status ----- */
+
+.sync-list { display: flex; flex-direction: column; }
+
+.sync-row {
+  display: grid;
+  grid-template-columns: 0.75rem minmax(6rem, 11rem) 6.5rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--hair-2);
+}
+.sync-row:first-child { border-top: 0; }
+.sync-row .n { font-size: 0.9375rem; font-weight: 500; }
+.sync-row .t { font-size: 0.8125rem; color: var(--ink-2); }
+.sync-row .d {
+  font-size: 0.8125rem;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sync-row .d.is-fail { color: var(--warn); }
+.sync-row.is-feed .n { padding-left: 0.75rem; font-weight: 400; }
+
+.sync-row .sd { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--ink-3); }
+.sync-row .sd.is-ok { background: var(--ok); }
+.sync-row .sd.is-fail { background: var(--warn); }
+.sync-row .sd.is-idle { background: var(--hair); }
+
+.sync-sub {
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  margin: 0.875rem 0 0.25rem;
+}
+
+/* ------------------------------------------------------------ PIN pad ---- */
+
+.pinpad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.625rem;
+  max-width: 20rem;
+  padding: 0.375rem;
+  margin: -0.375rem;
+  border-radius: var(--radius);
+}
+.pinpad.is-wrong { animation: pin-shake 0.45s ease; }
+.pin-wrong { color: var(--warn); font-size: 1rem; }
+
+@keyframes pin-shake {
+  0%, 100% { transform: translateX(0); }
+  15% { transform: translateX(-9px); }
+  30% { transform: translateX(8px); }
+  45% { transform: translateX(-6px); }
+  60% { transform: translateX(4px); }
+  80% { transform: translateX(-2px); }
+}
+
+/* ------------------------------------------------------- reduced motion -- */
+
+@media (prefers-reduced-motion: reduce) {
+  .spine-now { transition: none; }
+  .wg-now { transition: none; }
+  .burst { display: none; }
+  .tick, .switch .track::after { transition: none; }
+  html.theme-fading, html.theme-fading * { transition: none !important; }
+  * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; }
+  /* no shake and no spinning record — the wrong PIN says so with a border */
+  .pinpad.is-wrong { box-shadow: inset 0 0 0 2px var(--warn); }
+  .np-disc.is-spin svg { animation: none !important; }
+  /* the power-flow dashes stop; the arrowheads already say which way it
+     is going, so the diagram loses nothing but the movement */
+  .pf-arm.is-live .pf-path { animation: none !important; stroke-dasharray: none; }
+}
+
+/* ------------------------------------------------- narrow / short screens */
+
+@media (max-width: 1500px) {
+  :root { --rail: 17.5rem; --side: 22rem; }
+  .rail { padding: 1.25rem 1rem 1rem; }
+  .stage { padding: 1rem; }
+  .rail-day { font-size: 8rem; }
+  .imp-ev { grid-template-columns: var(--tap) minmax(0, 1fr) 10rem; }
+}
+
+@media (max-height: 860px) {
+  .rail-day { font-size: 7rem; }
+  .spine { margin: 1rem 0 0.875rem; }
+  .today { gap: 0.75rem; }
+  .card { padding: 0.875rem 1rem; }
+  .tile { min-height: 5rem; }
+
+  /* the weather card gives its height back to the chores list */
+  .card.wx { padding: 0; }
+  .wx-sky { padding: 0.75rem 1rem 0.5rem; }
+  .wx-body { padding: 0.625rem 1rem 0.75rem; }
+  .wx-arc { --arch: 1.5rem; height: calc(var(--arch) + 0.875rem); margin-top: 0; }
+  .wx-week { margin-top: 0.5rem; padding-top: 0.5rem; }
+  .wx-temp { font-size: 2.5rem; }
+  .wx-glyph svg { width: 2.5rem; height: 2.5rem; }
+  .chore-person { padding: 0.5rem 0.625rem 0.375rem; }
+  .np { grid-template-columns: 13rem minmax(0, 1fr); gap: 1.75rem; padding: 1.75rem; }
+  .np-art { width: 13rem; height: 13rem; }
+  .np-title { font-size: 2rem; }
+  .pf { grid-template-columns: 21rem minmax(0, 1fr); gap: 1.5rem; padding: 1.75rem; }
+  .pf-fig .v { font-size: 1.875rem; }
+}
+
+/* 1280x800 and other 800-tall panels: the sky zone costs the chores card a
+   row, so the arc folds flat to a line of text and the 7-day strip tightens.
+   The Today grid gives every pixel it frees straight to the chores list. */
+@media (max-height: 820px) {
+  .wx-arc {
+    --arch: 0px;
+    height: auto;
+    margin: 0.375rem 0 0;
+    display: flex;
+    gap: 1rem;
+    align-items: baseline;
+  }
+  .wx-arc svg, .wx-arc .sun { display: none; }
+  .wx-arc .end { position: static; }
+  .wx-arc .end i {
+    display: inline;
+    font-family: var(--sans);
+    font-style: normal;
+    font-size: 0.625rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-right: 0.375rem;
+  }
+
+  .wx-sky { padding: 0.5rem 0.875rem 0.4375rem; }
+  .wx-now { gap: 0.75rem; }
+  .wx-temp { font-size: 2.125rem; }
+  .wx-glyph svg { width: 2.125rem; height: 2.125rem; }
+  .wx-meta { font-size: 0.8125rem; }
+  .wx-body { padding: 0.4375rem 0.875rem 0.5rem; }
+  .wx-stats { gap: 0.875rem; }
+  .wx-stat .k { font-size: 0.625rem; }
+  .wx-stat .v { font-size: 0.9375rem; }
+  .wx-week { margin-top: 0.375rem; padding-top: 0.375rem; }
+  .wx-day svg { width: 1.125rem; height: 1.125rem; margin: 0 auto; }
+  .wx-day .wd { font-size: 0.625rem; }
+  /* the two temperatures share a line instead of stacking */
+  .wx-day .hi, .wx-day .lo { display: inline; font-size: 0.75rem; }
+  .wx-day .lo { font-size: 0.6875rem; margin-left: 0.1875rem; }
+
+  /* the rest of the Today grid gives up its slack in the same pass */
+  .today { gap: 0.625rem; }
+  .a-tomorrow { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+  .tmw-item { min-height: 2.25rem; }
+  .a-dinner { padding-top: 0.625rem; padding-bottom: 0.625rem; }
+  .a-dinner .card-head { margin-bottom: 0.375rem; }
+  .dinner-name { font-size: 1.375rem; }
+  .dinner-sub { font-size: 0.8125rem; }
+  .a-ha { padding: 0.5rem 0.875rem; }
+  .tile { min-height: 4.5rem; padding: 0.5rem 0.75rem; }
+  /* volume lives in the now-playing overlay on a short screen — the read-out
+     and, now the row carries more tiles, the two steppers with it */
+  .tile .vol-wrap { display: none; }
+  .tile.is-media .t-btn.vol { display: none; }
+
+  /* and it all lands here */
+  .a-chores { padding: 0.5rem 0.75rem; }
+  .a-chores .card-head { margin-bottom: 0.375rem; }
+  .a-chores .scroll.can-scroll {
+    -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 0.75rem), transparent 100%);
+    mask-image: linear-gradient(180deg, #000 calc(100% - 0.75rem), transparent 100%);
+  }
+  /* the tick stays a 48 px target — the height comes out of the padding */
+  .chore.compact { padding: 0; }
+  .chore-head { margin-bottom: 0.125rem; }
+  .chore-person { padding: 0.3125rem 0.5rem 0.125rem; }
+  .chore-person + .chore-person { margin-top: 0.375rem; }
+  .dinner-meta { margin-top: 0.375rem; }
+}
+
+/* =========================================================================
+   PORTRAIT / PHONE — the companion mode.
+
+   The panel proper is a landscape kiosk: two columns, nothing scrolls, type
+   sized off the viewport. On a phone held upright (and on a tablet turned
+   sideways) that is unusable, so everything below rebuilds the same app as a
+   single scrolling column with a top bar and a bottom tab bar. Nothing here
+   applies in landscape above 700 px, which is why the kiosk is untouched.
+
+   Portrait-only markup — the Today date strip, the meal-cell day labels, the
+   More tab — is drawn by the JS unconditionally and hidden here by default.
+   ========================================================================= */
+
+.pd-strip, .pd-chips, .meal-day, .tab-more { display: none; }
+
+@media (orientation: portrait), (max-width: 700px) {
+
+  /* the vw/vh clamp shrinks type to nothing on a phone: fix the base */
+  html { font-size: 15px; }
+
+  body {
+    height: auto;
+    min-height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+  }
+
+  .app {
+    display: block;
+    height: auto;
+    min-height: 100vh;
+    width: auto;
+  }
+
+  /* ---- the rail collapses to a top bar ---- */
+
+  .rail {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 34;
+    height: 3.5rem;
+    min-height: 0;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0 0.875rem;
+    border-right: 0;
+  }
+
+  /* the busy bar lies down along the top bar's bottom edge. Same proportions,
+     no initials — at 4 px they would only be noise. */
+  .fam-strip {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: auto;
+    height: 4px;
+    flex-direction: row;
+    gap: 2px;
+  }
+
+  .fam-seg { min-height: 0; min-width: 8px; border-radius: 2px; }
+  .fam-seg .fam-i { display: none; }
+
+  .rail-date { display: flex; align-items: baseline; gap: 0.4375rem; min-width: 0; }
+  .rail-weekday { font-size: 0.8125rem; letter-spacing: 0.18em; }
+  .rail-day {
+    font-size: 1.5rem;
+    line-height: 1;
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+  .rail-month { font-size: 0.8125rem; letter-spacing: 0.18em; margin: 0; }
+  .rail-full { display: none; }
+
+  /* the now-line spine is a landscape flourish — it has no room here */
+  .spine { display: none; }
+
+  .rail-foot {
+    flex-direction: row;
+    align-items: center;
+    margin-left: auto;
+    min-width: 0;
+  }
+  .rail-btn { display: none; }         /* magic import moves into More */
+  .sync-note { padding: 0; font-size: 0.6875rem; white-space: nowrap; }
+
+  /* ---- the tabs become a bottom bar ---- */
+
+  .tabs {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 35;
+    display: flex;
+    gap: 0;
+    margin: 0;
+    background: var(--rail-bg);
+    border-top: 1px solid var(--hair);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .tab {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 3.25rem;
+    justify-content: center;
+    padding: 0 0.125rem;
+    border: 0;
+    border-radius: 0;
+    font-size: 0.75rem;
+    text-align: center;
+    color: var(--ink-3);
+  }
+
+  .tab.is-on {
+    background: none;
+    color: var(--hero);
+    box-shadow: inset 0 3px 0 var(--hero);
+  }
+
+  /* Day, Month and Add live behind More on a phone */
+  .tab-day, .tab-month, .tab-add { display: none; }
+  .tab-more { display: flex; position: relative; }
+
+  /* the thumb order, not the rail order: the week's cooking beats the admin */
+  .tab-today  { order: 1; }
+  .tab-week   { order: 2; }
+  .tab-meals  { order: 3; }
+  .tab-chores { order: 4; }
+  .tab-lists  { order: 5; }
+  .tab-more   { order: 6; }
+
+  .tab-badge {
+    position: absolute;
+    top: 0.3125rem;
+    right: 0.375rem;
+    min-width: 1.125rem;
+    height: 1.125rem;
+    padding: 0 0.25rem;
+    border-radius: 999px;
+    background: var(--warn);
+    color: var(--on-accent);
+    font-size: 0.625rem;
+    display: grid;
+    place-items: center;
+  }
+
+  /* ---- the stage becomes the page ---- */
+
+  .stage {
+    height: auto;
+    overflow: visible;
+    padding: 4.25rem 0.75rem calc(4.75rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .view, .stack, .today, .cols { height: auto; min-height: 0; }
+
+  /* cards grow to their content instead of scrolling inside themselves */
+  .scroll, .wk-body, .tmw-list { overflow: visible; max-height: none; }
+  .a-chores .scroll.can-scroll {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .tmw-list { flex-wrap: wrap; -webkit-mask-image: none; mask-image: none; }
+
+  .hdr { flex-wrap: wrap; gap: 0.5rem; }
+  .hdr h2 { font-size: 1.375rem; }
+  .hdr .sub:not(.mono) { display: none; }   /* the how-to prose, not the dates */
+
+  /* ---- Today, stacked in the order the morning is actually read ---- */
+
+  .today {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .pd-strip {
+    display: flex;
+    align-items: baseline;
+    gap: 0.625rem;
+    flex-wrap: wrap;
+  }
+  .pd-dow { font-size: 1.375rem; font-weight: 700; letter-spacing: -0.01em; }
+  .pd-date { font-size: 0.875rem; color: var(--ink-3); }
+  .pd-chips { display: block; }
+
+  .a-sched    { order: 3; }
+  .a-tomorrow { order: 4; }
+  .a-dinner   { order: 5; }
+  .a-chores   { order: 6; }
+  .a-weather  { order: 7; }
+  .a-ha       { order: 8; }
+  .pd-strip   { order: 1; }
+  .pd-chips   { order: 2; }
+
+  /* the chips already sit at the top of the column; the copy inside the
+     schedule card's head would only repeat them */
+  .a-sched .card-head .chips { display: none; }
+
+  .a-tomorrow { padding: 0.875rem 1rem; }
+  .tmw { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+  .tmw .lbl { width: auto; }
+
+  .ev { grid-template-columns: 5px 4.5rem minmax(0, 1fr); gap: 0 0.75rem; }
+  .ev-who { display: none; }           /* the colour bar already says who */
+  .ev-title { font-size: 1rem; white-space: normal; }
+  .now-rule { grid-template-columns: 3px 4.5rem minmax(0, 1fr); gap: 0 0.75rem; }
+
+  /* HA tiles: two to a row, the camera across both */
+  .ha-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.625rem;
+    overflow: visible;
+  }
+  .tile { min-width: 0; }
+  /* the two tiles that carry a whole control panel get the full width */
+  .tile.is-fan, .tile.is-media, .tile.is-solar { min-width: 0; grid-column: span 2; }
+  .tile.is-aircon { min-width: 0; }
+  .tile.is-cams { grid-column: span 2; width: auto; height: 9rem; }
+  .ha-offline { grid-column: span 2; }
+
+  /* ---- Week: one day per row ---- */
+
+  .week-grid { display: flex; flex-direction: column; gap: 0.625rem; }
+  .wk-col { min-height: 0; }
+  .wk-head { padding: 0.5rem 0.75rem; }
+  .wk-head .wd { font-size: 0.75rem; }
+  .wk-body { padding: 0.5rem 0.625rem; }
+  .wk-ev { min-height: var(--tap); display: flex; align-items: baseline; gap: 0.5rem; }
+  .wk-ev .t { flex: 0 0 3.75rem; }
+  .wk-ev .n { font-size: 0.9375rem; -webkit-line-clamp: 2; }
+  .wk-foot { min-height: 0; }
+
+  /* ---- Month: same grid, smaller pills ---- */
+
+  .stack.is-month { min-height: calc(100vh - 9.5rem); }
+  .mo-grid { grid-auto-rows: minmax(4rem, 1fr); }
+  .mo-cell { padding: 0.25rem 0.1875rem; gap: 1px; }
+  .mo-n { font-size: 0.75rem; }
+  .mo-cell.is-today .mo-n { padding: 0 0.3125rem; }
+  .mo-ev {
+    font-size: 0.5625rem;
+    line-height: 1.3;
+    padding: 0.0625rem 0.125rem 0.0625rem 0.1875rem;
+    border-left-width: 2px;
+  }
+  .mo-ev .mono { display: none; }      /* no room for a time at 55 px wide */
+  .mo-more { font-size: 0.5625rem; padding-left: 0.1875rem; }
+  .mo-dow div { font-size: 0.5625rem; letter-spacing: 0.06em; }
+
+  /* ---- Meals: the week's grid unrolls into a column ---- */
+
+  .meal-grid { display: flex; flex-direction: column; gap: 0.5rem; }
+  .meal-hd { display: none; }
+  .meal-rowlbl { padding: 0.625rem 0 0; }
+  .meal-rowlbl:empty { display: none; }
+  .meal-day {
+    display: block;
+    font-family: var(--mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .meal-cell.is-today .meal-day { color: var(--hero); font-weight: 700; }
+  .meal-cell .ing { -webkit-line-clamp: 3; }
+  .meal-pick { padding: 0.625rem 0.75rem; }
+
+  /* ---- the aircon sheet: one room per block, controls under the name ---- */
+
+  .cl-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.75rem 1rem;
+    padding: 0.875rem 1rem;
+  }
+  .cl-name { font-size: 1.125rem; }
+  .cl-now .v { font-size: 1.875rem; }
+  .cl-set { grid-column: 1 / -1; justify-content: space-between; }
+  .cl-act { grid-column: 1 / -1; }
+  .t-btn.cl-pow { width: 100%; min-width: 0; }
+
+  /* ---- Lists / chores ---- */
+
+  .cols { grid-template-columns: minmax(0, 1fr) !important; }
+  .item-grid { grid-template-columns: minmax(0, 1fr); }
+  .groceries-strip, .card[style*="max-height"] { max-height: none !important; }
+
+  /* ---- Sheets go full screen ---- */
+
+  .sheet, .sheet.wide {
+    width: 100vw;
+    max-width: 100vw;
+    height: 100%;
+    border-left: 0;
+  }
+  .sheet-head { padding: 0.875rem 1rem; }
+  .sheet-head h2 { font-size: 1.125rem; }
+  .sheet-body { padding: 1rem; }
+  .sheet-foot {
+    flex-wrap: wrap;
+    padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  }
+  .sheet-foot .btn { flex: 1 1 auto; }
+  .sheet-foot span[style] { display: none; }
+
+  .rp-grid { grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); gap: 0.625rem; }
+  .rp-hero { aspect-ratio: 4 / 3; max-height: 16rem; }
+  .rp-h { font-size: 1.375rem; }
+  .ing-list { columns: 2; column-gap: 1rem; }
+  .ing-list li { font-size: 0.875rem; }
+
+  /* the sync rows give the detail its own line rather than an ellipsis */
+  .sync-row { grid-template-columns: 0.75rem minmax(0, 1fr) auto; gap: 0.5rem 0.625rem; }
+  .sync-row .d { grid-column: 2 / span 2; white-space: normal; font-size: 0.75rem; }
+
+  .imp-ev { grid-template-columns: var(--tap) minmax(0, 1fr); }
+  .imp-ev select.inp { grid-column: 2; }
+  .detail-row { flex-direction: column; gap: 0.25rem; }
+  .detail-row .k { width: auto; }
+  .field-row { flex-wrap: wrap; }
+  .pinpad { max-width: none; }
+
+  /* ---- the now-playing overlay, one column ---- */
+
+  .np {
+    width: 100vw;
+    height: 100%;
+    max-height: none;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1rem;
+    padding: 1.25rem 1rem calc(1.25rem + env(safe-area-inset-bottom, 0px));
+    border: 0;
+    border-radius: 0;
+    align-content: start;
+  }
+  .np-art { width: 9rem; height: 9rem; margin: 0 auto; }
+  .np-title { font-size: 1.75rem; }
+  .np-artist { font-size: 1rem; }
+  .np-transport { padding-top: 1rem; }
+  .np-play { min-width: 0; flex: 1 1 auto; min-height: 3.75rem; }
+  .np-skip { height: 3.75rem; width: 3.5rem; }
+  .np-vbtn { width: var(--tap); height: var(--tap); font-size: 1.375rem; }
+  .np-sources { margin-top: 1rem; padding-top: 0.875rem; }
+  .np-src-list { grid-template-columns: minmax(0, 1fr); overflow: visible; }
+  .np-src { min-height: 3.5rem; }
+
+  /* ---- the power-flow overlay: full-screen, diagram above the figures ---- */
+
+  .pf {
+    width: 100vw;
+    height: 100%;
+    max-height: none;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1rem;
+    padding: 3.5rem 1rem calc(1.25rem + env(safe-area-inset-bottom, 0px));
+    border: 0;
+    border-radius: 0;
+    align-content: start;
+  }
+  .pf-close { top: 0.75rem; right: 0.75rem; }
+  .pf-diagram { padding: 0.5rem 0.25rem 0; }
+  .pf-svg { max-width: 22rem; margin: 0 auto; }
+  .pf-figs { margin-top: 0; grid-auto-rows: auto; flex: 0 0 auto; }
+  .pf-fig { padding: 0.75rem 0.875rem; }
+  .pf-fig .v { font-size: 1.75rem; }
+  .pf-note { margin-top: 1rem; }
+
+  .cam-full { width: 92vw; }
+  /* one channel per row on a phone, and the wall gives its padding back */
+  .cam-wall { width: 94vw; padding: 1.25rem; }
+  .cam-grid { grid-template-columns: minmax(0, 1fr); }
+  .cam-wall-close { top: 0.625rem; right: 0.625rem; }
+  .peek { width: min(22rem, 94vw); }
+
+  .toast-host { bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px)); }
+  .toast { max-width: 90vw; }
+}
+
+/* a tablet held upright has room for the panel's normal type size */
+@media (orientation: portrait) and (min-width: 700px) {
+  html { font-size: 16px; }
+  .stage { padding-left: 1.25rem; padding-right: 1.25rem; }
+  .ha-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .tile.is-fan, .tile.is-media { grid-column: span 1; }
+  .tile.is-cams { grid-column: span 3; height: 12rem; }
+  .ha-offline { grid-column: span 3; }
+  .cam-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rp-grid { grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); }
+  .np-src-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sheet-foot .btn { flex: 0 0 auto; }
+  /* a tablet's row is wide enough to name who each event belongs to */
+  .ev { grid-template-columns: 5px 6.5rem minmax(0, 1fr) auto; gap: 0 1rem; }
+  .now-rule { grid-template-columns: 3px 6.5rem minmax(0, 1fr); gap: 0 1rem; }
+  .ev-who { display: block; }
+  .mo-ev { font-size: 0.6875rem; }
+  .mo-ev .mono { display: inline; }
+}

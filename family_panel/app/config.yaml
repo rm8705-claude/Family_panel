@@ -1,0 +1,70 @@
+# Family Panel structure config. Secrets live in .env, never here.
+people:
+  - {id: rohan,   name: Rohan,   colour: "#3D5A80"}   # river blue
+  - {id: partner, name: Partner, colour: "#7C5CBF"}   # jacaranda
+  - {id: kid,     name: Kid,     colour: "#E8A13D"}   # mango
+  - {id: family,  name: Family,  colour: "#4F7B58"}   # eucalypt (shared/whole-family)
+
+# Google "secret address in iCal format" per calendar — read-only, no OAuth.
+# One primary Gmail account; the Outlook work calendar is subscribed into Google
+# as an ICS feed, so all calendars surface as secret ICS URLs from that account.
+# Subscribed (work) feeds lag — Google refreshes them slowly; /api/status shows
+# per-feed last-sync rather than pretending they're live.
+ics_feeds:
+  # Australian public holidays (Google's public calendar — no secret needed).
+  # kind: holiday renders these as subtle chips, not person events.
+  - name: Holidays
+    url: "https://calendar.google.com/calendar/ical/en.australian%23holiday%40group.v.calendar.google.com/public/basic.ics"
+    kind: holiday
+  # Queensland-specific days (show days, QLD-only holidays): the QLD government
+  # publishes an ICS on data.qld.gov.au — search "Queensland public holidays
+  # ICS", copy the .ics link for the current dataset and add it here:
+  # - {name: QLD holidays, url: "https://www.data.qld.gov.au/....ics", kind: holiday}
+#  - {name: Rohan,  url: "https://calendar.google.com/calendar/ical/.../basic.ics", person: rohan}
+#  - {name: Work,   url: "https://...", person: rohan}
+#  - {name: Family, url: "https://...", person: family}
+
+weather: {lat: -27.48, lon: 152.98}   # Corinda, Brisbane
+
+ha_tiles: []
+#  - {entity: climate.living_sensibo,    label: Aircon,   type: climate, allow_action: true}
+#  - {entity: cover.bedroom_curtains,    label: Curtains, type: cover,   allow_action: true}
+#  - {entity: media_player.living_sonos, label: Sonos,    type: media,   allow_action: true}
+#  - {entity: camera.front_yard,         label: Front,    type: camera_snapshot}
+#  - {entity: fan.bedroom_dyson,         label: Dyson,    type: fan,     allow_action: true}
+#      # Dyson via the HACS "Dyson Local" integration (local MQTT) — deploy/SETUP.md
+#  - type: solar                         # Sungrow SH + SBR via the mkaiser
+#    label: Solar                        # HACS integration (local Modbus TCP
+#    entities:                           # to the WiNet-S — NOT iSolarCloud)
+#      pv_power: sensor.total_dc_power           # W
+#      load_power: sensor.load_power             # W
+#      grid_power: sensor.export_power           # W, positive = exporting
+#      battery_power: sensor.battery_power       # W, positive = charging
+#      battery_level: sensor.battery_level       # %
+#    # invert_grid: true      # if your sensor reports import as positive
+#    # invert_battery: true   # if discharge reads positive
+#    # power_unit: kW         # if the sensors report kW instead of W
+#  - {entity: person.rohan,              label: Rohan,    type: presence}
+#  - {entity: person.partner,            label: Partner,  type: presence}
+#      # presence = HA person entities; home/away comes from each person's own
+#      # phone running the HA companion app (their choice to install). The
+#      # panel only ever shows home/away — never a location.
+
+screen: {sleep: "21:00", wake: "05:45"}   # frontend sleep overlay; hardware DPMS in deploy notes
+sync_minutes: {ics: 5, imap: 5, weather: 30, ha: 0.25}
+
+# Photo screensaver. Two sources, either or both:
+#   folder            — any folder of jpg/png/webp; on the add-on this is
+#                       /media/family_panel_photos, reachable from Windows via
+#                       the same Samba share (the "media" folder).
+#   shared_album_url  — a Google Photos SHARED ALBUM link (photos.app.goo.gl/…).
+#                       Same trust model as a calendar's secret ICS address:
+#                       anyone with the link can see the album, so treat the
+#                       link like a password. The panel syncs it every 6 h and
+#                       caches downscaled copies locally, so the screensaver
+#                       keeps working when the internet doesn't.
+photos:
+  folder: ""
+  shared_album_url: ""
+  interval_s: 45        # seconds each photo stays up
+  idle_minutes: 3       # touch-free minutes before the screensaver starts

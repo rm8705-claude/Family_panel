@@ -1,0 +1,117 @@
+---
+# Home Assistant add-on manifest for Family Panel.
+#
+# Keep `version:` in step with APP_VERSION in ../../../app.py — bump both
+# together whenever you ship a change (see the repo's `ship` skill).
+name: "Family Panel"
+description: "Self-hosted family wall calendar: shared calendar, chores, lists, meal planner and Home Assistant tiles."
+version: "0.15.4"
+slug: "family_panel"
+url: "https://github.com/rm8705-claude/claude"
+arch:
+  - aarch64
+  - amd64
+init: false
+startup: application
+boot: auto
+ports:
+  8080/tcp: 8080
+ports_description:
+  8080/tcp: "Family Panel web UI — browse to http://homeassistant.local:8080"
+# media:ro exposes /media from the HA host — drop photos into
+# /media/family_panel_photos (visible in the Samba share's "media" folder)
+# and the panel's screensaver picks them up on its next sync.
+map:
+  - media:ro
+homeassistant_api: true
+hassio_api: false
+options:
+  people:
+    - id: "rohan"
+      name: "Rohan"
+      colour: "#3D5A80"
+    - id: "partner"
+      name: "Partner"
+      colour: "#7C5CBF"
+    - id: "kid"
+      name: "Kid"
+      colour: "#E8A13D"
+    - id: "family"
+      name: "Family"
+      colour: "#4F7B58"
+  ics_feeds: []
+  weather:
+    lat: -27.48
+    lon: 152.98
+  ha_tiles: []
+  screen:
+    sleep: "21:00"
+    wake: "05:45"
+  admin_pin: "0000"
+  llm_provider: "anthropic"
+  anthropic_api_key: ""
+  llm_model: "claude-haiku-4-5"
+  lmstudio_base_url: ""
+  lmstudio_model: "local-model"
+  imap_host: "imap.gmail.com"
+  imap_user: ""
+  imap_app_password: ""
+  sync_minutes:
+    ics: 5
+    imap: 5
+    weather: 30
+    ha: 0.25
+  photos:
+    folder: "/media/family_panel_photos"
+    shared_album_url: ""
+    interval_s: 45
+    idle_minutes: 3
+schema:
+  people:
+    - id: "str"
+      name: "str"
+      colour: "str"
+  ics_feeds:
+    - name: "str"
+      url: "url"
+      person: "str?"
+      kind: "str?"
+  weather:
+    lat: "float"
+    lon: "float"
+  ha_tiles:
+    - entity: "str?"
+      label: "str"
+      type: "list(sensor|cover|switch|climate|media|camera_snapshot|presence|fan|solar)"
+      allow_action: "bool?"
+      entities:
+        pv_power: "str?"
+        load_power: "str?"
+        grid_power: "str?"
+        battery_power: "str?"
+        battery_level: "str?"
+      invert_grid: "bool?"
+      invert_battery: "bool?"
+      power_unit: "str?"
+  screen:
+    sleep: "match(^([01][0-9]|2[0-3]):[0-5][0-9]$)"
+    wake: "match(^([01][0-9]|2[0-3]):[0-5][0-9]$)"
+  admin_pin: "password"
+  llm_provider: "list(anthropic|lmstudio)"
+  anthropic_api_key: "password?"
+  llm_model: "str?"
+  lmstudio_base_url: "url?"
+  lmstudio_model: "str?"
+  imap_host: "str?"
+  imap_user: "str?"
+  imap_app_password: "password?"
+  sync_minutes:
+    ics: "int"
+    imap: "int"
+    weather: "int"
+    ha: "float"
+  photos:
+    folder: "str?"
+    shared_album_url: "str?"
+    interval_s: "int?"
+    idle_minutes: "int?"

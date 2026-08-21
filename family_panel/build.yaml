@@ -1,0 +1,7 @@
+---
+# Tells the Supervisor which Home Assistant base image to build FROM per
+# architecture (see config.yaml's `arch:` list). Version pinned to a recent
+# HA base image tag; bump if HA's add-on tutorial recommends a newer one.
+build_from:
+  aarch64: ghcr.io/home-assistant/aarch64-base:3.19
+  amd64: ghcr.io/home-assistant/amd64-base:3.19

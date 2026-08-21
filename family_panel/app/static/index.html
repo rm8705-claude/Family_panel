@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#EFE9DD">
+<meta name="color-scheme" content="light">
+<title>Family Panel</title>
+<script>
+/* Pre-paint: settle the skin and the theme before the first frame, so a kiosk
+   restarted after dark — or wearing the charcoal wallboard skin — never
+   flashes warm paper on its way in. The grounds below are the --paper values
+   of each skin's day and night blocks in styles.css; they exist only to fill
+   the frame before the stylesheet lands, and app.js takes over from there. */
+(function () {
+  var GROUND = {
+    paper:    ['#EFE9DD', '#111319'],
+    slate:    ['#23262B', '#15171B'],
+    eucalypt: ['#E4E7DB', '#12160F'],
+    coast:    ['#EEE5D3', '#0E161C'],
+    ink:      ['#F1F1EE', '#0B0B0D']
+  };
+  var root = document.documentElement;
+  var skin = 'paper', theme = null;
+  try {
+    var q = new URLSearchParams(location.search);
+    var s = q.get('skin') || localStorage.getItem('panel-skin');
+    if (s && GROUND[s]) skin = s;
+    var m = q.get('theme');
+    if (m === 'night' || m === 'day') theme = m;
+  } catch (e) { /* private mode or an old browser: warm paper, day */ }
+  root.setAttribute('data-skin', skin);
+  /* Only a forced ?theme= is settled here — the real dusk/dawn decision needs
+     the sunset times, so app.js makes it a few milliseconds later. */
+  if (theme) root.setAttribute('data-theme', theme);
+  root.style.background = GROUND[skin][theme === 'night' ? 1 : 0];
+})();
+</script>
+<link rel="stylesheet" href="/static/fonts/fonts.css">
+<link rel="stylesheet" href="/static/styles.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23F7F5F0'/%3E%3Crect x='5.5' y='7.5' width='21' height='18' rx='3' fill='none' stroke='%2322252B' stroke-width='2'/%3E%3Cpath d='M5.5 13h21' stroke='%2322252B' stroke-width='2'/%3E%3Ccircle cx='11' cy='18.5' r='1.8' fill='%23E8A13D'/%3E%3C/svg%3E">
+</head>
+<body>
+
+<div class="app" id="app">
+
+  <aside class="rail" id="rail">
+    <div class="rail-date">
+      <div class="rail-weekday" id="railWeekday">—</div>
+      <div class="rail-day mono" id="railDay">–</div>
+      <div class="rail-month" id="railMonth">—</div>
+      <div class="rail-full" id="railFull"></div>
+    </div>
+
+    <div class="spine" id="spine" aria-hidden="true"></div>
+
+    <nav class="tabs" id="tabs" aria-label="Views"></nav>
+
+    <div class="rail-foot">
+      <button class="rail-btn" id="btnAssist" data-act="assist" hidden>
+        <span class="rb-ic" id="btnAssistIc"></span><span>Assist</span>
+      </button>
+      <button class="rail-btn" id="btnImports" data-act="imports" hidden>
+        <span>Magic import</span><span class="badge" id="importBadge">0</span>
+      </button>
+      <button class="rail-btn" data-act="settings">
+        <span>Settings</span>
+      </button>
+      <p class="sync-note" id="syncNote"><span class="dot"></span><span id="syncText">Connecting…</span></p>
+    </div>
+
+    <div class="fam-strip" id="famStrip" role="img" aria-label="Who is busy today"></div>
+  </aside>
+
+  <main class="stage" id="stage">
+    <div class="view" id="view"></div>
+  </main>
+
+</div>
+
+<div id="sheetHost"></div>
+<div class="toast-host" id="toastHost" aria-live="polite"></div>
+<div class="saver" id="saver" hidden>
+  <div class="sv-layer" id="svA"></div>
+  <div class="sv-layer" id="svB"></div>
+  <div class="sv-scrim"></div>
+  <div class="sv-foot">
+    <div class="sv-when">
+      <div class="sv-clock mono" id="svClock">--:--</div>
+      <div class="sv-date" id="svDate"></div>
+    </div>
+    <div class="sv-next" id="svNext"></div>
+  </div>
+</div>
+<div class="sleep" id="sleep" hidden>
+  <div>
+    <div class="sleep-clock mono" id="sleepClock">--:--</div>
+    <div class="sleep-date" id="sleepDate"></div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

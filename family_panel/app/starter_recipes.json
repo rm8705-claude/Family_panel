@@ -1,0 +1,339 @@
+[
+  {
+    "name": "Spaghetti bolognese",
+    "notes": "The weeknight workhorse. Simmer longer on weekends if you can.",
+    "ingredients": [
+      "500g beef mince",
+      "1 brown onion, diced",
+      "2 garlic cloves",
+      "1 grated carrot",
+      "700g passata",
+      "2 tbsp tomato paste",
+      "1 beef stock cube",
+      "Spaghetti",
+      "Parmesan to serve"
+    ],
+    "meta": {
+      "servings": "4-5",
+      "prep_minutes": 10,
+      "cook_minutes": 30
+    },
+    "method": [
+      "Brown the mince in a big pot, then soften the onion, garlic and carrot in with it.",
+      "Stir in tomato paste, passata and the crumbled stock cube; simmer 20+ minutes (longer is better).",
+      "Cook the spaghetti, toss with a ladle of sauce, serve topped with the rest and parmesan."
+    ]
+  },
+  {
+    "name": "Butter chicken (mild)",
+    "notes": "Kid-mild — add chilli at the table for the grown-ups.",
+    "ingredients": [
+      "700g chicken thigh, diced",
+      "3 tbsp butter chicken curry paste",
+      "400ml coconut cream or cooking cream",
+      "400g tin crushed tomatoes",
+      "1 brown onion",
+      "Basmati rice",
+      "Coriander (optional)",
+      "Naan or pappadums"
+    ],
+    "meta": {
+      "servings": "4",
+      "prep_minutes": 10,
+      "cook_minutes": 25
+    },
+    "method": [
+      "Soften the diced onion, then brown the chicken pieces.",
+      "Stir through the curry paste for a minute, add tomatoes and coconut cream, simmer 15-20 minutes.",
+      "Serve over basmati rice with naan; chilli at the table for the grown-ups."
+    ]
+  },
+  {
+    "name": "Tacos",
+    "notes": "Build-your-own keeps everyone happy.",
+    "ingredients": [
+      "500g beef mince",
+      "1 packet taco seasoning",
+      "Taco shells or tortillas",
+      "1 iceberg lettuce, shredded",
+      "2 tomatoes, diced",
+      "Grated cheese",
+      "Sour cream",
+      "1 avocado",
+      "Corn kernels"
+    ],
+    "meta": {
+      "servings": "4",
+      "prep_minutes": 15,
+      "cook_minutes": 15
+    },
+    "method": [
+      "Brown the mince, add the seasoning and a splash of water, simmer 5 minutes.",
+      "Warm the shells; lay everything out in bowls.",
+      "Everyone builds their own — that's the point."
+    ]
+  },
+  {
+    "name": "Fried rice",
+    "notes": "Best with day-old rice. Clears out the vegetable drawer.",
+    "ingredients": [
+      "3 cups cooked rice (cold)",
+      "2 rashers bacon, diced",
+      "2 eggs",
+      "1 cup frozen peas and corn",
+      "2 spring onions",
+      "2 tbsp soy sauce",
+      "1 tsp sesame oil",
+      "1 garlic clove"
+    ],
+    "meta": {
+      "servings": "4",
+      "prep_minutes": 10,
+      "cook_minutes": 15
+    },
+    "method": [
+      "Scramble the eggs first and set aside; crisp the bacon in the same pan.",
+      "Add garlic, peas and corn, then the cold rice on high heat, tossing constantly.",
+      "Return the egg, season with soy and sesame oil, finish with spring onion."
+    ]
+  },
+  {
+    "name": "Sausages, mash and gravy",
+    "notes": "Steam some greens while the mash is going.",
+    "ingredients": [
+      "8 thick beef sausages",
+      "1kg potatoes",
+      "50g butter",
+      "Splash of milk",
+      "Gravy powder",
+      "Frozen peas or broccolini"
+    ],
+    "meta": {
+      "servings": "4",
+      "prep_minutes": 10,
+      "cook_minutes": 30
+    },
+    "method": [
+      "Boil the potatoes until tender; mash with butter and milk.",
+      "Grill or pan-fry the sausages, turning until browned through (about 15 minutes).",
+      "Make up the gravy, steam the greens, plate the lot."
+    ]
+  },
+  {
+    "name": "Chicken stir-fry",
+    "notes": "Sauce is 2:1:1 soy, oyster sauce, honey. Rice or noodles.",
+    "ingredients": [
+      "600g chicken breast, sliced",
+      "1 broccoli head",
+      "1 carrot",
+      "1 capsicum",
+      "1 bunch pak choy",
+      "2 tbsp soy sauce",
+      "1 tbsp oyster sauce",
+      "1 tbsp honey",
+      "1 garlic clove",
+      "Ginger",
+      "Rice or hokkien noodles"
+    ],
+    "meta": {
+      "servings": "4",
+      "prep_minutes": 15,
+      "cook_minutes": 12
+    },
+    "method": [
+      "Mix soy, oyster sauce and honey for the sauce.",
+      "Stir-fry the chicken in batches on high heat; set aside.",
+      "Stir-fry the vegetables with garlic and ginger, return the chicken, add the sauce, toss with rice or noodles."
+    ]
+  },
+  {
+    "name": "Homemade pizza night",
+    "notes": "Friday tradition. Bases from the shop are fine — it's about the toppings.",
+    "ingredients": [
+      "2 pizza bases",
+      "Pizza sauce or passata",
+      "Grated mozzarella",
+      "Ham or salami",
+      "Pineapple (contested)",
+      "Mushrooms",
+      "Capsicum",
+      "Olives"
+    ],
+    "meta": {
+      "servings": "4",
+      "prep_minutes": 15,
+      "cook_minutes": 15
+    },
+    "method": [
+      "Heat the oven as hot as it goes with trays inside.",
+      "Sauce the bases, let everyone build their own half.",
+      "Bake 10-15 minutes until the cheese blisters."
+    ]
+  },
+  {
+    "name": "Oven fish and chips",
+    "notes": "Crumbed fillets and oven chips — beach-night dinner without the queue.",
+    "ingredients": [
+      "4 crumbed fish fillets",
+      "1kg frozen chips",
+      "Frozen peas",
+      "1 lemon",
+      "Tartare sauce"
+    ],
+    "meta": {
+      "servings": "4",
+      "prep_minutes": 5,
+      "cook_minutes": 30
+    },
+    "method": [
+      "Chips in a hot oven first — they need a 10-minute head start.",
+      "Add the crumbed fish for the last 20 minutes, turning once.",
+      "Microwave the peas, cut the lemon, done."
+    ]
+  },
+  {
+    "name": "Lasagne",
+    "notes": "Assemble in the afternoon, bake at six. Freezes brilliantly.",
+    "ingredients": [
+      "500g beef mince",
+      "700g passata",
+      "1 brown onion",
+      "2 garlic cloves",
+      "Lasagne sheets",
+      "500g ricotta or white sauce",
+      "Grated cheese",
+      "Baby spinach"
+    ],
+    "meta": {
+      "servings": "6",
+      "prep_minutes": 30,
+      "cook_minutes": 45
+    },
+    "method": [
+      "Make a quick bolognese: brown the mince, add onion, garlic and passata, simmer 15 minutes.",
+      "Layer sauce, sheets, ricotta and spinach; repeat, finishing with cheese on top.",
+      "Bake at 180°C for about 45 minutes; rest 10 minutes before cutting."
+    ]
+  },
+  {
+    "name": "Chicken schnitzel and salad",
+    "notes": "Shop schnitzels on busy nights; crumb your own on Sundays.",
+    "ingredients": [
+      "4 chicken schnitzels",
+      "Mixed salad leaves",
+      "Cherry tomatoes",
+      "1 cucumber",
+      "Salad dressing",
+      "1 lemon",
+      "Bread rolls (optional)"
+    ],
+    "meta": {
+      "servings": "4",
+      "prep_minutes": 10,
+      "cook_minutes": 15
+    },
+    "method": [
+      "Pan-fry the schnitzels in a little oil, 3-4 minutes a side, until golden.",
+      "Toss the salad with dressing while they rest.",
+      "Serve with lemon wedges and rolls if it's been a big day."
+    ]
+  },
+  {
+    "name": "Pumpkin soup",
+    "notes": "Winter staple. Crusty bread is not optional.",
+    "ingredients": [
+      "1.2kg butternut pumpkin",
+      "1 brown onion",
+      "2 garlic cloves",
+      "1L chicken or vegetable stock",
+      "150ml cream",
+      "Crusty bread",
+      "Butter"
+    ],
+    "meta": {
+      "servings": "4-6",
+      "prep_minutes": 15,
+      "cook_minutes": 30
+    },
+    "method": [
+      "Soften the onion and garlic, add the cubed pumpkin and stock.",
+      "Simmer 20-25 minutes until the pumpkin collapses, then blend smooth.",
+      "Stir through the cream; serve with buttered crusty bread."
+    ]
+  },
+  {
+    "name": "Burrito bowls",
+    "notes": "Taco night's healthier cousin — everything in a bowl over rice.",
+    "ingredients": [
+      "500g chicken or beef mince",
+      "1 packet burrito seasoning",
+      "Rice",
+      "1 tin black beans",
+      "Corn kernels",
+      "Shredded lettuce",
+      "Grated cheese",
+      "Sour cream",
+      "1 avocado",
+      "Lime"
+    ],
+    "meta": {
+      "servings": "4",
+      "prep_minutes": 15,
+      "cook_minutes": 15
+    },
+    "method": [
+      "Cook the rice; brown the mince with the seasoning.",
+      "Warm the beans and corn.",
+      "Bowl up rice first, then everyone adds their own toppings."
+    ]
+  },
+  {
+    "name": "Satay chicken skewers",
+    "notes": "Grill or barbecue. Sauce: peanut butter, coconut milk, soy, lime.",
+    "ingredients": [
+      "700g chicken thigh, cubed",
+      "1/2 cup peanut butter",
+      "270ml coconut milk",
+      "2 tbsp soy sauce",
+      "1 lime",
+      "1 tsp curry powder",
+      "Rice",
+      "Cucumber",
+      "Bamboo skewers"
+    ],
+    "meta": {
+      "servings": "4",
+      "prep_minutes": 20,
+      "cook_minutes": 15
+    },
+    "method": [
+      "Thread the chicken onto soaked skewers and grill or barbecue until charred and cooked.",
+      "Warm peanut butter, coconut milk, soy, lime and curry powder into a sauce.",
+      "Serve over rice with cucumber, sauce over the top."
+    ]
+  },
+  {
+    "name": "Zucchini slice",
+    "notes": "Dinner tonight, lunchboxes tomorrow.",
+    "ingredients": [
+      "5 eggs",
+      "2 zucchinis, grated",
+      "1 cup grated cheese",
+      "1 cup self-raising flour",
+      "1 brown onion",
+      "3 rashers bacon, diced",
+      "1/3 cup oil",
+      "Side salad"
+    ],
+    "meta": {
+      "servings": "4-6",
+      "prep_minutes": 15,
+      "cook_minutes": 35
+    },
+    "method": [
+      "Squeeze the grated zucchini dry; fry the bacon and onion.",
+      "Whisk eggs and oil, stir in everything else, pour into a lined slice tin.",
+      "Bake at 180°C for about 35 minutes until set and golden."
+    ]
+  }
+]
