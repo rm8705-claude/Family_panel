@@ -3153,6 +3153,16 @@
       (raw ? v : esc(v)) + '</div></div>';
   }
 
+  /* 'family' is the natural owner for a bin night or a payday, but it is just
+     a row in `people` that anyone is free to rename or delete — and an event
+     assigned to an id that no longer exists gets no colour, no name and no
+     place in the who's-busy bar. Fall back to whoever actually exists. */
+  function defaultPersonId() {
+    var ppl = (D.status && D.status.config && D.status.config.people) || [];
+    for (var i = 0; i < ppl.length; i++) if (ppl[i].id === 'family') return 'family';
+    return ppl.length ? ppl[0].id : 'family';
+  }
+
   function personPicker(selected, name) {
     return '<div class="pick">' + people().map(function (p) {
       return '<button type="button" class="pick-btn' + (p.id === selected ? ' is-on' : '') +
@@ -3163,13 +3173,13 @@
 
   function openEventForm(ev, date) {
     var e = ev || {
-      title: '', person_id: 'family', date: date || state.today, all_day: false,
+      title: '', person_id: defaultPersonId(), date: date || state.today, all_day: false,
       start: '09:00', end: '10:00', location: '', notes: '', countdown: false
     };
     var body =
       '<div class="field"><label for="f-title">Title</label>' +
       '<input class="inp" id="f-title" type="text" value="' + esc(e.title) + '" placeholder="What is it?"></div>' +
-      '<div class="field"><label>Who</label>' + personPicker(e.person_id || 'family', 'f-person') + '</div>' +
+      '<div class="field"><label>Who</label>' + personPicker(e.person_id || defaultPersonId(), 'f-person') + '</div>' +
       '<div class="field-row' + (e.all_day ? ' is-allday' : '') + '" id="f-when">' +
       '<div class="field"><label for="f-date">Date</label>' +
       '<input class="inp mono" id="f-date" type="date" value="' + esc(e.date) + '">' +
@@ -3296,7 +3306,7 @@
       if (!impSel[imp.id]) {
         impSel[imp.id] = {};
         (imp.events || []).forEach(function (ev) {
-          impSel[imp.id][ev.index] = { on: true, person_id: ev.person_hint || 'family' };
+          impSel[imp.id][ev.index] = { on: true, person_id: ev.person_hint || defaultPersonId() };
         });
       }
     });
@@ -3309,7 +3319,7 @@
   function importBlock(imp) {
     var sel = impSel[imp.id] || {};
     var evs = (imp.events || []).map(function (ev) {
-      var s = sel[ev.index] || { on: true, person_id: 'family' };
+      var s = sel[ev.index] || { on: true, person_id: defaultPersonId() };
       var when = fmtDMY(ev.date) + (ev.all_day ? ' · all day'
         : (ev.start_time ? ' · ' + fmtTime(ev.start_time) + (ev.end_time ? ' – ' + fmtTime(ev.end_time) : '') : ''));
       return '<div class="imp-ev' + (s.on ? '' : ' is-off') + '">' +
