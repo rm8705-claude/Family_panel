@@ -5,7 +5,7 @@
 # together whenever you ship a change (see the repo's `ship` skill).
 name: "Family Panel"
 description: "Self-hosted family wall calendar: shared calendar, chores, lists, meal planner and Home Assistant tiles."
-version: "0.15.20"
+version: "0.15.21"
 slug: "family_panel"
 url: "https://github.com/rm8705-claude/family_panel"
 arch:

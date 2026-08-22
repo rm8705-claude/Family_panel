@@ -4936,6 +4936,13 @@
      Every image comes from the local cache the backend keeps (/api/photos),
      so the panel still never reaches outside for a picture.
 
+     No photos configured yet — the common state before anyone has set up a
+     folder or a shared album — and it still triggers on the same idle timer,
+     just without a photo: the clock/date/next-up footer over .saver's own
+     dark ground. A wall panel gets basic idle relief before photos are
+     anything but optional; hooking up photos later replaces the plain
+     ground with the picture frame, nothing else changes.
+
      It gives way to two things without argument: any sheet or armed confirm
      (you were in the middle of something), and the sleep overlay (at 9 pm the
      wall goes dark, photos or not). */
@@ -5055,7 +5062,6 @@
   function svStart() {
     if (SV.on) return false;
     var cfg = svCfg();
-    if (!cfg.photos.length) return false;
     SV.on = true;
     clearTimeout(SV.goingTimer);
     var el = byId('saver');
@@ -5066,9 +5072,17 @@
     SV.idx = -1;
     SV.front = 'A';
     svPaintClock();
-    svAdvance();
     clearInterval(SV.slideTimer);
-    SV.slideTimer = setInterval(function () { svAdvance(); }, cfg.interval);
+    /* No photos configured (the common case before anyone has set up the
+       folder or a shared album): skip the photo cycle entirely rather than
+       declining to run at all. Neither .sv-layer ever gets .is-on, so what
+       shows is .saver's own solid #07080A ground with the clock/date/next-up
+       footer on it — the same idle protection every other household gets,
+       available before photos are anything but optional. */
+    if (cfg.photos.length) {
+      svAdvance();
+      SV.slideTimer = setInterval(function () { svAdvance(); }, cfg.interval);
+    }
     clearInterval(SV.clockTimer);
     SV.clockTimer = setInterval(svPaintClock, 15000);
     return true;
