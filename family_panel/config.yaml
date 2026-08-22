@@ -5,7 +5,7 @@
 # together whenever you ship a change (see the repo's `ship` skill).
 name: "Family Panel"
 description: "Self-hosted family wall calendar: shared calendar, chores, lists, meal planner and Home Assistant tiles."
-version: "0.17.3"
+version: "0.17.4"
 slug: "family_panel"
 url: "https://github.com/rm8705-claude/family_panel"
 arch:
@@ -102,6 +102,13 @@ options:
       grid_power: "sensor.export_power_raw"
       battery_power: "sensor.battery_charging_power_signed"
       battery_level: "sensor.battery_level"
+    # Brisbane City Council has no ICS bin-day feed; this is the HACS
+    # "Brisbane Bin Day Sensor" (mark1foley) instead — GUI-configured in HA,
+    # no YAML/secrets. Gets its own card between Weather and Chores, not a
+    # tile in the Home row (see ha.py/app.js).
+    - entity: "binary_sensor.brisbane_bin_day"
+      label: "Bin Day"
+      type: "bin_day"
   screen:
     sleep: "21:00"
     wake: "05:45"
@@ -139,7 +146,7 @@ schema:
   ha_tiles:
     - entity: "str?"
       label: "str"
-      type: "list(sensor|cover|switch|climate|media|camera_snapshot|presence|fan|solar)"
+      type: "list(sensor|cover|switch|climate|media|camera_snapshot|presence|fan|solar|bin_day)"
       allow_action: "bool?"
       # Solar tile only. These are FLAT, not nested under an `entities:` key:
       # the Supervisor treats any nested object in a schema as mandatory (only
