@@ -335,6 +335,7 @@
     weather: false,             // the weather detail sheet is open
     camIdx: 0,                  // which channel the grouped Cameras tile shows
     camLive: null,              // entity playing live on the camera wall
+    sonosTarget: null,          // speaker a favourite starts on
     solar: false,               // the power-flow overlay is open
     wgScrolled: false,          // the week grid has found its scroll position
     theme: 'day',               // the theme actually applied right now
@@ -2060,12 +2061,52 @@
 
   /* Every speaker, stacked: art, transport, volume and its own favourites —
      the same controls the single-speaker overlay has, once per speaker. */
+  /* Which speaker a favourite starts on. Defaults to whatever is already
+     playing, since "put this on instead" is the common intent; falls back to
+     the first configured speaker. */
+  function sonosTarget(list) {
+    var chosen = list.filter(function (t) { return t.entity === state.sonosTarget; })[0];
+    if (chosen) return chosen;
+    return list.filter(function (t) { return (t.attrs || {}).playing; })[0] || list[0];
+  }
+
+  /* ONE favourites list for the household, not one per speaker. They come
+     from the same My Sonos and were identical on every card — eight
+     identical stations repeated per speaker is noise, and it pushed the
+     actual controls off the screen. The target picker above it says which
+     speaker a tap will start on. */
+  function sonosFavouritesHtml(list) {
+    var target = sonosTarget(list);
+    if (!target) return '';
+    var picker = list.length < 2 ? '' :
+      '<div class="sn-target">' + list.map(function (t) {
+        return '<button class="sn-tgt' + (t.entity === target.entity ? ' is-on' : '') +
+          '" data-act="sonos-target" data-entity="' + esc(t.entity) + '">' +
+          esc(t.label) + '</button>';
+      }).join('') + '</div>';
+    return '<div class="np-sources sn-favs">' +
+      '<div class="np-sec">Play something' +
+      (list.length > 1 ? ' on <b>' + esc(target.label) + '</b>' : '') + '</div>' +
+      picker + sourceRows(target) + '</div>';
+  }
+
   function sonosSheetHtml() {
     var list = mediaTiles();
     if (!list.length) return '<div class="empty">No speakers are configured on the panel yet.</div>';
     return '<button class="close-x np-close" data-act="close-sheet" aria-label="Close">' + ICON.close + '</button>' +
+      '<div class="sn-head">' +
       '<div class="np-label">Sonos · ' + list.length + ' speaker' + (list.length === 1 ? '' : 's') + '</div>' +
-      '<div class="sn-list">' + list.map(sonosSpeakerCard).join('') + '</div>';
+      '<span class="spacer"></span>' +
+      /* Everything the panel deliberately doesn't do — grouping, alarms,
+         search, EQ — lives in the Sonos app. The intent URL opens it
+         directly on Android and falls back to the Play Store listing if it
+         isn't installed. */
+      '<a class="btn ghost sn-app" href="intent://#Intent;package=com.sonos.acr2;' +
+      'S.browser_fallback_url=https%3A%2F%2Fplay.google.com%2Fstore%2Fapps%2Fdetails%3Fid%3Dcom.sonos.acr2;end">' +
+      'Open Sonos app</a>' +
+      '</div>' +
+      '<div class="sn-list">' + list.map(sonosSpeakerCard).join('') + '</div>' +
+      sonosFavouritesHtml(list);
   }
 
   function sonosSpeakerCard(t) {
@@ -2106,7 +2147,6 @@
           btn('volume_set', 'Louder', volStep(vol, +1), 'np-vbtn') + '+</button>' +
           '<span class="np-pct mono">' + pct + '%</span></div>';
       }
-      out += '<div class="np-sources"><div class="np-sec">Play something</div>' + sourceRows(t) + '</div>';
     }
     return out + '</div>';
   }
@@ -3384,6 +3424,7 @@
     assistRelease();
     stopLiveCameras();          // before innerHTML='', so the src is blanked
     state.camLive = null;
+    state.sonosTarget = null;
     host.innerHTML = '';
     state.np = null;
     state.climate = false;
@@ -3400,6 +3441,7 @@
     assistRelease();
     stopLiveCameras();          // one sheet replacing another must not leak
     state.camLive = null;
+    state.sonosTarget = null;
 
     state.np = null;
     state.climate = false;
@@ -5060,6 +5102,10 @@
       case 'cam-grid': openCameraGrid(); break;
       case 'media-open': openNowPlaying(el.dataset.entity); break;
       case 'sonos-open': openSonosSheet(); break;
+      case 'sonos-target':
+        state.sonosTarget = el.dataset.entity;
+        updateSonosSheet();
+        break;
       case 'weather-open': openWeatherSheet(); break;
       case 'climate-open': openClimateSheet(); break;
       case 'solar-open': openSolarSheet(); break;
