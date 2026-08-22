@@ -77,15 +77,21 @@ PANEL_HOST=0.0.0.0
 PANEL_PORT=8080
 PANEL_JOBS=1
 
-bashio::log.info "Configuration written. Starting gunicorn on :8080 (1 worker, 8 threads)..."
+bashio::log.info "Configuration written. Starting gunicorn on :8080 (1 worker, 24 threads)..."
 cd /app
 # --timeout 90: assist.audio_query legitimately blocks up to ~60s (30s HA
 # connect + 30s pipeline run); gunicorn's default 30s worker timeout would
 # kill the worker mid-request.
 #
-# --threads 8: still exactly ONE worker process, so APScheduler can't
+# --threads 24: still exactly ONE worker process, so APScheduler can't
 # double-fire — but that one process now handles requests concurrently.
 # Required for live camera streams: /api/ha/camera/<e>/stream stays open for
 # as long as someone is watching, and on the default single sync worker that
 # one request blocked the whole panel until they closed it.
-exec gunicorn --workers 1 --threads 8 --timeout 90 --bind 0.0.0.0:8080 app:app
+#
+# Sized for the camera wall, which opens EVERY channel at once — eight
+# cameras hold eight threads for as long as the sheet is up. At 8 threads
+# that left nothing for the agenda, tiles or chores polls, so the panel
+# would appear to freeze behind the camera view. Threads are cheap here:
+# they spend their lives blocked on socket reads, not burning CPU.
+exec gunicorn --workers 1 --threads 24 --timeout 90 --bind 0.0.0.0:8080 app:app

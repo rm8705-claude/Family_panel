@@ -1878,6 +1878,36 @@
      the owner actually asked for. Labels on, 10 s cache-busted refresh (the
      shared refreshCameras() timer finds these images too), and any one of
      them opens full size with a way back to the wall. */
+  /* Fit the whole wall on screen rather than letting auto-fit push half the
+     channels below the fold — with eight cameras the point is seeing all
+     eight at once. 16:10 cells, so wide-and-short beats tall-and-narrow. */
+  function camGridCols(n) {
+    if (n <= 1) return 1;
+    if (n <= 4) return 2;
+    if (n <= 6) return 3;
+    return 4;
+  }
+
+  /* Blank every live stream's src before its element goes away. Removing the
+     <img> alone usually aborts the request, but "usually" would leave the Pi
+     running ffmpeg for channels nobody is watching — so this is explicit. */
+  /* The live-stream URL, or the snapshot in demo mode — ?mock=1 has no real
+     cameras behind it, so asking for a stream just 404s eight times and
+     falls back anyway. Returning the demo frame directly is both quieter
+     and a truthful representation of what the demo actually has. */
+  function camLiveSrc(t) {
+    return MOCK ? camSrc(t)
+      : '/api/ha/camera/' + encodeURIComponent(t.entity) + '/stream';
+  }
+
+  function stopLiveCameras() {
+    Array.prototype.forEach.call(
+      document.querySelectorAll('img[data-cam-live]'), function (img) {
+        img.removeAttribute('onerror');    // teardown must not trip the fallback
+        img.src = '';
+      });
+  }
+
   function cameraGridHtml() {
     var list = cameraTiles();
     if (!list.length) return '<div class="empty">No cameras are configured on the panel yet.</div>';
@@ -1887,14 +1917,23 @@
       '<button class="close-x cam-wall-close" data-act="close-sheet" aria-label="Close">' + ICON.close + '</button>' +
       '<div class="cam-wall-head"><span class="np-label">Cameras</span>' +
       '<span class="cam-wall-n mono">' + esc(live + ' of ' + list.length + ' live') + '</span></div>' +
-      '<div class="cam-grid">' + list.map(function (t) {
+      /* Every channel live at once. The streams exist only while this sheet
+         is open — closeSheet() tears them down explicitly — so the decoding
+         cost on the Pi and the tablet is bounded to the moment someone is
+         actually watching. Playback/recall stays in the Swann app; this is
+         a live wall, not a DVR client. */
+      '<div class="cam-grid" style="grid-template-columns:repeat(' +
+      camGridCols(list.length) + ',minmax(0,1fr))">' + list.map(function (t) {
         var dead = off || camOffline(t);
         return '<button class="cam-cell' + (dead ? ' is-dead' : '') + '"' +
           (dead ? ' disabled' : ' data-act="cam" data-entity="' + esc(t.entity) + '" data-from="grid"') + '>' +
           (dead
             ? '<span class="cam-dead"><span>No signal</span></span>'
-            : '<img data-cam="' + esc(t.entity) + '" decoding="async" src="' + esc(camSrc(t)) +
-              '" alt="' + esc(t.label) + ' camera">') +
+            : '<img data-cam="' + esc(t.entity) + '"' + (MOCK ? '' : ' data-cam-live="1"') +
+              ' decoding="async" src="' + esc(camLiveSrc(t)) + '"' +
+              ' onerror="window.__camLiveFail(this)"' +
+              ' data-fallback="' + esc(camSrc(t)) + '"' +
+              ' alt="' + esc(t.label) + ' camera">') +
           '<span class="cam-label">' + esc(t.label) + '</span></button>';
       }).join('') + '</div>' +
       (off ? '<p class="cam-wall-note">Home Assistant is offline — these are the last frames it sent.</p>' : '') +
@@ -3322,6 +3361,7 @@
   function closeSheet() {
     var host = byId('sheetHost');
     assistRelease();
+    stopLiveCameras();          // before innerHTML='', so the src is blanked
     host.innerHTML = '';
     state.np = null;
     state.climate = false;
@@ -3336,6 +3376,8 @@
     opts = opts || {};
     var host = byId('sheetHost');
     assistRelease();
+    stopLiveCameras();          // one sheet replacing another must not leak
+
     state.np = null;
     state.climate = false;
     state.solar = false;
@@ -4574,8 +4616,8 @@
        snapshot, so a dead feed degrades to a still rather than a blank box. */
     openSheet('<div style="text-align:center">' +
       '<div class="cam-full-lab">' + esc(t.label) + '</div>' +
-      '<img class="cam-full" data-cam="' + esc(entity) + '" data-cam-live="1"' +
-      ' decoding="async" src="/api/ha/camera/' + encodeURIComponent(entity) + '/stream"' +
+      '<img class="cam-full" data-cam="' + esc(entity) + '"' + (MOCK ? '' : ' data-cam-live="1"') +
+      ' decoding="async" src="' + esc(camLiveSrc(t)) + '"' +
       ' onerror="window.__camLiveFail(this)"' +
       ' data-fallback="' + esc(camSrc(t)) + '" alt="' + esc(t.label) + '">' +
       '<div class="cam-full-acts">' +
@@ -6170,9 +6212,12 @@
         entity: 'sensor.outside_temp', label: 'Outside', type: 'sensor', allow_action: false,
         state: '26.3', attrs: { value: 26.3, unit: '°C' }
       },
-      /* Four DVR channels. Garage is deliberately unavailable — a channel
-         dropping out is the normal failure on this kind of box, and the wall
-         has to say "no signal" rather than show a hole. */
+      /* Eight DVR channels, matching a real Swann box — the camera wall opens
+         every one of them live at once, so the demo has to exercise that
+         layout rather than a comfortable four. Garage is deliberately
+         unavailable: a channel dropping out is the normal failure on this
+         kind of box, and the wall has to say "no signal" rather than show a
+         hole. */
       {
         entity: 'camera.front_yard', label: 'Front yard', type: 'camera_snapshot', allow_action: false,
         state: 'idle', attrs: { snapshot_url: CAM_SCENE.front() }
@@ -6188,6 +6233,22 @@
       {
         entity: 'camera.garage', label: 'Garage', type: 'camera_snapshot', allow_action: false,
         state: 'unavailable', attrs: { snapshot_url: CAM_SCENE.garage() }
+      },
+      {
+        entity: 'camera.side_gate', label: 'Side gate', type: 'camera_snapshot', allow_action: false,
+        state: 'idle', attrs: { snapshot_url: CAM_SCENE.front() }
+      },
+      {
+        entity: 'camera.carport', label: 'Carport', type: 'camera_snapshot', allow_action: false,
+        state: 'idle', attrs: { snapshot_url: CAM_SCENE.drive() }
+      },
+      {
+        entity: 'camera.back_fence', label: 'Back fence', type: 'camera_snapshot', allow_action: false,
+        state: 'idle', attrs: { snapshot_url: CAM_SCENE.deck() }
+      },
+      {
+        entity: 'camera.shed', label: 'Shed', type: 'camera_snapshot', allow_action: false,
+        state: 'idle', attrs: { snapshot_url: CAM_SCENE.garage() }
       }
     ];
 
