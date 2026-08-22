@@ -29,16 +29,30 @@ def describe(code) -> str:
         return "—"
 
 
+def _at(seq, i):
+    """seq[i], or None — Open-Meteo omits arrays it has no data for, and a
+    missing optional field must not take the whole forecast down."""
+    try:
+        return seq[i]
+    except (TypeError, IndexError, KeyError):
+        return None
+
+
 class OpenMeteoProvider:
     URL = "https://api.open-meteo.com/v1/forecast"
 
     def fetch(self, lat: float, lon: float) -> dict:
         r = requests.get(self.URL, params={
             "latitude": lat, "longitude": lon,
-            "current": "temperature_2m,weather_code",
+            "current": "temperature_2m,weather_code,apparent_temperature,"
+                       "relative_humidity_2m,wind_speed_10m",
             "daily": ("temperature_2m_min,temperature_2m_max,"
                       "precipitation_probability_max,uv_index_max,weather_code,"
-                      "sunrise,sunset"),
+                      "sunrise,sunset,precipitation_sum,wind_speed_10m_max"),
+            # Hourly drives the "what's today actually going to do" detail
+            # sheet. Only today and tomorrow are kept (see below) — seven days
+            # of hourly is 168 rows the panel would never draw.
+            "hourly": "temperature_2m,precipitation_probability,weather_code",
             "timezone": "Australia/Brisbane",
             "forecast_days": 7,
         }, timeout=20)
@@ -62,14 +76,38 @@ class OpenMeteoProvider:
                 "description": describe(daily["weather_code"][i]),
                 "sunrise": hhmm(daily.get("sunrise", [None] * 7)[i]),
                 "sunset": hhmm(daily.get("sunset", [None] * 7)[i]),
+                "rain_mm": _at(daily.get("precipitation_sum"), i),
+                "wind_max": _at(daily.get("wind_speed_10m_max"), i),
             })
+
+        # Hourly, trimmed to the two days the detail sheet actually shows.
+        keep = {d["date"] for d in days[:2]}
+        hourly = []
+        hrs = raw.get("hourly", {})
+        for i, t in enumerate(hrs.get("time", [])):
+            if not isinstance(t, str) or t[:10] not in keep:
+                continue
+            code = _at(hrs.get("weather_code"), i)
+            hourly.append({
+                "date": t[:10],
+                "time": t[-5:],
+                "temp": _at(hrs.get("temperature_2m"), i),
+                "rain_prob": _at(hrs.get("precipitation_probability"), i),
+                "code": code,
+                "description": describe(code) if code is not None else None,
+            })
+
         out = {
             "current": {
                 "temp": cur.get("temperature_2m"),
                 "code": cur.get("weather_code"),
                 "description": describe(cur.get("weather_code")),
+                "feels_like": cur.get("apparent_temperature"),
+                "humidity": cur.get("relative_humidity_2m"),
+                "wind": cur.get("wind_speed_10m"),
             },
             "daily": days,
+            "hourly": hourly,
         }
         if days:
             out["sun"] = {"sunrise": days[0]["sunrise"], "sunset": days[0]["sunset"]}

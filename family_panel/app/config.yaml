@@ -41,11 +41,16 @@ ha_tiles:
                                                  # >=0, losing import readings.
                                                  # export_power_raw is already
                                                  # signed the way this tile wants.
-    battery_power: sensor.battery_power         # W
+    battery_power: sensor.battery_charging_power_signed  # W — the signed
+                                                 # variant; already positive =
+                                                 # charging, so no invert_battery
+                                                 # needed. Verified against this
+                                                 # HA instance's own
+                                                 # binary_sensor.battery_discharging
+                                                 # (see family_panel/config.yaml,
+                                                 # the add-on manifest, which
+                                                 # wires the same tile).
     battery_level: sensor.battery_level         # %
-    invert_battery: true   # mkaiser's battery_power reads negative while
-                            # charging / positive while discharging — the
-                            # opposite of this tile's convention, so invert it.
     # These five may also be nested under an `entities:` key here; the
     # add-on's Configuration tab must use the flat form above.
     # invert_grid: true      # if your sensor reports import as positive

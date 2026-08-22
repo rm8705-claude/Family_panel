@@ -331,7 +331,11 @@
     np: null,                   // entity of the open now-playing overlay
     npStart: null,              // {entity, name, at} — favourite we just asked for
     climate: false,             // the whole-house aircon sheet is open
+    sonos: false,               // the multi-speaker sheet is open
+    weather: false,             // the weather detail sheet is open
     camIdx: 0,                  // which channel the grouped Cameras tile shows
+    camLive: null,              // entity playing live on the camera wall
+    sonosTarget: null,          // speaker a favourite starts on
     solar: false,               // the power-flow overlay is open
     wgScrolled: false,          // the week grid has found its scroll position
     theme: 'day',               // the theme actually applied right now
@@ -1257,6 +1261,108 @@
       '</div>';
   }
 
+  /* ------------------------------------------------------ weather detail -- */
+  /* Tapping the weather card opens today and tomorrow properly: the hourly
+     run of temperature and rain chance, plus the numbers the card has no
+     room for (feels-like, humidity, wind, expected rainfall, UV, sun times).
+     Hourly comes from /api/weather trimmed to these two days — see
+     weather.py, which deliberately doesn't ship seven days of it. */
+
+  function wxHourStrip(rows) {
+    if (!rows.length) return '';
+    var temps = rows.map(function (r) { return r.temp; })
+      .filter(function (t) { return typeof t === 'number'; });
+    if (!temps.length) return '';
+    var lo = Math.min.apply(null, temps), hi = Math.max.apply(null, temps);
+    var span = Math.max(1, hi - lo);
+    var nowH = new Date().getHours();
+    var todayStr = state.today;
+    return '<div class="wxd-hours">' + rows.map(function (r) {
+      var t = typeof r.temp === 'number' ? r.temp : null;
+      /* height is proportional within the day's own range, so a flat day
+         still reads as flat rather than being stretched to fill */
+      var h = t == null ? 0 : 18 + Math.round(((t - lo) / span) * 46);
+      var rain = Math.round(r.rain_prob || 0);
+      var isNow = r.date === todayStr && parseInt(r.time, 10) === nowH;
+      return '<div class="wxd-hr' + (isNow ? ' is-now' : '') + '">' +
+        '<div class="wxd-t mono">' + (t == null ? '–' : Math.round(t) + '°') + '</div>' +
+        '<div class="wxd-bar" style="height:' + h + 'px"></div>' +
+        /* only flag hours where rain is actually worth planning around —
+           a number on all 24 turns the strip into noise */
+        (rain >= 30 ? '<div class="wxd-rain mono">' + rain + '</div>' : '<div class="wxd-rain"></div>') +
+        '<div class="wxd-h mono">' + esc(String(parseInt(r.time, 10))) + '</div>' +
+        '</div>';
+    }).join('') + '</div>';
+  }
+
+  function wxStat(label, value) {
+    if (value == null || value === '') return '';
+    return '<div class="wxd-stat"><div class="k">' + esc(label) + '</div>' +
+      '<div class="v mono">' + esc(value) + '</div></div>';
+  }
+
+  function wxDayBlock(d, hourly, title) {
+    if (!d) return '';
+    var rows = hourly.filter(function (h) { return h.date === d.date; });
+    return '<div class="wxd-day">' +
+      '<div class="wxd-head"><span class="wxd-glyph">' + wxGlyph(d.code) + '</span>' +
+      '<div><div class="wxd-title">' + esc(title) + '</div>' +
+      '<div class="wxd-desc">' + esc(d.description || '') + '</div></div>' +
+      '<span class="spacer"></span>' +
+      '<div class="wxd-range mono">' + Math.round(d.max) + '° <i>/ ' +
+      Math.round(d.min) + '°</i></div></div>' +
+      wxHourStrip(rows) +
+      '<div class="wxd-stats">' +
+      wxStat('Rain chance', d.rain_prob != null ? Math.round(d.rain_prob) + '%' : null) +
+      wxStat('Rainfall', d.rain_mm != null ? (Math.round(d.rain_mm * 10) / 10) + ' mm' : null) +
+      wxStat('UV max', d.uv != null ? Math.round(d.uv) : null) +
+      wxStat('Wind max', d.wind_max != null ? Math.round(d.wind_max) + ' km/h' : null) +
+      wxStat('Sunrise', d.sunrise ? fmtTimeShort(d.sunrise) : null) +
+      wxStat('Sunset', d.sunset ? fmtTimeShort(d.sunset) : null) +
+      '</div></div>';
+  }
+
+  function weatherSheetHtml() {
+    var w = D.weather;
+    if (!w || !w.available || !w.daily || !w.daily.length) {
+      return '<div class="empty">Weather unavailable — it will retry.</div>';
+    }
+    var cur = w.current || {};
+    var hourly = w.hourly || [];
+    var now = '';
+    if (cur.temp != null) {
+      now = '<div class="wxd-now">' +
+        '<span class="wxd-now-t mono">' + Math.round(cur.temp) + '°</span>' +
+        '<div class="wxd-now-s">' +
+        (cur.feels_like != null ? '<div>Feels like <b>' + Math.round(cur.feels_like) + '°</b></div>' : '') +
+        (cur.humidity != null ? '<div>Humidity <b>' + Math.round(cur.humidity) + '%</b></div>' : '') +
+        (cur.wind != null ? '<div>Wind <b>' + Math.round(cur.wind) + ' km/h</b></div>' : '') +
+        '</div></div>';
+    }
+    return now +
+      wxDayBlock(w.daily[0], hourly, 'Today') +
+      wxDayBlock(w.daily[1], hourly, 'Tomorrow') +
+      (hourly.length ? '' :
+        '<p class="muted2" style="font-size:.8125rem">Hour-by-hour arrives on the ' +
+        'next weather sync.</p>');
+  }
+
+  function openWeatherSheet() {
+    openSheet('<div id="weatherCard">' + weatherSheetHtml() + '</div>', {
+      title: 'Weather', focus: false,
+      foot: '<span style="flex:1 1 auto"></span>' +
+        '<button class="btn ghost" data-act="close-sheet">Close</button>'
+    });
+    state.weather = true;
+  }
+
+  function updateWeatherSheet() {
+    if (!state.weather) return;
+    var host = byId('weatherCard');
+    if (!host) { state.weather = false; return; }
+    host.innerHTML = weatherSheetHtml();
+  }
+
   function weatherCard() {
     var w = D.weather;
     if (!w || !w.available || !w.daily || !w.daily.length) {
@@ -1280,7 +1386,7 @@
     }).join('');
     var rain = Math.round(today.rain_prob || 0);
     var uv = today.uv != null ? Math.round(today.uv) : null;
-    return '<section class="card wx a-weather">' +
+    return '<section class="card wx a-weather" data-act="weather-open" role="button" tabindex="0">' +
       '<div class="wx-sky is-' + group + '">' +
       '<div class="card-head" style="margin-bottom:.5rem"><h2 class="lbl">Weather</h2>' +
       '<span class="spacer"></span><span class="muted2" style="font-size:.75rem">' +
@@ -1787,27 +1893,86 @@
      the owner actually asked for. Labels on, 10 s cache-busted refresh (the
      shared refreshCameras() timer finds these images too), and any one of
      them opens full size with a way back to the wall. */
+  /* Fit the whole wall on screen rather than letting auto-fit push half the
+     channels below the fold — with eight cameras the point is seeing all
+     eight at once. 16:10 cells, so wide-and-short beats tall-and-narrow. */
+  function camGridCols(n) {
+    if (n <= 1) return 1;
+    if (n <= 4) return 2;
+    if (n <= 6) return 3;
+    return 4;
+  }
+
+  /* Blank every live stream's src before its element goes away. Removing the
+     <img> alone usually aborts the request, but "usually" would leave the Pi
+     running ffmpeg for channels nobody is watching — so this is explicit. */
+  /* The live-stream URL, or the snapshot in demo mode — ?mock=1 has no real
+     cameras behind it, so asking for a stream just 404s eight times and
+     falls back anyway. Returning the demo frame directly is both quieter
+     and a truthful representation of what the demo actually has. */
+  function camLiveSrc(t) {
+    return MOCK ? camSrc(t)
+      : '/api/ha/camera/' + encodeURIComponent(t.entity) + '/stream';
+  }
+
+  function stopLiveCameras() {
+    Array.prototype.forEach.call(
+      document.querySelectorAll('img[data-cam-live]'), function (img) {
+        img.removeAttribute('onerror');    // teardown must not trip the fallback
+        img.src = '';
+      });
+  }
+
   function cameraGridHtml() {
     var list = cameraTiles();
     if (!list.length) return '<div class="empty">No cameras are configured on the panel yet.</div>';
     var off = !!(D.ha && D.ha.available === false);
     var live = list.filter(function (t) { return !off && !camOffline(t); }).length;
-    return '<div class="cam-wall">' +
+    return '<div class="cam-wall" id="camWall">' +
       '<button class="close-x cam-wall-close" data-act="close-sheet" aria-label="Close">' + ICON.close + '</button>' +
       '<div class="cam-wall-head"><span class="np-label">Cameras</span>' +
       '<span class="cam-wall-n mono">' + esc(live + ' of ' + list.length + ' live') + '</span></div>' +
-      '<div class="cam-grid">' + list.map(function (t) {
+      /* Snapshots on every cell, live on the one that was tapped. Decoding
+         a stream is the expensive half — see camLiveSrc — so the wall costs
+         one stream, not eight, and the other seven keep showing their most
+         recent frame on the ordinary 10 s refresh. Tapping the live cell
+         again opens it full screen. Playback/recall stays in the Swann app;
+         this is a live wall, not a DVR client. */
+      '<div class="cam-grid" style="grid-template-columns:repeat(' +
+      camGridCols(list.length) + ',minmax(0,1fr))">' + list.map(function (t) {
         var dead = off || camOffline(t);
-        return '<button class="cam-cell' + (dead ? ' is-dead' : '') + '"' +
+        var live = !dead && !MOCK && state.camLive === t.entity;
+        return '<button class="cam-cell' + (dead ? ' is-dead' : '') +
+          (live ? ' is-live' : '') + '"' +
           (dead ? ' disabled' : ' data-act="cam" data-entity="' + esc(t.entity) + '" data-from="grid"') + '>' +
           (dead
             ? '<span class="cam-dead"><span>No signal</span></span>'
-            : '<img data-cam="' + esc(t.entity) + '" decoding="async" src="' + esc(camSrc(t)) +
-              '" alt="' + esc(t.label) + ' camera">') +
-          '<span class="cam-label">' + esc(t.label) + '</span></button>';
+            : '<img data-cam="' + esc(t.entity) + '"' + (live ? ' data-cam-live="1"' : '') +
+              ' decoding="async" src="' +
+              esc(live ? '/api/ha/camera/' + encodeURIComponent(t.entity) + '/stream' : camSrc(t)) + '"' +
+              (live ? ' onerror="window.__camLiveFail(this)" data-fallback="' + esc(camSrc(t)) + '"' : '') +
+              ' alt="' + esc(t.label) + ' camera">') +
+          '<span class="cam-label">' + esc(t.label) + '</span>' +
+          (live ? '<span class="cam-live-tag">LIVE</span>' : '') +
+          '</button>';
       }).join('') + '</div>' +
       (off ? '<p class="cam-wall-note">Home Assistant is offline — these are the last frames it sent.</p>' : '') +
       '</div>';
+  }
+
+  /* One tap makes a cell live; a second tap on the already-live cell opens
+     it full screen. Only ever one stream on the wall — switching cells
+     tears the previous one down by rebuilding the grid, which drops the old
+     <img> and with it the connection. */
+  function camTap(el) {
+    var entity = el.dataset.entity;
+    if (el.dataset.from !== 'grid') { openCamera(entity, false); return; }
+    if (state.camLive === entity) { openCamera(entity, true); return; }
+    state.camLive = entity;
+    var wall = byId('camWall');
+    if (!wall) { openCamera(entity, true); return; }
+    stopLiveCameras();                     // blank the outgoing stream first
+    wall.outerHTML = cameraGridHtml();
   }
 
   function openCameraGrid() {
@@ -1829,12 +1994,14 @@
         (ha ? 'No tiles configured yet — add them to config.yaml.' : waitingCopy('Home tiles')) +
         '</span></div></section>';
     }
-    /* Climate entities and camera channels each collapse to a single tile,
-       drawn where the first one of its kind sat so the row keeps the order
-       config.yaml asked for. Everything else is one tile per entity. */
+    /* Climate entities, camera channels and media players each collapse to a
+       single tile, drawn where the first one of its kind sat so the row
+       keeps the order config.yaml asked for. Everything else is one tile
+       per entity. */
     var clims = climateTiles();
     var cams = cameraTiles();
-    var drawnClim = false, drawnCam = false;
+    var meds = mediaTiles();
+    var drawnClim = false, drawnCam = false, drawnMedia = false;
 
     var body = tiles.map(function (t) {
       if (t.type === 'climate') {
@@ -1850,16 +2017,17 @@
       /* bin_day gets its own card (binDayCard) in the today grid, not a
          tile in this generic Home row. */
       if (t.type === 'bin_day') return '';
-      /* The media tile opens the now-playing overlay when tapped anywhere its
-         own buttons aren't — they sit deeper, so delegation finds them first. */
-      var media = t.type === 'media' && !off;
+      if (t.type === 'media') {
+        if (drawnMedia) return '';
+        drawnMedia = true;
+        return sonosTile(meds, off);
+      }
       /* the solar tile is read-only everywhere — its whole tap is the
          power-flow overlay, and it carries no buttons at all */
       var sol = t.type === 'solar' && !off;
-      return '<div class="tile' + (off ? ' is-off' : '') + (media ? ' is-media' : '') +
+      return '<div class="tile' + (off ? ' is-off' : '') +
         (t.type === 'fan' ? ' is-fan' : '') +
         (t.type === 'solar' ? ' is-solar' : '') + '"' +
-        (media ? ' data-act="media-open" data-entity="' + esc(t.entity) + '" role="button" tabindex="0"' : '') +
         (sol ? ' data-act="solar-open" role="button" tabindex="0"' : '') + '>' +
         '<div class="t-label">' + esc(t.label) + '</div>' + tileBody(t) +
         (off ? '' : tileActions(t)) + '</div>';
@@ -1875,6 +2043,152 @@
      key and a volume bar you can hit from across the kitchen. HA may start
      sending `entity_picture` later — until then the art well draws a vinyl
      disc in the family's own four colours rather than pulling an image. */
+
+  function mediaTiles() {
+    return ((D.ha && D.ha.tiles) || []).filter(function (t) { return t.type === 'media'; });
+  }
+
+  /* SONOS — one speaker and the Home card tile IS that speaker, same as
+     before. Two or more and it collapses into a single "Sonos" tile, same
+     pattern as the aircon and camera groups: a count badge and whichever
+     speaker is actually playing, tapping opens every speaker at once. */
+  function sonosTile(list, off) {
+    if (list.length <= 1) {
+      var only = list[0];
+      if (!only) return '';
+      return '<div class="tile' + (off ? ' is-off' : '') + ' is-media"' +
+        (off ? '' : ' data-act="media-open" data-entity="' + esc(only.entity) + '" role="button" tabindex="0"') + '>' +
+        '<div class="t-label">' + esc(only.label) + '</div>' + tileBody(only) +
+        (off ? '' : tileActions(only)) + '</div>';
+    }
+    var playing = list.filter(function (t) { return t.attrs && t.attrs.playing; });
+    var primary = playing[0] ||
+      list.filter(function (t) { return t.attrs && t.attrs.title; })[0] || list[0];
+    var a = primary.attrs || {};
+    return '<div class="tile is-sonos' + (off ? ' is-off' : '') + '"' +
+      (off ? '' : ' data-act="sonos-open" role="button" tabindex="0"') + '>' +
+      '<div class="t-label">Sonos<span class="t-count">' + list.length + '</span></div>' +
+      '<div class="t-value mono" style="font-size:1rem">' +
+      esc(playing.length > 1 ? playing.length + ' playing' : (playing.length ? 'Playing' : 'Paused')) +
+      '</div>' +
+      '<div class="t-sub">' + esc(a.title || '—') + (a.artist ? ' · ' + esc(a.artist) : '') + '</div>' +
+      '</div>';
+  }
+
+  /* Every speaker, stacked: art, transport, volume and its own favourites —
+     the same controls the single-speaker overlay has, once per speaker. */
+  /* Which speaker a favourite starts on. Defaults to whatever is already
+     playing, since "put this on instead" is the common intent; falls back to
+     the first configured speaker. */
+  function sonosTarget(list) {
+    var chosen = list.filter(function (t) { return t.entity === state.sonosTarget; })[0];
+    if (chosen) return chosen;
+    return list.filter(function (t) { return (t.attrs || {}).playing; })[0] || list[0];
+  }
+
+  /* ONE favourites list for the household, not one per speaker. They come
+     from the same My Sonos and were identical on every card — eight
+     identical stations repeated per speaker is noise, and it pushed the
+     actual controls off the screen. The target picker above it says which
+     speaker a tap will start on. */
+  function sonosFavouritesHtml(list) {
+    var target = sonosTarget(list);
+    if (!target) return '';
+    var picker = list.length < 2 ? '' :
+      '<div class="sn-target">' + list.map(function (t) {
+        return '<button class="sn-tgt' + (t.entity === target.entity ? ' is-on' : '') +
+          '" data-act="sonos-target" data-entity="' + esc(t.entity) + '">' +
+          esc(t.label) + '</button>';
+      }).join('') + '</div>';
+    return '<div class="np-sources sn-favs">' +
+      '<div class="np-sec">Play something' +
+      (list.length > 1 ? ' on <b>' + esc(target.label) + '</b>' : '') + '</div>' +
+      picker + sourceRows(target) + '</div>';
+  }
+
+  function sonosSheetHtml() {
+    var list = mediaTiles();
+    if (!list.length) return '<div class="empty">No speakers are configured on the panel yet.</div>';
+    return '<button class="close-x np-close" data-act="close-sheet" aria-label="Close">' + ICON.close + '</button>' +
+      '<div class="sn-head">' +
+      '<div class="np-label">Sonos · ' + list.length + ' speaker' + (list.length === 1 ? '' : 's') + '</div>' +
+      '<span class="spacer"></span>' +
+      /* Everything the panel deliberately doesn't do — grouping, alarms,
+         search, EQ — lives in the Sonos app. The intent URL opens it
+         directly on Android and falls back to the Play Store listing if it
+         isn't installed. */
+      '<a class="btn ghost sn-app" href="intent://#Intent;package=com.sonos.acr2;' +
+      'S.browser_fallback_url=https%3A%2F%2Fplay.google.com%2Fstore%2Fapps%2Fdetails%3Fid%3Dcom.sonos.acr2;end">' +
+      'Open Sonos app</a>' +
+      '</div>' +
+      '<div class="sn-list">' + list.map(sonosSpeakerCard).join('') + '</div>' +
+      sonosFavouritesHtml(list);
+  }
+
+  function sonosSpeakerCard(t) {
+    var a = t.attrs || {};
+    var vol = typeof a.volume === 'number' ? Math.max(0, Math.min(1, a.volume)) : null;
+    var pct = vol == null ? null : Math.round(vol * 100);
+    var playing = !!a.playing;
+    var can = !!t.allow_action;
+    var starting = startingSource(t);
+    var btn = function (action, label, value, cls) {
+      return '<button class="' + cls + '" data-act="ha" data-now="1" data-entity="' + esc(t.entity) +
+        '" data-action="' + action + '"' + (value != null ? ' data-value="' + value + '"' : '') +
+        ' data-label="' + esc(label) + '" aria-label="' + esc(label) + '">';
+    };
+    var out = '<div class="sn-speaker' + (playing ? ' is-playing' : '') + '">' +
+      '<div class="sn-sp-head"><div class="sn-sp-art">' + npArt(t) + '</div>' +
+      '<div class="sn-sp-info">' +
+      '<div class="sn-sp-name">' + esc(t.label) + ' · ' +
+      (starting ? 'Starting' : (playing ? 'Now playing' : 'Paused')) + '</div>' +
+      '<div class="sn-sp-title">' + esc(starting ? starting : (a.title || 'Nothing playing')) + '</div>' +
+      '<div class="sn-sp-artist">' + esc(starting ? 'Starting…' : (a.artist || (a.source || '—'))) + '</div>' +
+      '</div></div>';
+    if (!can) {
+      out += '<p class="muted2 np-ro">This speaker is read-only on the panel.</p>';
+    } else {
+      out += '<div class="np-transport">' +
+        btn('previous', 'Previous track', null, 'np-skip') + ICON.prev + '</button>' +
+        btn(playing ? 'pause' : 'play', playing ? 'Pause' : 'Play', null, 'np-play') +
+        (playing ? ICON.pause : ICON.play) + '<span>' + (playing ? 'Pause' : 'Play') + '</span></button>' +
+        btn('next', 'Next track', null, 'np-skip') + ICON.next + '</button>' +
+        '</div>';
+      if (vol != null) {
+        out += '<div class="np-vol">' +
+          btn('volume_set', 'Quieter', volStep(vol, -1), 'np-vbtn') + '−</button>' +
+          '<div class="np-bar" data-act="np-seek" data-entity="' + esc(t.entity) + '" role="slider" tabindex="0" ' +
+          'aria-label="Volume" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '">' +
+          '<i style="width:' + pct + '%"></i></div>' +
+          btn('volume_set', 'Louder', volStep(vol, +1), 'np-vbtn') + '+</button>' +
+          '<span class="np-pct mono">' + pct + '%</span></div>';
+      }
+    }
+    return out + '</div>';
+  }
+
+  function openSonosSheet() {
+    var list = mediaTiles();
+    /* One speaker in the house and this would be a list of one — the
+       existing single-speaker overlay already does that, better. */
+    if (list.length <= 1) { if (list[0]) openNowPlaying(list[0].entity); return; }
+    openSheet('<div class="sn-sheet" id="sonosCard">' + sonosSheetHtml() + '</div>', { raw: true, centre: true });
+    state.sonos = true;
+  }
+
+  /* Keep every speaker's card in step with the 15 s HA poll, the same way
+     the climate sheet does — but hold each speaker's favourites list where
+     the reader left it scrolled, exactly as the single-speaker overlay does. */
+  function updateSonosSheet() {
+    if (!state.sonos) return;
+    var host = byId('sonosCard');
+    if (!host) { state.sonos = false; return; }
+    var lists = host.querySelectorAll('.np-src-list');
+    var tops = Array.prototype.map.call(lists, function (l) { return l.scrollTop; });
+    host.innerHTML = sonosSheetHtml();
+    var lists2 = host.querySelectorAll('.np-src-list');
+    Array.prototype.forEach.call(lists2, function (l, i) { if (tops[i]) l.scrollTop = tops[i]; });
+  }
 
   function mediaTile(entity) {
     var tiles = (D.ha && D.ha.tiles) || [];
@@ -3067,6 +3381,8 @@
     paintShelf();
     renderRail();
     updateNowPlaying();
+    updateSonosSheet();
+    updateWeatherSheet();
     updateClimateSheet();
     paintSolar();
   }
@@ -3108,6 +3424,11 @@
     Array.prototype.forEach.call(document.querySelectorAll('img[data-cam]'), function (img) {
       var base = img.getAttribute('src') || '';
       if (base.indexOf('data:') === 0) return;
+      /* A live MJPEG <img> is a single request that never completes — it is
+         already showing new frames. Re-stamping its src would kill the
+         connection and start a fresh one every 10 s, which reads as a
+         stutter and leaves the DVR opening a new session each time. */
+      if (img.hasAttribute('data-cam-live')) return;
       img.src = camBust(base);
     });
   }
@@ -3117,10 +3438,15 @@
   function closeSheet() {
     var host = byId('sheetHost');
     assistRelease();
+    stopLiveCameras();          // before innerHTML='', so the src is blanked
+    state.camLive = null;
+    state.sonosTarget = null;
     host.innerHTML = '';
     state.np = null;
     state.climate = false;
     state.solar = false;
+    state.sonos = false;
+    state.weather = false;
     stopStatusRefresh();
     renderCatchUp();
   }
@@ -3129,9 +3455,15 @@
     opts = opts || {};
     var host = byId('sheetHost');
     assistRelease();
+    stopLiveCameras();          // one sheet replacing another must not leak
+    state.camLive = null;
+    state.sonosTarget = null;
+
     state.np = null;
     state.climate = false;
     state.solar = false;
+    state.sonos = false;
+    state.weather = false;
     stopStatusRefresh();
     host.innerHTML = '<div class="scrim' + (opts.centre ? ' centre' : '') +
       (opts.cls ? ' ' + opts.cls : '') + '" data-act="scrim">' +
@@ -4343,14 +4675,32 @@
 
   /* One channel, full size. Opened from the wall it gets a Back key that
      returns to the wall; opened from a single-camera house it just closes. */
+  /* Live feed unreachable — the add-on can't reach HA's stream endpoint, or
+     the DVR dropped the channel. Fall back to the still snapshot and let
+     refreshCameras() take over, so the view degrades to what it did before
+     live streaming existed rather than to a broken-image icon. */
+  window.__camLiveFail = function (img) {
+    var fb = img.getAttribute('data-fallback');
+    img.removeAttribute('onerror');          // never loop on a dead fallback
+    img.removeAttribute('data-cam-live');
+    if (fb) img.src = fb;
+  };
+
   function openCamera(entity, fromGrid) {
     var tiles = (D.ha && D.ha.tiles) || [];
     var t = tiles.filter(function (x) { return x.entity === entity; })[0];
     if (!t) return;
+    /* Full screen is where you actually want moving pictures, so this one is
+       the live MJPEG feed rather than the 10 s snapshot the tiles carry.
+       data-cam-live keeps refreshCameras() from re-stamping it — see there.
+       If the stream can't be reached the <img> errors and we fall back to the
+       snapshot, so a dead feed degrades to a still rather than a blank box. */
     openSheet('<div style="text-align:center">' +
       '<div class="cam-full-lab">' + esc(t.label) + '</div>' +
-      '<img class="cam-full" data-cam="' + esc(entity) + '" decoding="async" src="' +
-      esc(camSrc(t)) + '" alt="' + esc(t.label) + '">' +
+      '<img class="cam-full" data-cam="' + esc(entity) + '"' + (MOCK ? '' : ' data-cam-live="1"') +
+      ' decoding="async" src="' + esc(camLiveSrc(t)) + '"' +
+      ' onerror="window.__camLiveFail(this)"' +
+      ' data-fallback="' + esc(camSrc(t)) + '" alt="' + esc(t.label) + '">' +
       '<div class="cam-full-acts">' +
       (fromGrid ? '<button class="btn" data-act="cam-grid">' + ICON.left + 'All cameras</button>' : '') +
       '<button class="btn" data-act="close-sheet">Close</button></div></div>',
@@ -4358,6 +4708,41 @@
   }
 
   /* --------------------------------------------------------------- chores -- */
+
+  /* THE GOAL MOMENT — every chore on one person's list ticked off. A short,
+     unmissable full-screen cheer in that person's own colour, then it clears
+     itself. Deliberately not a sheet: nothing to dismiss, nothing to tap
+     wrong, and it can't strand a kid in a modal. Tapping skips it. */
+  function cheerAllDone(p) {
+    var host = byId('cheerHost');
+    if (!host) return;
+    var stars = '';
+    for (var i = 0; i < 18; i++) {
+      stars += '<i style="left:' + (3 + (i * 5.4) % 94).toFixed(1) + '%;' +
+        'animation-delay:' + (i * 55) + 'ms;' +
+        'animation-duration:' + (1500 + (i % 4) * 260) + 'ms">' + ICON.star + '</i>';
+    }
+    host.innerHTML = '<div class="cheer" style="' + pstyle(p.id) + '">' +
+      '<div class="cheer-stars">' + stars + '</div>' +
+      '<div class="cheer-card">' +
+      '<div class="cheer-tick">' + ICON.tick + '</div>' +
+      '<div class="cheer-name">' + esc(p.name) + '</div>' +
+      '<div class="cheer-sub">All chores done!</div>' +
+      '<div class="cheer-stars-won">' + starPips(p.stars_week || 0, 10, true) + '</div>' +
+      '</div></div>';
+    host.hidden = false;
+    clearTimeout(cheerTimer);
+    cheerTimer = setTimeout(clearCheer, 4200);
+  }
+
+  var cheerTimer = null;
+  function clearCheer() {
+    var host = byId('cheerHost');
+    if (!host || host.hidden) return;
+    host.hidden = true;
+    host.innerHTML = '';
+    clearTimeout(cheerTimer);
+  }
 
   function toggleChore(el, choreId, personId) {
     var ch = D.chores;
@@ -4375,14 +4760,36 @@
     p.stars_week = Math.max(0, (p.stars_week || 0) + (nowDone ? (c.stars || 1) : -(c.stars || 1)));
     el.classList.toggle('is-done', nowDone);
 
-    if (nowDone && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    var calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (nowDone && !calm) {
+      /* A tick is worth celebrating at kid-legible scale: 14 pieces over a
+         wider arc, a couple of them stars, and the row itself pops. The old
+         8 thin bars read as a rendering glitch from across the kitchen. */
       var burst = document.createElement('span');
       burst.className = 'burst';
       var html = '';
-      for (var i = 0; i < 8; i++) html += '<i style="--r:' + (i * 45) + 'deg;animation-delay:' + (i * 12) + 'ms"></i>';
+      for (var i = 0; i < 14; i++) {
+        var ang = Math.round((i * 360 / 14) + (i % 2 ? 9 : 0));
+        html += '<i class="' + (i % 3 === 0 ? 'star' : '') + '" style="--r:' + ang +
+          'deg;--d:' + (2.6 + (i % 3) * 0.55).toFixed(2) + 'rem;animation-delay:' +
+          (i * 9) + 'ms"></i>';
+      }
       burst.innerHTML = html;
       el.appendChild(burst);
-      setTimeout(function () { if (burst.parentNode) burst.parentNode.removeChild(burst); }, 800);
+      el.classList.remove('just-done');
+      void el.offsetWidth;                       // replay the pop
+      el.classList.add('just-done');
+      setTimeout(function () {
+        if (burst.parentNode) burst.parentNode.removeChild(burst);
+        el.classList.remove('just-done');
+      }, 1100);
+
+      /* The actual goal: everything on their list, done. That deserves more
+         than the same burst the fifth-last chore got. */
+      var list = p.chores || [];
+      if (list.length > 1 && list.every(function (x) { return x.done; })) {
+        cheerAllDone(p);
+      }
     }
 
     act(POST('/api/chores/' + choreId + '/toggle?date=' + state.today), function () {
@@ -4706,10 +5113,16 @@
       }
 
       case 'ha': haTap(el); break;
-      case 'cam': openCamera(el.dataset.entity, el.dataset.from === 'grid'); break;
+      case 'cam': camTap(el); break;
       case 'cams': openCameraGrid(); break;
       case 'cam-grid': openCameraGrid(); break;
       case 'media-open': openNowPlaying(el.dataset.entity); break;
+      case 'sonos-open': openSonosSheet(); break;
+      case 'sonos-target':
+        state.sonosTarget = el.dataset.entity;
+        updateSonosSheet();
+        break;
+      case 'weather-open': openWeatherSheet(); break;
       case 'climate-open': openClimateSheet(); break;
       case 'solar-open': openSolarSheet(); break;
       case 'np-seek':
@@ -4837,6 +5250,13 @@
      Every image comes from the local cache the backend keeps (/api/photos),
      so the panel still never reaches outside for a picture.
 
+     No photos configured yet — the common state before anyone has set up a
+     folder or a shared album — and it still triggers on the same idle timer,
+     just without a photo: the clock/date/next-up footer over .saver's own
+     dark ground. A wall panel gets basic idle relief before photos are
+     anything but optional; hooking up photos later replaces the plain
+     ground with the picture frame, nothing else changes.
+
      It gives way to two things without argument: any sheet or armed confirm
      (you were in the middle of something), and the sleep overlay (at 9 pm the
      wall goes dark, photos or not). */
@@ -4956,7 +5376,6 @@
   function svStart() {
     if (SV.on) return false;
     var cfg = svCfg();
-    if (!cfg.photos.length) return false;
     SV.on = true;
     clearTimeout(SV.goingTimer);
     var el = byId('saver');
@@ -4967,9 +5386,17 @@
     SV.idx = -1;
     SV.front = 'A';
     svPaintClock();
-    svAdvance();
     clearInterval(SV.slideTimer);
-    SV.slideTimer = setInterval(function () { svAdvance(); }, cfg.interval);
+    /* No photos configured (the common case before anyone has set up the
+       folder or a shared album): skip the photo cycle entirely rather than
+       declining to run at all. Neither .sv-layer ever gets .is-on, so what
+       shows is .saver's own solid #07080A ground with the clock/date/next-up
+       footer on it — the same idle protection every other household gets,
+       available before photos are anything but optional. */
+    if (cfg.photos.length) {
+      svAdvance();
+      SV.slideTimer = setInterval(function () { svAdvance(); }, cfg.interval);
+    }
     clearInterval(SV.clockTimer);
     SV.clockTimer = setInterval(svPaintClock, 15000);
     return true;
@@ -5008,6 +5435,7 @@
     render();
   }
 
+  byId('cheerHost').addEventListener('pointerdown', clearCheer);
   byId('saver').addEventListener('pointerdown', svDismiss);
   byId('saver').addEventListener('click', function (e) {
     e.preventDefault(); e.stopPropagation();     // the tap's second half
@@ -5022,6 +5450,7 @@
   }, true);
 
   function updateSaver() {
+    renderSaverDebug();
     if (SV.on) {
       if (svBusy()) svStop();
       return;
@@ -5029,6 +5458,46 @@
     if (svBusy() || inSleepWindow()) return;
     if (Date.now() - SV.lastInput < svCfg().idleMs) return;
     svStart();
+  }
+
+  /* ?debugsaver=1 — same idea as ?debugtheme=1: a live readout of every
+     input the idle-screensaver decision runs on, for a kiosk tablet with no
+     realistic devtools access. Distinguishes "the 2 s poll isn't running at
+     all", "svBusy()/inSleepWindow() is blocking it", and "the idle clock
+     itself never crosses the threshold" — each a different fix. */
+  var SAVER_DEBUG = Q.get('debugsaver') === '1';
+  var saverDebugTicks = 0;
+  function renderSaverDebug() {
+    if (!SAVER_DEBUG) return;
+    saverDebugTicks++;
+    var el = byId('saverDebug');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'saverDebug';
+      el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;' +
+        'background:#000;color:#0f0;font:12px/1.5 monospace;padding:.5rem .75rem;' +
+        'white-space:pre-wrap;pointer-events:none;';
+      document.body.appendChild(el);
+    }
+    var idleMs = svCfg().idleMs;
+    var sinceInput = Date.now() - SV.lastInput;
+    var sheetOpen = byId('sheetHost').firstChild !== null;
+    var armed = !!document.querySelector('[data-armed="1"]');
+    var sleepUp = !byId('sleep').hidden;
+    el.textContent =
+      'poll ticks (every 2s):  ' + saverDebugTicks + '\n' +
+      'SV.on (saver running):  ' + SV.on + '\n' +
+      'photos configured:      ' + svCfg().photos.length + '\n' +
+      'idle threshold:         ' + Math.round(idleMs / 1000) + 's\n' +
+      'time since last input:  ' + Math.round(sinceInput / 1000) + 's\n' +
+      'sheet open (blocks it): ' + sheetOpen + '\n' +
+      'tile armed (blocks it): ' + armed + '\n' +
+      'sleep overlay up:       ' + sleepUp + '  (own overlay takes over instead)\n' +
+      'inSleepWindow():        ' + inSleepWindow() + '  (sleep=' +
+      ((D.status && D.status.config && D.status.config.screen || {}).sleep) + ' wake=' +
+      ((D.status && D.status.config && D.status.config.screen || {}).wake) + ')\n' +
+      'would start now:        ' + (!sheetOpen && !armed && !sleepUp &&
+        !inSleepWindow() && sinceInput >= idleMs);
   }
 
   window.__saver = {
@@ -5801,6 +6270,16 @@
           source_list: FAVOURITES.slice(), source: 'Kitchen Disco', entity_picture: null
         }
       },
+      /* A second speaker so the demo shows the grouped Sonos tile, not the
+         single-speaker one — most real households have more than one. */
+      {
+        entity: 'media_player.roam', label: 'Roam', type: 'media', allow_action: true,
+        state: 'paused',
+        attrs: {
+          title: null, artist: null, volume: 0.6, playing: false,
+          source_list: FAVOURITES.slice(), source: null, entity_picture: null
+        }
+      },
       {
         entity: 'fan.bedroom_dyson', label: 'Dyson', type: 'fan', allow_action: true,
         state: 'on', attrs: { on: true, percentage: 40, oscillating: true, preset_mode: 'auto' }
@@ -5818,9 +6297,12 @@
         entity: 'sensor.outside_temp', label: 'Outside', type: 'sensor', allow_action: false,
         state: '26.3', attrs: { value: 26.3, unit: '°C' }
       },
-      /* Four DVR channels. Garage is deliberately unavailable — a channel
-         dropping out is the normal failure on this kind of box, and the wall
-         has to say "no signal" rather than show a hole. */
+      /* Eight DVR channels, matching a real Swann box — the camera wall opens
+         every one of them live at once, so the demo has to exercise that
+         layout rather than a comfortable four. Garage is deliberately
+         unavailable: a channel dropping out is the normal failure on this
+         kind of box, and the wall has to say "no signal" rather than show a
+         hole. */
       {
         entity: 'camera.front_yard', label: 'Front yard', type: 'camera_snapshot', allow_action: false,
         state: 'idle', attrs: { snapshot_url: CAM_SCENE.front() }
@@ -5836,6 +6318,22 @@
       {
         entity: 'camera.garage', label: 'Garage', type: 'camera_snapshot', allow_action: false,
         state: 'unavailable', attrs: { snapshot_url: CAM_SCENE.garage() }
+      },
+      {
+        entity: 'camera.side_gate', label: 'Side gate', type: 'camera_snapshot', allow_action: false,
+        state: 'idle', attrs: { snapshot_url: CAM_SCENE.front() }
+      },
+      {
+        entity: 'camera.carport', label: 'Carport', type: 'camera_snapshot', allow_action: false,
+        state: 'idle', attrs: { snapshot_url: CAM_SCENE.drive() }
+      },
+      {
+        entity: 'camera.back_fence', label: 'Back fence', type: 'camera_snapshot', allow_action: false,
+        state: 'idle', attrs: { snapshot_url: CAM_SCENE.deck() }
+      },
+      {
+        entity: 'camera.shed', label: 'Shed', type: 'camera_snapshot', allow_action: false,
+        state: 'idle', attrs: { snapshot_url: CAM_SCENE.garage() }
       }
     ];
 
@@ -5853,8 +6351,29 @@
         code: wxCodes[i],
         description: null,
         sunrise: sunrises[i],
-        sunset: sunsets[i]
+        sunset: sunsets[i],
+        rain_mm: [0, 0.4, 8.2, 11.5, 0, 0, 0][i],
+        wind_max: [18, 22, 31, 28, 16, 14, 19][i]
       });
+    }
+
+    /* Two days of hourly so the demo exercises the weather detail sheet —
+       a gentle overnight dip and an afternoon peak, with rain chance rising
+       through day two to match its 70% daily figure. */
+    var hourly = [];
+    for (var hd = 0; hd < 2; hd++) {
+      for (var hh = 0; hh < 24; hh++) {
+        var swing = Math.sin((hh - 9) / 24 * Math.PI * 2);
+        hourly.push({
+          date: addDays(T, hd),
+          time: (hh < 10 ? '0' : '') + hh + ':00',
+          temp: Math.round((daily[hd].min + daily[hd].max) / 2 + swing * 6),
+          rain_prob: Math.max(0, Math.min(100,
+            Math.round(daily[hd].rain_prob * (0.5 + hh / 24)))),
+          code: wxCodes[hd],
+          description: null
+        });
+      }
     }
 
     M = {
@@ -5863,7 +6382,9 @@
       imports: imports, tiles: tiles,
       weather: {
         available: true, updated_at: T + 'T07:00:00+10:00',
-        current: { temp: 25.8, code: 1, description: 'Mostly clear' },
+        hourly: hourly,
+        current: { temp: 25.8, code: 1, description: 'Mostly clear',
+                   feels_like: 27.1, humidity: 58, wind: 19 },
         sun: { sunrise: sunrises[0], sunset: sunsets[0] },
         daily: daily
       },
