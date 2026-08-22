@@ -5,7 +5,7 @@
 # together whenever you ship a change (see the repo's `ship` skill).
 name: "Family Panel"
 description: "Self-hosted family wall calendar: shared calendar, chores, lists, meal planner and Home Assistant tiles."
-version: "0.15.22"
+version: "0.15.23"
 slug: "family_panel"
 url: "https://github.com/rm8705-claude/family_panel"
 arch:
@@ -87,6 +87,21 @@ options:
       label: "Roam"
       type: "media"
       allow_action: true
+    # Sungrow SH10RT + SBR via mkaiser's Modbus package over the WiNet-S2.
+    # Sign conventions verified against HA's own binary_sensor.importing_power
+    # and binary_sensor.battery_discharging on 2026-08-22, so no invert_* flags
+    # are needed: export_power_raw is negative when importing, and
+    # battery_charging_power_signed is negative when discharging — which is
+    # exactly what the panel expects (positive = exporting / charging).
+    # Note these are the UNPREFIXED sensor names; only the diagnostic entities
+    # carry a `sungrow_` prefix.
+    - label: "Solar"
+      type: "solar"
+      pv_power: "sensor.total_dc_power"
+      load_power: "sensor.load_power"
+      grid_power: "sensor.export_power_raw"
+      battery_power: "sensor.battery_charging_power_signed"
+      battery_level: "sensor.battery_level"
   screen:
     sleep: "21:00"
     wake: "05:45"
