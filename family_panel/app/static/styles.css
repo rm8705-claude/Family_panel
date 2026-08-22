@@ -2761,6 +2761,22 @@ select.inp {
 .cam-cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .cam-cell.is-dead { opacity: 0.55; }
 
+/* The one cell actually streaming. Ringed and badged, so at a glance you can
+   tell which of the eight is live and which are last-known frames. */
+.cam-cell.is-live { outline: 2px solid var(--hero); outline-offset: -2px; }
+.cam-live-tag {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  padding: 0.125rem 0.4375rem;
+  border-radius: var(--radius-s);
+  background: var(--hero);
+  color: var(--on-accent);
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.08em;
+}
+
 /* toasts */
 
 .toast-host {

@@ -334,6 +334,7 @@
     sonos: false,               // the multi-speaker sheet is open
     weather: false,             // the weather detail sheet is open
     camIdx: 0,                  // which channel the grouped Cameras tile shows
+    camLive: null,              // entity playing live on the camera wall
     solar: false,               // the power-flow overlay is open
     wgScrolled: false,          // the week grid has found its scroll position
     theme: 'day',               // the theme actually applied right now
@@ -1913,31 +1914,51 @@
     if (!list.length) return '<div class="empty">No cameras are configured on the panel yet.</div>';
     var off = !!(D.ha && D.ha.available === false);
     var live = list.filter(function (t) { return !off && !camOffline(t); }).length;
-    return '<div class="cam-wall">' +
+    return '<div class="cam-wall" id="camWall">' +
       '<button class="close-x cam-wall-close" data-act="close-sheet" aria-label="Close">' + ICON.close + '</button>' +
       '<div class="cam-wall-head"><span class="np-label">Cameras</span>' +
       '<span class="cam-wall-n mono">' + esc(live + ' of ' + list.length + ' live') + '</span></div>' +
-      /* Every channel live at once. The streams exist only while this sheet
-         is open — closeSheet() tears them down explicitly — so the decoding
-         cost on the Pi and the tablet is bounded to the moment someone is
-         actually watching. Playback/recall stays in the Swann app; this is
-         a live wall, not a DVR client. */
+      /* Snapshots on every cell, live on the one that was tapped. Decoding
+         a stream is the expensive half — see camLiveSrc — so the wall costs
+         one stream, not eight, and the other seven keep showing their most
+         recent frame on the ordinary 10 s refresh. Tapping the live cell
+         again opens it full screen. Playback/recall stays in the Swann app;
+         this is a live wall, not a DVR client. */
       '<div class="cam-grid" style="grid-template-columns:repeat(' +
       camGridCols(list.length) + ',minmax(0,1fr))">' + list.map(function (t) {
         var dead = off || camOffline(t);
-        return '<button class="cam-cell' + (dead ? ' is-dead' : '') + '"' +
+        var live = !dead && !MOCK && state.camLive === t.entity;
+        return '<button class="cam-cell' + (dead ? ' is-dead' : '') +
+          (live ? ' is-live' : '') + '"' +
           (dead ? ' disabled' : ' data-act="cam" data-entity="' + esc(t.entity) + '" data-from="grid"') + '>' +
           (dead
             ? '<span class="cam-dead"><span>No signal</span></span>'
-            : '<img data-cam="' + esc(t.entity) + '"' + (MOCK ? '' : ' data-cam-live="1"') +
-              ' decoding="async" src="' + esc(camLiveSrc(t)) + '"' +
-              ' onerror="window.__camLiveFail(this)"' +
-              ' data-fallback="' + esc(camSrc(t)) + '"' +
+            : '<img data-cam="' + esc(t.entity) + '"' + (live ? ' data-cam-live="1"' : '') +
+              ' decoding="async" src="' +
+              esc(live ? '/api/ha/camera/' + encodeURIComponent(t.entity) + '/stream' : camSrc(t)) + '"' +
+              (live ? ' onerror="window.__camLiveFail(this)" data-fallback="' + esc(camSrc(t)) + '"' : '') +
               ' alt="' + esc(t.label) + ' camera">') +
-          '<span class="cam-label">' + esc(t.label) + '</span></button>';
+          '<span class="cam-label">' + esc(t.label) + '</span>' +
+          (live ? '<span class="cam-live-tag">LIVE</span>' : '') +
+          '</button>';
       }).join('') + '</div>' +
       (off ? '<p class="cam-wall-note">Home Assistant is offline — these are the last frames it sent.</p>' : '') +
       '</div>';
+  }
+
+  /* One tap makes a cell live; a second tap on the already-live cell opens
+     it full screen. Only ever one stream on the wall — switching cells
+     tears the previous one down by rebuilding the grid, which drops the old
+     <img> and with it the connection. */
+  function camTap(el) {
+    var entity = el.dataset.entity;
+    if (el.dataset.from !== 'grid') { openCamera(entity, false); return; }
+    if (state.camLive === entity) { openCamera(entity, true); return; }
+    state.camLive = entity;
+    var wall = byId('camWall');
+    if (!wall) { openCamera(entity, true); return; }
+    stopLiveCameras();                     // blank the outgoing stream first
+    wall.outerHTML = cameraGridHtml();
   }
 
   function openCameraGrid() {
@@ -3362,6 +3383,7 @@
     var host = byId('sheetHost');
     assistRelease();
     stopLiveCameras();          // before innerHTML='', so the src is blanked
+    state.camLive = null;
     host.innerHTML = '';
     state.np = null;
     state.climate = false;
@@ -3377,6 +3399,7 @@
     var host = byId('sheetHost');
     assistRelease();
     stopLiveCameras();          // one sheet replacing another must not leak
+    state.camLive = null;
 
     state.np = null;
     state.climate = false;
@@ -5032,7 +5055,7 @@
       }
 
       case 'ha': haTap(el); break;
-      case 'cam': openCamera(el.dataset.entity, el.dataset.from === 'grid'); break;
+      case 'cam': camTap(el); break;
       case 'cams': openCameraGrid(); break;
       case 'cam-grid': openCameraGrid(); break;
       case 'media-open': openNowPlaying(el.dataset.entity); break;

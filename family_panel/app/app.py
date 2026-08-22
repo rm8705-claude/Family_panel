@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.17.1"
+APP_VERSION = "0.17.2"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
