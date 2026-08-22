@@ -5135,6 +5135,7 @@
   }, true);
 
   function updateSaver() {
+    renderSaverDebug();
     if (SV.on) {
       if (svBusy()) svStop();
       return;
@@ -5142,6 +5143,46 @@
     if (svBusy() || inSleepWindow()) return;
     if (Date.now() - SV.lastInput < svCfg().idleMs) return;
     svStart();
+  }
+
+  /* ?debugsaver=1 — same idea as ?debugtheme=1: a live readout of every
+     input the idle-screensaver decision runs on, for a kiosk tablet with no
+     realistic devtools access. Distinguishes "the 2 s poll isn't running at
+     all", "svBusy()/inSleepWindow() is blocking it", and "the idle clock
+     itself never crosses the threshold" — each a different fix. */
+  var SAVER_DEBUG = Q.get('debugsaver') === '1';
+  var saverDebugTicks = 0;
+  function renderSaverDebug() {
+    if (!SAVER_DEBUG) return;
+    saverDebugTicks++;
+    var el = byId('saverDebug');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'saverDebug';
+      el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;' +
+        'background:#000;color:#0f0;font:12px/1.5 monospace;padding:.5rem .75rem;' +
+        'white-space:pre-wrap;pointer-events:none;';
+      document.body.appendChild(el);
+    }
+    var idleMs = svCfg().idleMs;
+    var sinceInput = Date.now() - SV.lastInput;
+    var sheetOpen = byId('sheetHost').firstChild !== null;
+    var armed = !!document.querySelector('[data-armed="1"]');
+    var sleepUp = !byId('sleep').hidden;
+    el.textContent =
+      'poll ticks (every 2s):  ' + saverDebugTicks + '\n' +
+      'SV.on (saver running):  ' + SV.on + '\n' +
+      'photos configured:      ' + svCfg().photos.length + '\n' +
+      'idle threshold:         ' + Math.round(idleMs / 1000) + 's\n' +
+      'time since last input:  ' + Math.round(sinceInput / 1000) + 's\n' +
+      'sheet open (blocks it): ' + sheetOpen + '\n' +
+      'tile armed (blocks it): ' + armed + '\n' +
+      'sleep overlay up:       ' + sleepUp + '  (own overlay takes over instead)\n' +
+      'inSleepWindow():        ' + inSleepWindow() + '  (sleep=' +
+      ((D.status && D.status.config && D.status.config.screen || {}).sleep) + ' wake=' +
+      ((D.status && D.status.config && D.status.config.screen || {}).wake) + ')\n' +
+      'would start now:        ' + (!sheetOpen && !armed && !sleepUp &&
+        !inSleepWindow() && sinceInput >= idleMs);
   }
 
   window.__saver = {
