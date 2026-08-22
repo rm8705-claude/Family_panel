@@ -332,6 +332,7 @@
     npStart: null,              // {entity, name, at} — favourite we just asked for
     climate: false,             // the whole-house aircon sheet is open
     sonos: false,               // the multi-speaker sheet is open
+    weather: false,             // the weather detail sheet is open
     camIdx: 0,                  // which channel the grouped Cameras tile shows
     solar: false,               // the power-flow overlay is open
     wgScrolled: false,          // the week grid has found its scroll position
@@ -1257,6 +1258,108 @@
       '</div>';
   }
 
+  /* ------------------------------------------------------ weather detail -- */
+  /* Tapping the weather card opens today and tomorrow properly: the hourly
+     run of temperature and rain chance, plus the numbers the card has no
+     room for (feels-like, humidity, wind, expected rainfall, UV, sun times).
+     Hourly comes from /api/weather trimmed to these two days — see
+     weather.py, which deliberately doesn't ship seven days of it. */
+
+  function wxHourStrip(rows) {
+    if (!rows.length) return '';
+    var temps = rows.map(function (r) { return r.temp; })
+      .filter(function (t) { return typeof t === 'number'; });
+    if (!temps.length) return '';
+    var lo = Math.min.apply(null, temps), hi = Math.max.apply(null, temps);
+    var span = Math.max(1, hi - lo);
+    var nowH = new Date().getHours();
+    var todayStr = state.today;
+    return '<div class="wxd-hours">' + rows.map(function (r) {
+      var t = typeof r.temp === 'number' ? r.temp : null;
+      /* height is proportional within the day's own range, so a flat day
+         still reads as flat rather than being stretched to fill */
+      var h = t == null ? 0 : 18 + Math.round(((t - lo) / span) * 46);
+      var rain = Math.round(r.rain_prob || 0);
+      var isNow = r.date === todayStr && parseInt(r.time, 10) === nowH;
+      return '<div class="wxd-hr' + (isNow ? ' is-now' : '') + '">' +
+        '<div class="wxd-t mono">' + (t == null ? '–' : Math.round(t) + '°') + '</div>' +
+        '<div class="wxd-bar" style="height:' + h + 'px"></div>' +
+        /* only flag hours where rain is actually worth planning around —
+           a number on all 24 turns the strip into noise */
+        (rain >= 30 ? '<div class="wxd-rain mono">' + rain + '</div>' : '<div class="wxd-rain"></div>') +
+        '<div class="wxd-h mono">' + esc(String(parseInt(r.time, 10))) + '</div>' +
+        '</div>';
+    }).join('') + '</div>';
+  }
+
+  function wxStat(label, value) {
+    if (value == null || value === '') return '';
+    return '<div class="wxd-stat"><div class="k">' + esc(label) + '</div>' +
+      '<div class="v mono">' + esc(value) + '</div></div>';
+  }
+
+  function wxDayBlock(d, hourly, title) {
+    if (!d) return '';
+    var rows = hourly.filter(function (h) { return h.date === d.date; });
+    return '<div class="wxd-day">' +
+      '<div class="wxd-head"><span class="wxd-glyph">' + wxGlyph(d.code) + '</span>' +
+      '<div><div class="wxd-title">' + esc(title) + '</div>' +
+      '<div class="wxd-desc">' + esc(d.description || '') + '</div></div>' +
+      '<span class="spacer"></span>' +
+      '<div class="wxd-range mono">' + Math.round(d.max) + '° <i>/ ' +
+      Math.round(d.min) + '°</i></div></div>' +
+      wxHourStrip(rows) +
+      '<div class="wxd-stats">' +
+      wxStat('Rain chance', d.rain_prob != null ? Math.round(d.rain_prob) + '%' : null) +
+      wxStat('Rainfall', d.rain_mm != null ? (Math.round(d.rain_mm * 10) / 10) + ' mm' : null) +
+      wxStat('UV max', d.uv != null ? Math.round(d.uv) : null) +
+      wxStat('Wind max', d.wind_max != null ? Math.round(d.wind_max) + ' km/h' : null) +
+      wxStat('Sunrise', d.sunrise ? fmtTimeShort(d.sunrise) : null) +
+      wxStat('Sunset', d.sunset ? fmtTimeShort(d.sunset) : null) +
+      '</div></div>';
+  }
+
+  function weatherSheetHtml() {
+    var w = D.weather;
+    if (!w || !w.available || !w.daily || !w.daily.length) {
+      return '<div class="empty">Weather unavailable — it will retry.</div>';
+    }
+    var cur = w.current || {};
+    var hourly = w.hourly || [];
+    var now = '';
+    if (cur.temp != null) {
+      now = '<div class="wxd-now">' +
+        '<span class="wxd-now-t mono">' + Math.round(cur.temp) + '°</span>' +
+        '<div class="wxd-now-s">' +
+        (cur.feels_like != null ? '<div>Feels like <b>' + Math.round(cur.feels_like) + '°</b></div>' : '') +
+        (cur.humidity != null ? '<div>Humidity <b>' + Math.round(cur.humidity) + '%</b></div>' : '') +
+        (cur.wind != null ? '<div>Wind <b>' + Math.round(cur.wind) + ' km/h</b></div>' : '') +
+        '</div></div>';
+    }
+    return now +
+      wxDayBlock(w.daily[0], hourly, 'Today') +
+      wxDayBlock(w.daily[1], hourly, 'Tomorrow') +
+      (hourly.length ? '' :
+        '<p class="muted2" style="font-size:.8125rem">Hour-by-hour arrives on the ' +
+        'next weather sync.</p>');
+  }
+
+  function openWeatherSheet() {
+    openSheet('<div id="weatherCard">' + weatherSheetHtml() + '</div>', {
+      title: 'Weather', focus: false,
+      foot: '<span style="flex:1 1 auto"></span>' +
+        '<button class="btn ghost" data-act="close-sheet">Close</button>'
+    });
+    state.weather = true;
+  }
+
+  function updateWeatherSheet() {
+    if (!state.weather) return;
+    var host = byId('weatherCard');
+    if (!host) { state.weather = false; return; }
+    host.innerHTML = weatherSheetHtml();
+  }
+
   function weatherCard() {
     var w = D.weather;
     if (!w || !w.available || !w.daily || !w.daily.length) {
@@ -1280,7 +1383,7 @@
     }).join('');
     var rain = Math.round(today.rain_prob || 0);
     var uv = today.uv != null ? Math.round(today.uv) : null;
-    return '<section class="card wx a-weather">' +
+    return '<section class="card wx a-weather" data-act="weather-open" role="button" tabindex="0">' +
       '<div class="wx-sky is-' + group + '">' +
       '<div class="card-head" style="margin-bottom:.5rem"><h2 class="lbl">Weather</h2>' +
       '<span class="spacer"></span><span class="muted2" style="font-size:.75rem">' +
@@ -3163,6 +3266,7 @@
     renderRail();
     updateNowPlaying();
     updateSonosSheet();
+    updateWeatherSheet();
     updateClimateSheet();
     paintSolar();
   }
@@ -3223,6 +3327,7 @@
     state.climate = false;
     state.solar = false;
     state.sonos = false;
+    state.weather = false;
     stopStatusRefresh();
     renderCatchUp();
   }
@@ -3235,6 +3340,7 @@
     state.climate = false;
     state.solar = false;
     state.sonos = false;
+    state.weather = false;
     stopStatusRefresh();
     host.innerHTML = '<div class="scrim' + (opts.centre ? ' centre' : '') +
       (opts.cls ? ' ' + opts.cls : '') + '" data-act="scrim">' +
@@ -4480,6 +4586,41 @@
 
   /* --------------------------------------------------------------- chores -- */
 
+  /* THE GOAL MOMENT — every chore on one person's list ticked off. A short,
+     unmissable full-screen cheer in that person's own colour, then it clears
+     itself. Deliberately not a sheet: nothing to dismiss, nothing to tap
+     wrong, and it can't strand a kid in a modal. Tapping skips it. */
+  function cheerAllDone(p) {
+    var host = byId('cheerHost');
+    if (!host) return;
+    var stars = '';
+    for (var i = 0; i < 18; i++) {
+      stars += '<i style="left:' + (3 + (i * 5.4) % 94).toFixed(1) + '%;' +
+        'animation-delay:' + (i * 55) + 'ms;' +
+        'animation-duration:' + (1500 + (i % 4) * 260) + 'ms">' + ICON.star + '</i>';
+    }
+    host.innerHTML = '<div class="cheer" style="' + pstyle(p.id) + '">' +
+      '<div class="cheer-stars">' + stars + '</div>' +
+      '<div class="cheer-card">' +
+      '<div class="cheer-tick">' + ICON.tick + '</div>' +
+      '<div class="cheer-name">' + esc(p.name) + '</div>' +
+      '<div class="cheer-sub">All chores done!</div>' +
+      '<div class="cheer-stars-won">' + starPips(p.stars_week || 0, 10, true) + '</div>' +
+      '</div></div>';
+    host.hidden = false;
+    clearTimeout(cheerTimer);
+    cheerTimer = setTimeout(clearCheer, 4200);
+  }
+
+  var cheerTimer = null;
+  function clearCheer() {
+    var host = byId('cheerHost');
+    if (!host || host.hidden) return;
+    host.hidden = true;
+    host.innerHTML = '';
+    clearTimeout(cheerTimer);
+  }
+
   function toggleChore(el, choreId, personId) {
     var ch = D.chores;
     var p = null, c = null;
@@ -4496,14 +4637,36 @@
     p.stars_week = Math.max(0, (p.stars_week || 0) + (nowDone ? (c.stars || 1) : -(c.stars || 1)));
     el.classList.toggle('is-done', nowDone);
 
-    if (nowDone && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    var calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (nowDone && !calm) {
+      /* A tick is worth celebrating at kid-legible scale: 14 pieces over a
+         wider arc, a couple of them stars, and the row itself pops. The old
+         8 thin bars read as a rendering glitch from across the kitchen. */
       var burst = document.createElement('span');
       burst.className = 'burst';
       var html = '';
-      for (var i = 0; i < 8; i++) html += '<i style="--r:' + (i * 45) + 'deg;animation-delay:' + (i * 12) + 'ms"></i>';
+      for (var i = 0; i < 14; i++) {
+        var ang = Math.round((i * 360 / 14) + (i % 2 ? 9 : 0));
+        html += '<i class="' + (i % 3 === 0 ? 'star' : '') + '" style="--r:' + ang +
+          'deg;--d:' + (2.6 + (i % 3) * 0.55).toFixed(2) + 'rem;animation-delay:' +
+          (i * 9) + 'ms"></i>';
+      }
       burst.innerHTML = html;
       el.appendChild(burst);
-      setTimeout(function () { if (burst.parentNode) burst.parentNode.removeChild(burst); }, 800);
+      el.classList.remove('just-done');
+      void el.offsetWidth;                       // replay the pop
+      el.classList.add('just-done');
+      setTimeout(function () {
+        if (burst.parentNode) burst.parentNode.removeChild(burst);
+        el.classList.remove('just-done');
+      }, 1100);
+
+      /* The actual goal: everything on their list, done. That deserves more
+         than the same burst the fifth-last chore got. */
+      var list = p.chores || [];
+      if (list.length > 1 && list.every(function (x) { return x.done; })) {
+        cheerAllDone(p);
+      }
     }
 
     act(POST('/api/chores/' + choreId + '/toggle?date=' + state.today), function () {
@@ -4832,6 +4995,7 @@
       case 'cam-grid': openCameraGrid(); break;
       case 'media-open': openNowPlaying(el.dataset.entity); break;
       case 'sonos-open': openSonosSheet(); break;
+      case 'weather-open': openWeatherSheet(); break;
       case 'climate-open': openClimateSheet(); break;
       case 'solar-open': openSolarSheet(); break;
       case 'np-seek':
@@ -5144,6 +5308,7 @@
     render();
   }
 
+  byId('cheerHost').addEventListener('pointerdown', clearCheer);
   byId('saver').addEventListener('pointerdown', svDismiss);
   byId('saver').addEventListener('click', function (e) {
     e.preventDefault(); e.stopPropagation();     // the tap's second half
@@ -6040,8 +6205,29 @@
         code: wxCodes[i],
         description: null,
         sunrise: sunrises[i],
-        sunset: sunsets[i]
+        sunset: sunsets[i],
+        rain_mm: [0, 0.4, 8.2, 11.5, 0, 0, 0][i],
+        wind_max: [18, 22, 31, 28, 16, 14, 19][i]
       });
+    }
+
+    /* Two days of hourly so the demo exercises the weather detail sheet —
+       a gentle overnight dip and an afternoon peak, with rain chance rising
+       through day two to match its 70% daily figure. */
+    var hourly = [];
+    for (var hd = 0; hd < 2; hd++) {
+      for (var hh = 0; hh < 24; hh++) {
+        var swing = Math.sin((hh - 9) / 24 * Math.PI * 2);
+        hourly.push({
+          date: addDays(T, hd),
+          time: (hh < 10 ? '0' : '') + hh + ':00',
+          temp: Math.round((daily[hd].min + daily[hd].max) / 2 + swing * 6),
+          rain_prob: Math.max(0, Math.min(100,
+            Math.round(daily[hd].rain_prob * (0.5 + hh / 24)))),
+          code: wxCodes[hd],
+          description: null
+        });
+      }
     }
 
     M = {
@@ -6050,7 +6236,9 @@
       imports: imports, tiles: tiles,
       weather: {
         available: true, updated_at: T + 'T07:00:00+10:00',
-        current: { temp: 25.8, code: 1, description: 'Mostly clear' },
+        hourly: hourly,
+        current: { temp: 25.8, code: 1, description: 'Mostly clear',
+                   feels_like: 27.1, humidity: 58, wind: 19 },
         sun: { sunrise: sunrises[0], sunset: sunsets[0] },
         daily: daily
       },
