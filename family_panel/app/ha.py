@@ -206,6 +206,28 @@ def media_art(entity: str) -> tuple[bytes, str]:
     return r.content, r.headers.get("Content-Type", "image/jpeg")
 
 
+def camera_stream(entity: str):
+    """Open HA's live MJPEG stream for a camera. Returns (response, content_type).
+
+    The caller must iterate and close the response — it stays open for as long
+    as the viewer is watching, which is the whole point.
+
+    MJPEG rather than HLS or WebRTC: an MJPEG multipart stream drops straight
+    into an <img> tag with no player library, and — unlike WebRTC — needs no
+    secure context, which matters because the panel is served over plain http
+    (the same constraint that leaves Assist without a microphone).
+
+    Note the read timeout is None: a live stream is *supposed* to never
+    finish, so any read timeout would tear it down mid-view.
+    """
+    base, token = _api_base()
+    r = requests.get(f"{base}/camera_proxy_stream/{entity}",
+                     headers={"Authorization": f"Bearer {token}"},
+                     stream=True, timeout=(TIMEOUT, None))
+    r.raise_for_status()
+    return r, r.headers.get("Content-Type", "multipart/x-mixed-replace")
+
+
 def camera_snapshot(entity: str) -> tuple[bytes, str]:
     base, token = _api_base()
     r = requests.get(f"{base}/camera_proxy/{entity}",

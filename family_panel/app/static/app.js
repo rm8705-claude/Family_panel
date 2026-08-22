@@ -3204,6 +3204,11 @@
     Array.prototype.forEach.call(document.querySelectorAll('img[data-cam]'), function (img) {
       var base = img.getAttribute('src') || '';
       if (base.indexOf('data:') === 0) return;
+      /* A live MJPEG <img> is a single request that never completes — it is
+         already showing new frames. Re-stamping its src would kill the
+         connection and start a fresh one every 10 s, which reads as a
+         stutter and leaves the DVR opening a new session each time. */
+      if (img.hasAttribute('data-cam-live')) return;
       img.src = camBust(base);
     });
   }
@@ -4441,14 +4446,32 @@
 
   /* One channel, full size. Opened from the wall it gets a Back key that
      returns to the wall; opened from a single-camera house it just closes. */
+  /* Live feed unreachable — the add-on can't reach HA's stream endpoint, or
+     the DVR dropped the channel. Fall back to the still snapshot and let
+     refreshCameras() take over, so the view degrades to what it did before
+     live streaming existed rather than to a broken-image icon. */
+  window.__camLiveFail = function (img) {
+    var fb = img.getAttribute('data-fallback');
+    img.removeAttribute('onerror');          // never loop on a dead fallback
+    img.removeAttribute('data-cam-live');
+    if (fb) img.src = fb;
+  };
+
   function openCamera(entity, fromGrid) {
     var tiles = (D.ha && D.ha.tiles) || [];
     var t = tiles.filter(function (x) { return x.entity === entity; })[0];
     if (!t) return;
+    /* Full screen is where you actually want moving pictures, so this one is
+       the live MJPEG feed rather than the 10 s snapshot the tiles carry.
+       data-cam-live keeps refreshCameras() from re-stamping it — see there.
+       If the stream can't be reached the <img> errors and we fall back to the
+       snapshot, so a dead feed degrades to a still rather than a blank box. */
     openSheet('<div style="text-align:center">' +
       '<div class="cam-full-lab">' + esc(t.label) + '</div>' +
-      '<img class="cam-full" data-cam="' + esc(entity) + '" decoding="async" src="' +
-      esc(camSrc(t)) + '" alt="' + esc(t.label) + '">' +
+      '<img class="cam-full" data-cam="' + esc(entity) + '" data-cam-live="1"' +
+      ' decoding="async" src="/api/ha/camera/' + encodeURIComponent(entity) + '/stream"' +
+      ' onerror="window.__camLiveFail(this)"' +
+      ' data-fallback="' + esc(camSrc(t)) + '" alt="' + esc(t.label) + '">' +
       '<div class="cam-full-acts">' +
       (fromGrid ? '<button class="btn" data-act="cam-grid">' + ICON.left + 'All cameras</button>' : '') +
       '<button class="btn" data-act="close-sheet">Close</button></div></div>',

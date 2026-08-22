@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.15.23"
+APP_VERSION = "0.16.0"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -881,6 +881,38 @@ def api_ha_art(entity):
     # The URL carries a hash of HA's own picture token, so it changes whenever
     # the track does. Within one track it's safe to cache hard.
     resp.headers["Cache-Control"] = "public, max-age=3600"
+    return resp
+
+
+@app.get("/api/ha/camera/<entity>/stream")
+def api_ha_camera_stream(entity):
+    """Live MJPEG for a configured camera, proxied from Home Assistant.
+
+    Held open for the life of the view, which is why run.sh runs gunicorn with
+    --threads: on the default single sync worker this one request would block
+    the entire panel for as long as anyone was watching a camera.
+    """
+    import ha
+    if not any(t.get("entity") == entity and t.get("type") == "camera_snapshot"
+               for t in CONFIG.get("ha_tiles", []) or []):
+        return jsonify({"error": "Unknown camera"}), 404
+    try:
+        upstream, ctype = ha.camera_stream(entity)
+    except Exception:
+        return jsonify({"error": "Camera unavailable"}), 502
+
+    def relay():
+        try:
+            for chunk in upstream.iter_content(chunk_size=8192):
+                if chunk:
+                    yield chunk
+        except Exception:
+            pass          # viewer closed the tab, or the DVR dropped the feed
+        finally:
+            upstream.close()
+
+    resp = app.response_class(relay(), mimetype=ctype)
+    resp.headers["Cache-Control"] = "no-store"
     return resp
 
 
