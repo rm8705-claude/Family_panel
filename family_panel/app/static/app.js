@@ -1198,6 +1198,7 @@
       (chips ? '<div class="pd-chips">' + chips + '</div>' : '') +
       todayScheduleCard() +
       weatherCard() +
+      binDayCard() +
       choresCard() +
       tomorrowCard() +
       dinnerCard() +
@@ -1346,6 +1347,13 @@
     return '<section class="card a-chores"><div class="card-head"><h2 class="lbl">Chores</h2>' +
       '<span class="spacer"></span><span class="muted2" style="font-size:.75rem">This week</span></div>' +
       '<div class="scroll">' + body + '</div></section>';
+  }
+
+  function binDayCard() {
+    var t = ((D.ha && D.ha.tiles) || []).filter(function (x) { return x.type === 'bin_day'; })[0];
+    var body = t ? tileBody(t) : '<div class="empty">' + waitingCopy('Bin day') + '</div>';
+    return '<section class="card a-binday"><div class="card-head"><h2 class="lbl">' +
+      esc((t && t.label) || 'Bin Day') + '</h2></div>' + body + '</section>';
   }
 
   /* Copy for a panel that has finished booting but still has no data for a
@@ -1575,6 +1583,11 @@
         return '<div class="t-value" style="display:flex;align-items:center;gap:.5rem;font-size:1.125rem">' +
           '<span class="presence-dot" style="background:' + (a.home ? 'var(--ok)' : 'var(--hair)') + '"></span>' +
           (a.home ? 'Home' : 'Out') + '</div>';
+      case 'bin_day':
+        return '<div class="t-value mono" style="font-size:1.125rem">' +
+          esc(a.next_date || (a.due ? 'Due now' : '–')) + '</div>' +
+          '<div class="t-sub">' + esc([a.extra_bin, a.due_in].filter(Boolean).join(' · ') ||
+            (a.due ? 'Bins out' : '—')) + '</div>';
       default:
         return '<div class="t-value mono" style="font-size:1.125rem">' + esc(capitalise(t.state || '–')) + '</div>';
     }
@@ -1834,6 +1847,9 @@
         drawnCam = true;
         return camCycleTile(cams, off);
       }
+      /* bin_day gets its own card (binDayCard) in the today grid, not a
+         tile in this generic Home row. */
+      if (t.type === 'bin_day') return '';
       /* The media tile opens the now-playing overlay when tapped anywhere its
          own buttons aren't — they sit deeper, so delegation finds them first. */
       var media = t.type === 'media' && !off;

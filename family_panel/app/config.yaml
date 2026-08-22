@@ -61,19 +61,15 @@ ha_tiles:
 #      # presence = HA person entities; home/away comes from each person's own
 #      # phone running the HA companion app (their choice to install). The
 #      # panel only ever shows home/away — never a location.
-#  - {entity: binary_sensor.brisbane_bin_day,          label: Bin Day,     type: sensor}
-#  - {entity: binary_sensor.brisbane_bin_day_recycle,  label: Recycle Day, type: sensor}
+  - {entity: binary_sensor.brisbane_bin_day, label: Bin Day, type: bin_day}
 #      # Brisbane City Council has no ICS bin-day feed — this is the HACS
 #      # "Brisbane Bin Day Sensor" (mark1foley) instead: GUI-configured in HA
 #      # (Settings -> Devices & Services -> Brisbane Bin Day), no YAML/secrets.
-#      # These entity IDs match its default sensor name "Brisbane Bin Day";
-#      # if you renamed it during setup, check Developer Tools -> States for
-#      # the real binary_sensor.* id and swap it in above.
-#      # State is "on" only inside the sensor's alert-hours window before
-#      # collection (so the tile shows off/on, not a date) — it also carries
-#      # next_collection_date/extra_bin/due_in as HA attributes, which this
-#      # plain `sensor` tile type doesn't surface; ask if you want those
-#      # shown too, that needs a small ha.py change to read them.
+#      # Its own card sits between Weather and Chores. `next_collection_date`
+#      # and `extra_bin` (which colour bin also goes out that week) come
+#      # straight off this entity's attributes, so the separate _recycle
+#      # sensor isn't needed here — it's still in HA if you want it for an
+#      # automation later.
 
 screen: {sleep: "21:00", wake: "05:45"}   # frontend sleep overlay; hardware DPMS in deploy notes
 sync_minutes: {ics: 5, imap: 5, weather: 30, ha: 0.25}

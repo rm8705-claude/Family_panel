@@ -1059,9 +1059,10 @@ ul, ol { list-style: none; }
 .today {
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--side);
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
   grid-template-areas:
     "sched weather"
+    "sched binday"
     "sched chores"
     "tomorrow dinner"
     "ha ha";
@@ -1071,6 +1072,7 @@ ul, ol { list-style: none; }
 
 .a-sched    { grid-area: sched; }
 .a-weather  { grid-area: weather; }
+.a-binday   { grid-area: binday; }
 .a-chores   { grid-area: chores; }
 /* the fade only belongs there when there is genuinely more list below —
    applied unconditionally it dims the last row of a list that already fits */
@@ -4107,8 +4109,9 @@ html[data-theme="night"] select.inp {
   .a-tomorrow { order: 4; }
   .a-dinner   { order: 5; }
   .a-chores   { order: 6; }
-  .a-weather  { order: 7; }
-  .a-ha       { order: 8; }
+  .a-binday   { order: 7; }
+  .a-weather  { order: 8; }
+  .a-ha       { order: 9; }
   .pd-strip   { order: 1; }
   .pd-chips   { order: 2; }
 

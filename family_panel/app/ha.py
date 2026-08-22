@@ -128,6 +128,13 @@ def tile_shape(tile: dict, cached: dict | None) -> dict:
         out["attrs"] = {"snapshot_url": f"/api/ha/camera/{tile['entity']}"}
     elif ttype == "presence":
         out["attrs"] = {"home": state == "home"}
+    elif ttype == "bin_day":
+        # entity is a binary_sensor that's "on" inside the alert-hours window
+        # before collection (e.g. the mark1foley Brisbane Bin Day integration).
+        out["attrs"] = {"due": state == "on",
+                        "next_date": attrs.get("next_collection_date"),
+                        "extra_bin": attrs.get("extra_bin"),
+                        "due_in": attrs.get("due_in")}
     # cover / switch carry everything in state
     return out
 
