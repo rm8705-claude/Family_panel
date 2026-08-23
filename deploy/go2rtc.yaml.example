@@ -10,11 +10,20 @@
 # `stream_url` points at (see family_panel/config.yaml).
 #
 # WHERE THIS GOES
-# Install the "go2rtc" add-on, then save this file as go2rtc.yaml in the Home
-# Assistant config folder (the same folder as configuration.yaml). Note the
-# add-on, NOT Home Assistant's own bundled go2rtc: the bundled one is for HA's
-# internal WebRTC use, listens on 11984 rather than 1984, and is not exposed
-# to other clients unless debug_ui is turned on.
+# Save this file as go2rtc.yaml in the Home Assistant config folder (the same
+# folder as configuration.yaml).
+#
+# The add-on is NOT in the default add-on store — add the repository first:
+#   Settings -> Add-ons -> Add-on Store -> (top right) Repositories
+#   -> https://github.com/AlexxIT/hassio-addons -> Add
+# then refresh the store and install "go2rtc". That repository also ships a
+# go2rtc-master-hw build with hardware acceleration, which is worth trying if
+# the Pi struggles with the transcode below — it is the master build rather
+# than the stable one, so it is the fallback, not the starting point.
+#
+# Use the add-on, NOT Home Assistant's own bundled go2rtc: the bundled one is
+# for HA's internal WebRTC use, listens on 11984 rather than 1984, and is not
+# exposed to other clients unless debug_ui is turned on.
 #
 # BEFORE IT WILL WORK — two things only you can fill in:
 #   1. chNN — the DVR channel each camera is actually on. The panel's entity
