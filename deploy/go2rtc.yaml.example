@@ -31,6 +31,15 @@
 # mapping off the Generic Camera integrations. This file is the example and
 # keeps a placeholder; the real one lives on the HA box only, never in git.
 #
+# PASTE THE TEXT, DO NOT DOWNLOAD THE FILE. Getting this file onto the box as
+# a *file* — downloaded on a phone, shared between apps — is how it arrived
+# once as a zip archive saved under a .yaml name. go2rtc read it, found no
+# YAML, configured no streams, and the panel quietly fell back to the Home
+# Assistant stills it was already showing: everything looked installed and
+# nothing had changed. If the config tab's first line begins "PK", that is a
+# zip signature, not config. Easiest cure is go2rtc's own config editor —
+# paste there and Save & Restart, no file handling at all.
+#
 # WHY THE SUB STREAM (/1 rather than /0)
 # go2rtc transcodes H.264 to MJPEG, and that cost scales with the source
 # resolution. The sub stream is a fraction of the pixels for a picture that is
