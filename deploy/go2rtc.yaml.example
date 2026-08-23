@@ -40,11 +40,20 @@
 # zip signature, not config. Easiest cure is go2rtc's own config editor —
 # paste there and Save & Restart, no file handling at all.
 #
-# WHY THE SUB STREAM (/1 rather than /0)
-# go2rtc transcodes H.264 to MJPEG, and that cost scales with the source
-# resolution. The sub stream is a fraction of the pixels for a picture that is
-# still far more than a wall tablet needs full screen. Use /0 only if the sub
-# stream turns out too soft, and expect the Pi to feel it.
+# MAIN STREAM (/0), ENCODED DOWN TO 1280 WIDE
+# The sub stream (/1) was the first cut and looked bad: it is deliberately
+# low-resolution, which is fine as a thumbnail and ugly blown up full screen.
+# So this reads the main stream for real detail, and #width=1280 caps what
+# gets MJPEG-encoded — the panel's full-screen view is about 1100px wide, so
+# encoding the full 5 MP would cost plenty and show nothing extra.
+#
+# Levers if the Pi struggles, in the order worth trying:
+#   #width=960            — smaller encode
+#   #raw=-r 12            — cap the frame rate (a wall panel does not need 25)
+#   #hardware             — hardware encode, if the build supports it
+#                           (go2rtc-master-hw in the same add-on repository)
+# And if it is sharpness rather than smoothness that disappoints, add
+#   #raw=-q:v 3           — better JPEG quality, 2 is near-best, higher is worse
 #
 # ON-DEMAND
 # go2rtc connects to a channel only while something is watching and drops the
@@ -61,33 +70,33 @@
 streams:
   # ch01
   front_door:
-    - rtsp://admin:YOUR_DVR_PASSWORD@192.168.1.2:554/ch01/1
-    - ffmpeg:front_door#video=mjpeg
+    - rtsp://admin:YOUR_DVR_PASSWORD@192.168.1.2:554/ch01/0
+    - ffmpeg:front_door#video=mjpeg#width=1280
 
   # ch02
   rear_patio:
-    - rtsp://admin:YOUR_DVR_PASSWORD@192.168.1.2:554/ch02/1
-    - ffmpeg:rear_patio#video=mjpeg
+    - rtsp://admin:YOUR_DVR_PASSWORD@192.168.1.2:554/ch02/0
+    - ffmpeg:rear_patio#video=mjpeg#width=1280
 
   # ch03
   carport:
-    - rtsp://admin:YOUR_DVR_PASSWORD@192.168.1.2:554/ch03/1
-    - ffmpeg:carport#video=mjpeg
+    - rtsp://admin:YOUR_DVR_PASSWORD@192.168.1.2:554/ch03/0
+    - ffmpeg:carport#video=mjpeg#width=1280
 
   # ch04
   rear_to_front:
-    - rtsp://admin:YOUR_DVR_PASSWORD@192.168.1.2:554/ch04/1
-    - ffmpeg:rear_to_front#video=mjpeg
+    - rtsp://admin:YOUR_DVR_PASSWORD@192.168.1.2:554/ch04/0
+    - ffmpeg:rear_to_front#video=mjpeg#width=1280
 
   # ch05
   front_to_back:
-    - rtsp://admin:YOUR_DVR_PASSWORD@192.168.1.2:554/ch05/1
-    - ffmpeg:front_to_back#video=mjpeg
+    - rtsp://admin:YOUR_DVR_PASSWORD@192.168.1.2:554/ch05/0
+    - ffmpeg:front_to_back#video=mjpeg#width=1280
 
   # ch06
   train_side:
-    - rtsp://admin:YOUR_DVR_PASSWORD@192.168.1.2:554/ch06/1
-    - ffmpeg:train_side#video=mjpeg
+    - rtsp://admin:YOUR_DVR_PASSWORD@192.168.1.2:554/ch06/0
+    - ffmpeg:train_side#video=mjpeg#width=1280
 
 # Each stream lists two sources. The first is the camera itself. The second
 # re-encodes that same stream to MJPEG, and is what makes an MJPEG request
