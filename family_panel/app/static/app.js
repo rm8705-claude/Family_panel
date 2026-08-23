@@ -81,11 +81,41 @@
 
   function mins(t) { if (!t) return 0; var p = t.split(':').map(Number); return p[0] * 60 + p[1]; }
 
-  function nowMins() { var d = new Date(); return d.getHours() * 60 + d.getMinutes(); }
+  /* This household is fixed in Queensland: no daylight saving, so "Brisbane
+     time" is always exactly UTC+10 — no calendar-dependent DST math needed,
+     matching the timezone weather.py already hardcodes for sunrise/sunset. */
+  var BRISBANE_UTC_OFFSET_MIN = 10 * 60;
+
+  /* Learned once per /api/status response: how far the server's own clock
+     (NTP-synced, since HA depends on it) sits from this device's Date.now().
+     A kiosk tablet's OS timezone can be wrong — commonly on WiFi-only
+     Android devices, where "automatic timezone" has nothing to detect it
+     from — which used to feed straight into getHours()/getMinutes() and
+     silently flip day/night (and the sleep schedule, which reads the same
+     nowMins()) at the wrong real-world time. Correcting via the server's
+     absolute clock plus a fixed Brisbane offset sidesteps the device's own
+     timezone belief entirely, right or wrong. */
+  var clockOffsetMs = 0;
+
+  function noteServerTime(iso) {
+    var serverMs = iso && Date.parse(iso);
+    if (serverMs) clockOffsetMs = serverMs - Date.now();
+  }
+
+  /* A Date whose UTC getters read as Brisbane wall-clock digits, regardless
+     of what timezone this device's OS/browser resolves to. */
+  function brisbaneNow() {
+    return new Date(Date.now() + clockOffsetMs + BRISBANE_UTC_OFFSET_MIN * 60000);
+  }
+
+  function nowMins() {
+    var d = brisbaneNow();
+    return d.getUTCHours() * 60 + d.getUTCMinutes();
+  }
 
   function clockNow() {
-    var d = new Date();
-    return fmtTime(pad2(d.getHours()) + ':' + pad2(d.getMinutes()));
+    var d = brisbaneNow();
+    return fmtTime(pad2(d.getUTCHours()) + ':' + pad2(d.getUTCMinutes()));
   }
 
   function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
@@ -578,7 +608,7 @@
   }
 
   function loadStatus() {
-    return bg(GET('/api/status'), function (d) { D.status = d; });
+    return bg(GET('/api/status'), function (d) { D.status = d; noteServerTime(d && d.now_utc); });
   }
 
   function loadChores() {
@@ -821,9 +851,13 @@
     var s = sunTimes(), n = nowMins();
     var d = new Date();
     el.textContent =
-      'device clock:  ' + d.toString() + '\n' +
-      'device tz:     ' + Intl.DateTimeFormat().resolvedOptions().timeZone + '\n' +
-      'nowMins():     ' + n + '  (' + Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0') + ')\n' +
+      'device clock:  ' + d.toString() + '  (raw — NOT what the theme decision uses)\n' +
+      'device tz:     ' + Intl.DateTimeFormat().resolvedOptions().timeZone +
+      '  (ignored on purpose — see clockOffsetMs below)\n' +
+      'server offset: ' + clockOffsetMs + ' ms' +
+      (clockOffsetMs ? '' : '  (0 = /api/status hasn\'t answered yet this boot)') + '\n' +
+      'brisbaneNow(): ' + brisbaneNow().toISOString() + '  (Brisbane digits in a UTC-labelled Date)\n' +
+      'nowMins():     ' + n + '  (' + Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0') + ' Brisbane, corrected)\n' +
       'sun source:    ' + (s.real ? 'weather API' : 'FALLBACK (no weather data)') + '\n' +
       'sunrise/set:   ' + s.sunrise + ' / ' + s.sunset + '\n' +
       'D.weather:     ' + (D.weather ? 'loaded' : 'NULL — never fetched or fetch failed') + '\n' +
@@ -5278,8 +5312,7 @@
     var el = byId('sleep');
     var should = inSleepWindow() && Date.now() > state.wakeUntil;
     if (should) {
-      var d = new Date();
-      var parts = fmtTime(pad2(d.getHours()) + ':' + pad2(d.getMinutes())).split(' ');
+      var parts = clockNow().split(' ');
       byId('sleepClock').innerHTML = esc(parts[0]) + '<i>' + esc(parts[1]) + '</i>';
       byId('sleepDate').textContent = fmtLongDate(state.today) + ' · ' + fmtDMY(state.today);
     }
@@ -5388,8 +5421,7 @@
   }
 
   function svPaintClock() {
-    var d = new Date();
-    var parts = fmtTime(pad2(d.getHours()) + ':' + pad2(d.getMinutes())).split(' ');
+    var parts = clockNow().split(' ');
     byId('svClock').innerHTML = esc(parts[0]) + '<i>' + esc(parts[1]) + '</i>';
     byId('svDate').textContent = fmtLongDate(state.today);
     svPaintChip();
