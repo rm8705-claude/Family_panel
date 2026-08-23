@@ -5,7 +5,7 @@
 # together whenever you ship a change (see the repo's `ship` skill).
 name: "Family Panel"
 description: "Self-hosted family wall calendar: shared calendar, chores, lists, meal planner and Home Assistant tiles."
-version: "0.17.12"
+version: "0.17.13"
 slug: "family_panel"
 url: "https://github.com/rm8705-claude/family_panel"
 arch:
@@ -111,9 +111,10 @@ options:
       type: "bin_day"
     # Swann DVR8-4580V, 8 analog channels over RTSP (no ONVIF on this unit —
     # see deploy notes). Each is its own HA "Generic Camera" integration
-    # entity, main stream (rtsp://.../chNN/0); the panel's camera wall only
-    # ever streams the one tile you tap live, the rest stay periodic stills,
-    # so there's no need for the lower-bandwidth sub stream (.../chNN/1).
+    # entity, main stream (rtsp://.../chNN/0). The wall shows stills only and
+    # streams one channel at a time, full screen, when you tap it — so there
+    # is never more than one stream open and the lower-bandwidth sub stream
+    # (.../chNN/1) buys nothing here.
     - entity: "camera.cameras_carport"
       label: "Carport"
       type: "camera_snapshot"

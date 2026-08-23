@@ -1843,8 +1843,17 @@
     return Math.round(next * 100) / 100;
   }
 
+  /* How often a still camera frame is re-fetched, and how often the grouped
+     Home-row tile steps to the next channel — they ride the same beat so the
+     thumbnail and the image behind it move together. Was 10 s, which on a
+     wall panel reads as a constant flicker in the corner of your eye and
+     churns the tablet's disk for frames nobody asked for. A still that is up
+     to half a minute old is fine for glancing at; the moment you actually
+     want live pictures you tap the tile and get a real stream. */
+  var CAM_REFRESH_MS = 30000;
+
   /* One counter, shared by everything that asks for a camera frame. The tile
-     painter used to stamp Date.now() and the 10 s refresher used its own, so
+     painter used to stamp Date.now() and the refresher used its own, so
      the two asked for different URLs for the same frame and the tablet cached
      both — around 8,600 disk writes a day per channel on eMMC. */
   var camStamp = 1;
@@ -1928,9 +1937,9 @@
       airconTileBody(list) + '</div>';
   }
 
-  /* CAMERAS — one tile carrying a live thumbnail that steps through the
-     channels every 10 s (the same beat the snapshots refresh on), with the
-     channel count as a badge. Tapping opens the wall of all of them. */
+  /* CAMERAS — one tile carrying a thumbnail that steps through the channels
+     on the CAM_REFRESH_MS beat (the same one the snapshots refresh on), with
+     the channel count as a badge. Tapping opens the wall of all of them. */
   function camCycleTile(list, off) {
     var i = list.length ? (state.camIdx % list.length) : 0;
     var t = list[i];
@@ -1971,9 +1980,9 @@
   }
 
   /* THE CAMERA WALL — every configured channel at once, which is the thing
-     the owner actually asked for. Labels on, 10 s cache-busted refresh (the
-     shared refreshCameras() timer finds these images too), and any one of
-     them opens full size with a way back to the wall. */
+     the owner actually asked for. Labels on, cache-busted refresh on the
+     CAM_REFRESH_MS beat (the shared refreshCameras() timer finds these images
+     too), and any one of them opens full size and live with a way back. */
   /* Fit the whole wall on screen rather than letting auto-fit push half the
      channels below the fold — with eight cameras the point is seeing all
      eight at once. 16:10 cells, so wide-and-short beats tall-and-narrow. */
@@ -2013,12 +2022,12 @@
       '<button class="close-x cam-wall-close" data-act="close-sheet" aria-label="Close">' + ICON.close + '</button>' +
       '<div class="cam-wall-head"><span class="np-label">Cameras</span>' +
       '<span class="cam-wall-n mono">' + esc(live + ' of ' + list.length + ' live') + '</span></div>' +
-      /* Snapshots on every cell, live on the one that was tapped. Decoding
-         a stream is the expensive half — see camLiveSrc — so the wall costs
-         one stream, not eight, and the other seven keep showing their most
-         recent frame on the ordinary 10 s refresh. Tapping the live cell
-         again opens it full screen. Playback/recall stays in the Swann app;
-         this is a live wall, not a DVR client. */
+      /* Snapshots on every cell — decoding a stream is the expensive half
+         (see camLiveSrc), and a stream in a cell this size is unreadable
+         anyway, so the wall costs no streams at all. Tapping a cell opens
+         that one channel full screen and live: one stream, the size you can
+         actually see. Playback/recall stays in the Swann app; this is a live
+         wall, not a DVR client. */
       '<div class="cam-grid" style="grid-template-columns:repeat(' +
       camGridCols(list.length) + ',minmax(0,1fr))">' + list.map(function (t) {
         var dead = off || camOffline(t);
@@ -2041,19 +2050,25 @@
       '</div>';
   }
 
-  /* One tap makes a cell live; a second tap on the already-live cell opens
-     it full screen. Only ever one stream on the wall — switching cells
-     tears the previous one down by rebuilding the grid, which drops the old
-     <img> and with it the connection. */
+  /* One tap on a wall cell opens that channel full screen and live. It used
+     to take two — the first made the cell itself live, the second went full
+     screen — but a live feed in a wall cell is a postage stamp on a kitchen
+     panel, and nobody wants the intermediate step when the point of the tap
+     is to SEE the thing.
+
+     Going straight there also stops the full-screen view landing on a still.
+     The old two-tap flow had the wall cell streaming a channel and then, on
+     the second tap, tore that stream down and asked for a stream of THE SAME
+     channel again a few milliseconds later. RTSP teardown is not instant, so
+     that back-to-back reopen is exactly the request most likely to fail —
+     and a failed live <img> trips __camLiveFail into the snapshot fallback,
+     which is the "it goes big but stops being live" you see. Now the wall
+     never streams, so the full-screen request is the only one in flight and
+     has nothing to race. */
   function camTap(el) {
-    var entity = el.dataset.entity;
-    if (el.dataset.from !== 'grid') { openCamera(entity, false); return; }
-    if (state.camLive === entity) { openCamera(entity, true); return; }
-    state.camLive = entity;
-    var wall = byId('camWall');
-    if (!wall) { openCamera(entity, true); return; }
-    stopLiveCameras();                     // blank the outgoing stream first
-    wall.outerHTML = cameraGridHtml();
+    stopLiveCameras();          // belt and braces; openSheet does this too
+    state.camLive = '';
+    openCamera(el.dataset.entity, el.dataset.from === 'grid');
   }
 
   function openCameraGrid() {
@@ -3507,7 +3522,7 @@
       if (base.indexOf('data:') === 0) return;
       /* A live MJPEG <img> is a single request that never completes — it is
          already showing new frames. Re-stamping its src would kill the
-         connection and start a fresh one every 10 s, which reads as a
+         connection and start a fresh one every beat, which reads as a
          stutter and leaves the DVR opening a new session each time. */
       if (img.hasAttribute('data-cam-live')) return;
       img.src = camBust(base);
@@ -4792,7 +4807,7 @@
     var t = tiles.filter(function (x) { return x.entity === entity; })[0];
     if (!t) return;
     /* Full screen is where you actually want moving pictures, so this one is
-       the live MJPEG feed rather than the 10 s snapshot the tiles carry.
+       the live MJPEG feed rather than the periodic snapshot the tiles carry.
        data-cam-live keeps refreshCameras() from re-stamping it — see there.
        If the stream can't be reached the <img> errors and we fall back to the
        snapshot, so a dead feed degrades to a still rather than a blank box. */
@@ -5777,7 +5792,7 @@
       if (!document.querySelector('img[data-cam]')) return;
       stepCameraCycle();      // the grouped tile steps to the next channel…
       refreshCameras();       // …and every visible frame is re-fetched
-    }, 10000);
+    }, CAM_REFRESH_MS);
   }
 
   /* /api/status is the one boot load nothing else can stand in for. Back off
