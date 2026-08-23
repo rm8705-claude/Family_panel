@@ -5,7 +5,7 @@
 # together whenever you ship a change (see the repo's `ship` skill).
 name: "Family Panel"
 description: "Self-hosted family wall calendar: shared calendar, chores, lists, meal planner and Home Assistant tiles."
-version: "0.17.20"
+version: "0.17.21"
 slug: "family_panel"
 url: "https://github.com/rm8705-claude/family_panel"
 arch:
@@ -126,9 +126,10 @@ options:
     # connects to a camera while something is watching, so six stills every
     # 30 s would wake all six streams on a loop and throw that away.
     #
-    # go2rtc transcodes H.264 -> MJPEG, and that cost scales with the source
-    # resolution, so /go2rtc.yaml feeds it each channel's SUB stream
-    # (rtsp://.../chNN/1). Full screen on a wall tablet does not need 5 MP.
+    # go2rtc transcodes H.264 -> MJPEG. /go2rtc.yaml feeds it each channel's
+    # MAIN stream (rtsp://.../chNN/0) and caps the encode at #width=1280:
+    # the sub stream was the first cut and looked bad blown up, while the
+    # full 5 MP costs plenty and shows nothing extra at this display size.
     # 192.168.1.21 is the HA box; an IP rather than homeassistant.local
     # because mDNS from an Android kiosk browser is not reliable.
     - entity: "camera.cameras_carport"
