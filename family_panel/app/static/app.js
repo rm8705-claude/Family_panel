@@ -299,23 +299,19 @@
   ICON.up = '<svg viewBox="0 0 12 12" fill="currentColor" stroke="none"><path d="M6 2.2L10.4 9.4H1.6z"/></svg>';
   ICON.down = '<svg viewBox="0 0 12 12" fill="currentColor" stroke="none"><path d="M6 9.8L1.6 2.6h8.8z"/></svg>';
 
-  /* Kerbside wheelie bins: a fixed, real-world colour code (red general,
-     yellow recycling, green garden organics), so — unlike everything else
-     in the icon set — these do NOT follow currentColor/the active skin.
-     A recycling week has to look the same shade of yellow whichever of the
-     five skins the household has picked, the same way a person's colour
-     doesn't shift with the skin either. */
-  var BIN_COLOURS = { Red: '#C0392B', Yellow: '#D9A62E', Green: '#4F7B58' };
+  /* Kerbside wheelie bins: real bin-coloured artwork, not a drawn icon — a
+     fixed, real-world colour code (red general, yellow recycling, green
+     garden organics), the same way a person's colour doesn't shift with
+     the skin either. Cache-busted the same way index.html busts app.js:
+     ?v=<version>, since /static/* is served immutable-forever otherwise. */
+  var BIN_FILES = { Red: 'red', Yellow: 'yellow', Green: 'green' };
 
   function binIcon(name) {
-    var fill = BIN_COLOURS[name] || '#8A8A8A';
-    return '<svg viewBox="0 0 24 24" aria-hidden="true">' +
-      '<rect x="6" y="8.5" width="12" height="12.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.4"/>' +
-      '<circle cx="8.5" cy="21.3" r="1.1" fill="currentColor" stroke="none"/>' +
-      '<circle cx="15.5" cy="21.3" r="1.1" fill="currentColor" stroke="none"/>' +
-      '<rect x="4.5" y="5" width="15" height="4" rx="1.2" fill="' + fill + '"/>' +
-      '<rect x="10.5" y="3.1" width="3" height="2.1" rx="0.5" fill="' + fill + '"/>' +
-      '</svg>';
+    var file = BIN_FILES[name];
+    if (!file) return '';
+    var v = (D.status && D.status.version) || '';
+    return '<img class="bin-icon-img" alt="' + esc(name) + ' bin" src="/static/bins/' + file + '.png' +
+      (v ? '?v=' + esc(v) : '') + '">';
   }
 
   /* Weather — WMO code to glyph + description */
@@ -1771,9 +1767,13 @@
         var label = bins.length ? bins.join(' + ') + ' bin' + (bins.length > 1 ? 's' : '') : null;
         var when = [a.day, a.approx_time ? 'approx ' + a.approx_time : null]
           .filter(Boolean).join(', ');
-        return (bins.length ? '<div class="bin-icons">' + bins.map(binIcon).join('') + '</div>' : '') +
+        return '<div class="bin-row">' +
+          '<div class="bin-text">' +
           '<div class="t-value mono" style="font-size:1rem">' + esc(label || '–') + '</div>' +
-          '<div class="t-sub">' + esc(when || '—') + '</div>';
+          '<div class="t-sub">' + esc(when || '—') + '</div>' +
+          '</div>' +
+          (bins.length ? '<div class="bin-icons">' + bins.map(binIcon).join('') + '</div>' : '') +
+          '</div>';
       }
       default:
         return '<div class="t-value mono" style="font-size:1.125rem">' + esc(capitalise(t.state || '–')) + '</div>';
