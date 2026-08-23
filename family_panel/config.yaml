@@ -5,7 +5,7 @@
 # together whenever you ship a change (see the repo's `ship` skill).
 name: "Family Panel"
 description: "Self-hosted family wall calendar: shared calendar, chores, lists, meal planner and Home Assistant tiles."
-version: "0.17.11"
+version: "0.17.12"
 slug: "family_panel"
 url: "https://github.com/rm8705-claude/family_panel"
 arch:
@@ -109,6 +109,29 @@ options:
     - entity: "binary_sensor.brisbane_bin_day"
       label: "Bin Day"
       type: "bin_day"
+    # Swann DVR8-4580V, 8 analog channels over RTSP (no ONVIF on this unit —
+    # see deploy notes). Each is its own HA "Generic Camera" integration
+    # entity, main stream (rtsp://.../chNN/0); the panel's camera wall only
+    # ever streams the one tile you tap live, the rest stay periodic stills,
+    # so there's no need for the lower-bandwidth sub stream (.../chNN/1).
+    - entity: "camera.cameras_carport"
+      label: "Carport"
+      type: "camera_snapshot"
+    - entity: "camera.cameras_front_door"
+      label: "Front Door"
+      type: "camera_snapshot"
+    - entity: "camera.cameras_front_to_back"
+      label: "Front to Back"
+      type: "camera_snapshot"
+    - entity: "camera.cameras_rear_patio"
+      label: "Rear Patio"
+      type: "camera_snapshot"
+    - entity: "camera.cameras_train_side"
+      label: "Train Side"
+      type: "camera_snapshot"
+    - entity: "camera.rear_to_front"
+      label: "Rear to Front"
+      type: "camera_snapshot"
   screen:
     sleep: "21:00"
     wake: "05:45"
