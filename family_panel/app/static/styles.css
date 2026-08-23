@@ -1073,6 +1073,14 @@ ul, ol { list-style: none; }
 .a-sched    { grid-area: sched; }
 .a-weather  { grid-area: weather; }
 .a-binday   { grid-area: binday; }
+.bin-icons {
+  display: flex;
+  gap: 0.625rem;
+  align-items: flex-end;
+  color: var(--ink-3);           /* the bin body/wheels outline, not the lid */
+  margin: 0.125rem 0 0.5rem;
+}
+.bin-icons svg { width: 2.25rem; height: 2.25rem; }
 .a-chores   { grid-area: chores; }
 /* the fade only belongs there when there is genuinely more list below —
    applied unconditionally it dims the last row of a list that already fits */
