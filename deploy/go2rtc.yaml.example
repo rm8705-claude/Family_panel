@@ -1,0 +1,76 @@
+# go2rtc — live camera streams for the Family Panel.
+#
+# WHY THIS EXISTS
+# Home Assistant cannot serve real live video for an RTSP camera. Its Generic
+# Camera integration has no MJPEG to hand out, so /api/camera_proxy_stream
+# grabs single frames with ffmpeg and staples them together at the
+# integration's frame rate — a slideshow, however fast anything asks for it.
+# go2rtc holds ONE RTSP session open per channel and serves genuine MJPEG off
+# it, which an <img> can read directly. That is what the panel's per-tile
+# `stream_url` points at (see family_panel/config.yaml).
+#
+# WHERE THIS GOES
+# Install the "go2rtc" add-on, then save this file as go2rtc.yaml in the Home
+# Assistant config folder (the same folder as configuration.yaml). Note the
+# add-on, NOT Home Assistant's own bundled go2rtc: the bundled one is for HA's
+# internal WebRTC use, listens on 11984 rather than 1984, and is not exposed
+# to other clients unless debug_ui is turned on.
+#
+# BEFORE IT WILL WORK — two things only you can fill in:
+#   1. chNN — the DVR channel each camera is actually on. The panel's entity
+#      names say WHERE each camera points, not which channel it is; check the
+#      DVR's own on-screen menu, or whatever you entered when you added each
+#      Generic Camera in HA.
+#   2. YOUR_DVR_PASSWORD — the DVR's admin password. Keep it out of git: this
+#      file is the example, the real one lives on the HA box only.
+#
+# WHY THE SUB STREAM (/1 rather than /0)
+# go2rtc transcodes H.264 to MJPEG, and that cost scales with the source
+# resolution. The sub stream is a fraction of the pixels for a picture that is
+# still far more than a wall tablet needs full screen. Use /0 only if the sub
+# stream turns out too soft, and expect the Pi to feel it.
+#
+# ON-DEMAND
+# go2rtc connects to a channel only while something is watching and drops the
+# connection when the last viewer leaves, so an idle panel costs nothing. That
+# is also why the panel leaves `snapshot_url` unset and keeps the wall's stills
+# on Home Assistant — pointing six stills at go2rtc would wake all six streams
+# every refresh and throw the saving away.
+
+streams:
+  carport:
+    - rtsp://admin:YOUR_DVR_PASSWORD@192.168.1.2:554/chNN/1
+    - ffmpeg:carport#video=mjpeg
+
+  front_door:
+    - rtsp://admin:YOUR_DVR_PASSWORD@192.168.1.2:554/chNN/1
+    - ffmpeg:front_door#video=mjpeg
+
+  front_to_back:
+    - rtsp://admin:YOUR_DVR_PASSWORD@192.168.1.2:554/chNN/1
+    - ffmpeg:front_to_back#video=mjpeg
+
+  rear_patio:
+    - rtsp://admin:YOUR_DVR_PASSWORD@192.168.1.2:554/chNN/1
+    - ffmpeg:rear_patio#video=mjpeg
+
+  train_side:
+    - rtsp://admin:YOUR_DVR_PASSWORD@192.168.1.2:554/chNN/1
+    - ffmpeg:train_side#video=mjpeg
+
+  rear_to_front:
+    - rtsp://admin:YOUR_DVR_PASSWORD@192.168.1.2:554/chNN/1
+    - ffmpeg:rear_to_front#video=mjpeg
+
+# Each stream lists two sources. The first is the camera itself. The second
+# re-encodes that same stream to MJPEG, and is what makes an MJPEG request
+# possible at all — go2rtc will only serve a codec something can produce, and
+# the DVR sends H.264.
+
+api:
+  listen: ":1984"     # what the panel's stream_url talks to
+
+# Check it before touching the panel: open http://<ha-ip>:1984 and play a
+# stream from go2rtc's own page. If it plays there and not on the panel, the
+# problem is the panel's URL; if it fails there too, it is this file or the
+# DVR — go2rtc's log will say which.

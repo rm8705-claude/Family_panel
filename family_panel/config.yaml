@@ -5,7 +5,7 @@
 # together whenever you ship a change (see the repo's `ship` skill).
 name: "Family Panel"
 description: "Self-hosted family wall calendar: shared calendar, chores, lists, meal planner and Home Assistant tiles."
-version: "0.17.14"
+version: "0.17.15"
 slug: "family_panel"
 url: "https://github.com/rm8705-claude/family_panel"
 arch:
@@ -109,30 +109,52 @@ options:
     - entity: "binary_sensor.brisbane_bin_day"
       label: "Bin Day"
       type: "bin_day"
-    # Swann DVR8-4580V, 8 analog channels over RTSP (no ONVIF on this unit —
-    # see deploy notes). Each is its own HA "Generic Camera" integration
-    # entity, main stream (rtsp://.../chNN/0). The wall shows stills only and
-    # streams one channel at a time, full screen, when you tap it — so there
-    # is never more than one stream open and the lower-bandwidth sub stream
-    # (.../chNN/1) buys nothing here.
+    # Swann DVR8-4580V, analog channels over RTSP (no ONVIF on this unit).
+    #
+    # Two different paths on purpose, which is why stream_url is set and
+    # snapshot_url is not:
+    #
+    #   stills (the wall)  -> Home Assistant, via each channel's Generic
+    #     Camera entity. One frame every CAM_REFRESH_MS is exactly what HA's
+    #     grab-a-frame-with-ffmpeg approach is good at.
+    #   live (full screen) -> go2rtc, direct from the browser over the LAN.
+    #     HA cannot serve real video here: for an RTSP source its "stream" is
+    #     single frames stapled together, i.e. a slideshow. go2rtc holds one
+    #     RTSP session open and serves genuine MJPEG off it.
+    #
+    # Pointing the stills at go2rtc too would be a mistake: go2rtc only
+    # connects to a camera while something is watching, so six stills every
+    # 30 s would wake all six streams on a loop and throw that away.
+    #
+    # go2rtc transcodes H.264 -> MJPEG, and that cost scales with the source
+    # resolution, so /go2rtc.yaml feeds it each channel's SUB stream
+    # (rtsp://.../chNN/1). Full screen on a wall tablet does not need 5 MP.
+    # 192.168.1.21 is the HA box; an IP rather than homeassistant.local
+    # because mDNS from an Android kiosk browser is not reliable.
     - entity: "camera.cameras_carport"
       label: "Carport"
       type: "camera_snapshot"
+      stream_url: "http://192.168.1.21:1984/api/stream.mjpeg?src=carport"
     - entity: "camera.cameras_front_door"
       label: "Front Door"
       type: "camera_snapshot"
+      stream_url: "http://192.168.1.21:1984/api/stream.mjpeg?src=front_door"
     - entity: "camera.cameras_front_to_back"
       label: "Front to Back"
       type: "camera_snapshot"
+      stream_url: "http://192.168.1.21:1984/api/stream.mjpeg?src=front_to_back"
     - entity: "camera.cameras_rear_patio"
       label: "Rear Patio"
       type: "camera_snapshot"
+      stream_url: "http://192.168.1.21:1984/api/stream.mjpeg?src=rear_patio"
     - entity: "camera.cameras_train_side"
       label: "Train Side"
       type: "camera_snapshot"
+      stream_url: "http://192.168.1.21:1984/api/stream.mjpeg?src=train_side"
     - entity: "camera.rear_to_front"
       label: "Rear to Front"
       type: "camera_snapshot"
+      stream_url: "http://192.168.1.21:1984/api/stream.mjpeg?src=rear_to_front"
   screen:
     sleep: "21:00"
     wake: "05:45"
