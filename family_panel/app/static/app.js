@@ -623,7 +623,46 @@
   }
 
   function loadStatus() {
-    return bg(GET('/api/status'), function (d) { D.status = d; noteServerTime(d && d.now_utc); });
+    return bg(GET('/api/status'), function (d) {
+      D.status = d;
+      noteServerTime(d && d.now_utc);
+      watchdogBuild(d && d.version);
+    });
+  }
+
+  /* THE STALE-KIOSK WATCHDOG.
+     A wall panel is never closed, so its page is never reloaded and its
+     browser cache is never cleared. Updating the add-on moves the server on
+     while the tablet keeps executing whatever app.js it loaded weeks ago —
+     and nothing on screen says so, because the version in Settings comes
+     from /api/status, a live call the OLD code makes quite happily. Every
+     symptom is "the update didn't work" when the update never arrived.
+
+     index.html is served no-cache with the build stamped into a meta tag, so
+     the running code knows which build it IS; /api/status says which build
+     the server is. Different means stale, and the fix is a reload — the
+     assets are versioned by URL, so a fresh index.html pulls fresh code.
+
+     Reload at most once per server version: if a reload somehow does not
+     take, this notices the same mismatch again and would otherwise loop. */
+  var BUILD = (function () {
+    var m = document.querySelector('meta[name="panel-build"]');
+    return (m && m.getAttribute('content')) || '';
+  })();
+
+  function watchdogBuild(serverVersion) {
+    /* The demo answers /api/status itself with a version of its own, which
+       matches no build there has ever been — left in, this reloads the demo
+       on sight. */
+    if (MOCK) return;
+    if (!BUILD || !serverVersion || BUILD === serverVersion) return;
+    if (BUILD.indexOf('{{') === 0) return;      // opened un-stamped, e.g. off disk
+    var key = 'panel-reloaded-for';
+    try {
+      if (sessionStorage.getItem(key) === serverVersion) return;
+      sessionStorage.setItem(key, serverVersion);
+    } catch (e) { /* private mode: accept the small risk of a second reload */ }
+    location.reload();
   }
 
   function loadChores() {

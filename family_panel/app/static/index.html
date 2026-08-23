@@ -6,6 +6,13 @@
 <meta name="theme-color" content="#EFE9DD">
 <meta name="color-scheme" content="light">
 <title>Family Panel</title>
+<!-- The version this page's JS was served as. index.html is no-cache and
+     stamped per release, so this is always the build the running code came
+     from — unlike /api/status's version, which is a live call and reports
+     the SERVER's version however old the JS asking is. Comparing the two is
+     the only way the panel can notice it is running stale code; see
+     watchdogBuild() in app.js. -->
+<meta name="panel-build" content="{{V}}">
 <script>
 /* Pre-paint: settle the skin and the theme before the first frame, so a kiosk
    restarted after dark — or wearing the charcoal wallboard skin — never
