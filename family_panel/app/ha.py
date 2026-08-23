@@ -9,6 +9,7 @@ serving the last-known state (greyed out) while HA is unreachable.
 """
 import hashlib
 import os
+from datetime import datetime
 
 import requests
 
@@ -80,6 +81,31 @@ def refresh(tiles: list[dict]) -> None:
     db.set_json_setting("ha:states", {"at": db.utc_now_iso(), "states": states})
 
 
+def _bin_day_fields(attrs: dict) -> dict:
+    """The mark1foley Brisbane Bin Day integration's attrs, reduced to what
+    the panel actually shows: which bin colours go out, the day name, and
+    a rounded time — never the raw ISO timestamp+offset or the due_in hour
+    count, which read as noise on a wall panel.
+
+    General waste is always red-lidded in Brisbane and always goes out on
+    collection day; `extra_bin` says which other bin (yellow recycling or
+    green garden waste) also goes out that week, as "Yellow/Recycle" or
+    "Green/Garden" — only the colour word is worth keeping.
+    """
+    extra = str(attrs.get("extra_bin") or "").split("/")[0].strip()
+    bins = ["Red"] + ([extra] if extra else [])
+
+    approx_time = None
+    raw_date = str(attrs.get("next_collection_date") or "")
+    if "T" in raw_date or " " in raw_date:   # has a time component, not just a date
+        try:
+            approx_time = datetime.fromisoformat(raw_date).strftime("%-I%p").lower()
+        except ValueError:
+            pass
+
+    return {"bins": bins, "day": attrs.get("collection_day"), "approx_time": approx_time}
+
+
 def tile_shape(tile: dict, cached: dict | None) -> dict:
     """One tile's JSON per the API contract; attrs vary by tile type."""
     ttype = tile.get("type", "sensor")
@@ -131,10 +157,7 @@ def tile_shape(tile: dict, cached: dict | None) -> dict:
     elif ttype == "bin_day":
         # entity is a binary_sensor that's "on" inside the alert-hours window
         # before collection (e.g. the mark1foley Brisbane Bin Day integration).
-        out["attrs"] = {"due": state == "on",
-                        "next_date": attrs.get("next_collection_date"),
-                        "extra_bin": attrs.get("extra_bin"),
-                        "due_in": attrs.get("due_in")}
+        out["attrs"] = {"due": state == "on", **_bin_day_fields(attrs)}
     # cover / switch carry everything in state
     return out
 

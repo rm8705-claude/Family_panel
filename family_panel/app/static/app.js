@@ -1747,11 +1747,14 @@
         return '<div class="t-value" style="display:flex;align-items:center;gap:.5rem;font-size:1.125rem">' +
           '<span class="presence-dot" style="background:' + (a.home ? 'var(--ok)' : 'var(--hair)') + '"></span>' +
           (a.home ? 'Home' : 'Out') + '</div>';
-      case 'bin_day':
-        return '<div class="t-value mono" style="font-size:1.125rem">' +
-          esc(a.next_date || (a.due ? 'Due now' : '–')) + '</div>' +
-          '<div class="t-sub">' + esc([a.extra_bin, a.due_in].filter(Boolean).join(' · ') ||
-            (a.due ? 'Bins out' : '—')) + '</div>';
+      case 'bin_day': {
+        var bins = (a.bins || []).length ?
+          a.bins.join(' + ') + ' bin' + (a.bins.length > 1 ? 's' : '') : null;
+        var when = [a.day, a.approx_time ? 'approx ' + a.approx_time : null]
+          .filter(Boolean).join(', ');
+        return '<div class="t-value mono" style="font-size:1.125rem">' + esc(bins || '–') + '</div>' +
+          '<div class="t-sub">' + esc(when || '—') + '</div>';
+      }
       default:
         return '<div class="t-value mono" style="font-size:1.125rem">' + esc(capitalise(t.state || '–')) + '</div>';
     }
