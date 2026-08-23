@@ -5639,6 +5639,7 @@
   function tick() {
     var t = todayStr();
     if (t !== state.today) rollOver(t);      // midnight rollover
+    byId('railClock').textContent = clockNow();
     renderSpine();
     renderWeekNow();
     // refresh the now rule + past-event dimming, but never mid-confirm
@@ -5692,6 +5693,7 @@
     renderThemeDebug();
 
     render();
+    byId('railClock').textContent = clockNow();   // tick()'s first fire is 30s away
 
     updateSleep();
 
