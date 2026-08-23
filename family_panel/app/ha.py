@@ -151,7 +151,21 @@ def tile_shape(tile: dict, cached: dict | None) -> dict:
                         "preset_mode": attrs.get("preset_mode"),
                         "on": state == "on"}
     elif ttype == "camera_snapshot":
-        out["attrs"] = {"snapshot_url": f"/api/ha/camera/{tile['entity']}"}
+        # A tile may name its own URLs to bypass Home Assistant for the
+        # pictures. Worth doing for RTSP cameras: HA's Generic Camera has no
+        # real MJPEG to hand out, so its "stream" is single frames grabbed by
+        # ffmpeg and concatenated at the integration's frame rate — a
+        # slideshow, not live video. A restreamer (go2rtc) pulls the RTSP
+        # once and serves genuine MJPEG, and the browser can read that
+        # straight off the LAN:
+        #   stream_url:   http://<ha>:1984/api/stream.mjpeg?src=<name>
+        #   snapshot_url: http://<ha>:1984/api/frame.jpeg?src=<name>
+        # Both optional and independent; whatever is missing falls back to
+        # proxying through HA, which is what every tile did before.
+        out["attrs"] = {
+            "snapshot_url": tile.get("snapshot_url") or f"/api/ha/camera/{tile['entity']}",
+            "stream_url": tile.get("stream_url") or "",
+        }
     elif ttype == "presence":
         out["attrs"] = {"home": state == "home"}
     elif ttype == "bin_day":

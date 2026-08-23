@@ -2001,8 +2001,13 @@
      falls back anyway. Returning the demo frame directly is both quieter
      and a truthful representation of what the demo actually has. */
   function camLiveSrc(t) {
-    return MOCK ? camSrc(t)
-      : '/api/ha/camera/' + encodeURIComponent(t.entity) + '/stream';
+    if (MOCK) return camSrc(t);
+    /* A tile that names its own stream_url is read straight off the LAN by
+       the browser — see ha.py. That is the only way to get real live video
+       out of an RTSP camera: proxied through HA it arrives as stills at the
+       Generic Camera's frame rate, however fast the panel asks for it. */
+    var direct = t.attrs && t.attrs.stream_url;
+    return direct || ('/api/ha/camera/' + encodeURIComponent(t.entity) + '/stream');
   }
 
   function stopLiveCameras() {

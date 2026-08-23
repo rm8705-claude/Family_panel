@@ -5,7 +5,7 @@
 # together whenever you ship a change (see the repo's `ship` skill).
 name: "Family Panel"
 description: "Self-hosted family wall calendar: shared calendar, chores, lists, meal planner and Home Assistant tiles."
-version: "0.17.13"
+version: "0.17.14"
 slug: "family_panel"
 url: "https://github.com/rm8705-claude/family_panel"
 arch:
@@ -186,6 +186,11 @@ schema:
       invert_grid: "bool?"
       invert_battery: "bool?"
       power_unit: "str?"
+      # Camera tiles only, both optional. Point these at a restreamer
+      # (go2rtc) to get real live video instead of HA's frame-by-frame
+      # slideshow — see the camera_snapshot branch in ha.py.
+      stream_url: "str?"
+      snapshot_url: "str?"
   screen:
     sleep: "match(^([01][0-9]|2[0-3]):[0-5][0-9]$)"
     wake: "match(^([01][0-9]|2[0-3]):[0-5][0-9]$)"
