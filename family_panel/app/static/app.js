@@ -196,6 +196,7 @@
   ];
 
   var SKIN_KEY = 'panel-skin';
+  var THEME_MODE_KEY = 'panel-theme-mode';
 
   function skinDef(id) {
     for (var i = 0; i < SKINS.length; i++) if (SKINS[i].id === id) return SKINS[i];
@@ -712,10 +713,15 @@
 
   /* --------------------------------------------------------------- theme -- */
   /* Day theme by default; night from today's sunset until sunrise (API.md
-     "Theme"), falling back to 18:00–06:00 when weather is unavailable.
-     ?theme=night / ?theme=day and window.__theme.set() force it for
-     screenshots and console poking. The sleep overlay is separate and sits
-     above whichever theme is running. */
+     "Theme"), falling back to 18:00–06:00 when weather is unavailable. That
+     auto pick leans on the device clock and the weather sync both being
+     right, which won't hold on every panel — Settings -> Day / Night locks
+     it to Day or Night instead, stuck in localStorage (readThemeMode/
+     setThemeMode) same as the skin. ?theme=night / ?theme=day and
+     window.__theme.set() still force it one-off for screenshots and console
+     poking, same precedence as ?skin=: they win over the stored choice but
+     don't persist. The sleep overlay is separate and sits above whichever
+     theme is running. */
 
   function sunTimes() {
     var w = D.weather;
@@ -769,6 +775,28 @@
     var want = state.themeMode === 'auto' ? autoTheme() : state.themeMode;
     if (want !== state.theme) applyTheme(want, animate !== false);
     renderThemeDebug();
+  }
+
+  /* Manual override for the auto sunset/sunrise pick — some panels sit
+     somewhere the device clock or weather's sun times can't be trusted, so
+     the choice is a plain on/off/auto switch in Settings, not just the
+     ?theme= debug override. Sticks in localStorage, like the skin, since
+     it's a preference for this physical panel rather than the household's
+     shared config. */
+  function readThemeMode() {
+    try {
+      var v = localStorage.getItem(THEME_MODE_KEY);
+      return (v === 'day' || v === 'night') ? v : 'auto';
+    } catch (e) { return 'auto'; }        // private mode / storage disabled
+  }
+
+  function setThemeMode(mode, persist) {
+    state.themeMode = (mode === 'day' || mode === 'night') ? mode : 'auto';
+    if (persist !== false) {
+      try { localStorage.setItem(THEME_MODE_KEY, state.themeMode); } catch (e) { /* nothing to do */ }
+    }
+    updateTheme(true);
+    return state.theme;
   }
 
   /* ?debugtheme=1 — a small on-screen readout of every input the day/night
@@ -929,11 +957,7 @@
   };
 
   window.__theme = {
-    set: function (mode) {
-      state.themeMode = (mode === 'day' || mode === 'night') ? mode : 'auto';
-      updateTheme(true);
-      return state.theme;
-    },
+    set: function (mode) { return setThemeMode(mode, false); },
     get: function () { return { mode: state.themeMode, theme: state.theme, sun: sunTimes() }; }
   };
 
@@ -3858,6 +3882,20 @@
     }).join('') + '</div>';
   }
 
+  var THEME_MODES = [
+    { id: 'auto', label: 'Auto' },
+    { id: 'day', label: 'Day' },
+    { id: 'night', label: 'Night' }
+  ];
+
+  function themeModePickerHtml() {
+    return '<div class="sn-target">' + THEME_MODES.map(function (m) {
+      return '<button class="sn-tgt' + (m.id === state.themeMode ? ' is-on' : '') +
+        '" data-act="pick-theme-mode" data-mode="' + m.id + '"' +
+        (m.id === state.themeMode ? ' aria-current="true"' : '') + '>' + m.label + '</button>';
+    }).join('') + '</div>';
+  }
+
   function openSettings() {
     var s = D.status || {};
     var screen = (s.config && s.config.screen) || {};
@@ -3874,6 +3912,12 @@
       '<p class="muted" style="margin-bottom:.75rem">The same panel in a different ' +
       'material. Day and night keep swapping underneath whichever you pick.</p>' +
       skinPickerHtml() + '</div>' +
+
+      '<div class="field" style="margin-top:1.5rem"><label>Day / Night</label>' +
+      '<p class="muted" style="margin-bottom:.75rem">Auto switches at sunset and ' +
+      'sunrise. If that ever picks the wrong one for where this panel actually ' +
+      'sits, lock it to Day or Night here instead.</p>' +
+      themeModePickerHtml() + '</div>' +
 
       '<div class="field" style="margin-top:1.5rem"><label>Screen</label>' +
       '<p class="muted">Sleeps at <span class="mono">' + esc(fmtTime(screen.sleep || '21:00')) +
@@ -5075,6 +5119,16 @@
         if (sb) sb.scrollTop = top;
         break;
       }
+      case 'pick-theme-mode': {
+        if (el.dataset.mode === state.themeMode) break;
+        setThemeMode(el.dataset.mode);
+        var sbt = document.querySelector('.sheet-body');
+        var topt = sbt ? sbt.scrollTop : 0;
+        openSettings();
+        sbt = document.querySelector('.sheet-body');
+        if (sbt) sbt.scrollTop = topt;
+        break;
+      }
       case 'open-pin': openPin(); break;
       case 'pin-key': pinKey(el.dataset.key); break;
       case 'pin-save':
@@ -5576,8 +5630,9 @@
     applySkin(wantSkin && skinDef(wantSkin).id === wantSkin ? wantSkin : readSkin(),
       { animate: false, render: false, persist: false });
 
+    /* ?theme= beats the stored choice too, same as ?skin= — it does not persist. */
     var forced = Q.get('theme');
-    if (forced === 'night' || forced === 'day') state.themeMode = forced;
+    state.themeMode = (forced === 'night' || forced === 'day') ? forced : readThemeMode();
     applyTheme(state.themeMode === 'auto' ? autoTheme() : state.themeMode, false);
     renderThemeDebug();
 
