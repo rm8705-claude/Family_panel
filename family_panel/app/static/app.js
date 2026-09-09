@@ -5024,6 +5024,12 @@
     act(POST('/api/ha/action', body), function () {
       if (!quiet) toast('Sent.');
       setTimeout(function () { loadHa().then(renderSoon); }, 700);
+    }).then(function () {
+      /* No-op if render() already replaced this node (the optimistic
+         branches above, or a poll landing mid-flight) — only next/previous
+         actually still needs the flag lifted. */
+      btn.disabled = false;
+      btn.classList.remove('is-busy');
     });
   }
 
@@ -5038,6 +5044,7 @@
       var attr = STEP_ATTR[action];
       var tiles = (D.ha && D.ha.tiles) || [];
       var t = tiles.filter(function (x) { return x.entity === btn.dataset.entity; })[0];
+      var playPause = action === 'play' || action === 'pause';
       if (attr) {                           // optimistic, so repeat taps step
         if (t && t.attrs) {
           t.attrs[attr] = Number(btn.dataset.value);
@@ -5047,10 +5054,20 @@
       } else if (action === 'select_source') {
         state.npStart = { entity: btn.dataset.entity, name: btn.dataset.value, at: Date.now() };
         updateNowPlaying();
+      } else if (playPause) {
+        /* Optimistic, same reason as volume above: Sonos itself can take a
+           couple of seconds to react, and with nothing changing on screen
+           in the meantime a tap reads as dead rather than just slow. */
+        if (t && t.attrs) { t.attrs.playing = action === 'play'; render(); }
       } else if (action === 'oscillate_on' || action === 'oscillate_off') {
         if (t && t.attrs) { t.attrs.oscillating = action === 'oscillate_on'; render(); }
+      } else if (action === 'next' || action === 'previous') {
+        /* Nothing to predict here, so at least show the tap landed and
+           stop a second tap piling on while this one is still in flight. */
+        btn.disabled = true;
+        btn.classList.add('is-busy');
       }
-      haSend(btn, !!attr || action === 'select_source');
+      haSend(btn, !!attr || action === 'select_source' || playPause);
       return;
     }
     if (btn.dataset.armed === '1') {

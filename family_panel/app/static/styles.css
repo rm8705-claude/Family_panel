@@ -3379,6 +3379,11 @@ html[data-theme="night"] select.inp {
 }
 .np-skip svg { width: 1.5rem; height: 1.5rem; }
 
+/* Skip has nothing to predict client-side, so this is the only feedback a
+   tap gets until HA answers — without it the button looked dead for however
+   long Sonos took to react. */
+.np-skip.is-busy { opacity: 0.5; }
+
 .np-play {
   min-height: 4.5rem;
   min-width: 11rem;
