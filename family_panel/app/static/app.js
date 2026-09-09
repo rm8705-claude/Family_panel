@@ -278,7 +278,8 @@
     /* public holidays: a small pennant, never a person's colour */
     flag: svg('<path d="M6.5 21.5V3.2"/><path d="M6.5 4.2h11l-2.1 3.6 2.1 3.6h-11z"/>'),
     mic: svg('<rect x="9" y="2.5" width="6" height="11.5" rx="3"/>' +
-      '<path d="M5.5 11.5a6.5 6.5 0 0013 0"/><path d="M12 18v3.5"/>')
+      '<path d="M5.5 11.5a6.5 6.5 0 0013 0"/><path d="M12 18v3.5"/>'),
+    search: svg('<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8"/>')
   };
 
   /* The power-flow family. These are kept as bare path markup rather than
@@ -382,6 +383,7 @@
     camIdx: 0,                  // which channel the grouped Cameras tile shows
     camLive: null,              // entity playing live on the camera wall
     sonosTarget: null,          // speaker a favourite starts on
+    sonosFilter: '',            // favourites search text, "Sonos" tile only
     solar: false,               // the power-flow overlay is open
     wgScrolled: false,          // the week grid has found its scroll position
     theme: 'day',               // the theme actually applied right now
@@ -2323,6 +2325,9 @@
     if (!state.sonos) return;
     var host = byId('sonosCard');
     if (!host) { state.sonos = false; return; }
+    /* Same reasoning as updateNowPlaying(): don't yank the search box out
+       from under a reader who is mid-word. */
+    if (document.activeElement && document.activeElement.classList.contains('np-src-search-in')) return;
     var lists = host.querySelectorAll('.np-src-list');
     var tops = Array.prototype.map.call(lists, function (l) { return l.scrollTop; });
     host.innerHTML = sonosSheetHtml();
@@ -2377,25 +2382,80 @@
       ? ICON.radio : ICON.playlist;
   }
 
+  /* A box above the favourites to jump straight to one instead of hunting
+     through however many are saved in the Sonos app. Every row still renders
+     (just hidden when it doesn't match) so a keystroke can hide/show them
+     directly — see the 'input' handler — without rebuilding the sheet and
+     losing focus and the keyboard along with it. */
+  function sonosSearchHtml() {
+    var q = state.sonosFilter || '';
+    /* The clear button is always in the markup (just hidden when there's no
+       query) rather than added/removed on the fly — patchSonosFilter only
+       ever toggles what's already there so a keystroke never touches the
+       input node itself and loses focus/the on-screen keyboard. */
+    return '<div class="np-src-search">' +
+      '<span class="np-src-search-ic">' + ICON.search + '</span>' +
+      '<input class="inp np-src-search-in" type="text" inputmode="search" autocomplete="off" ' +
+      'enterkeyhint="search" placeholder="Search favourites" aria-label="Search favourites" ' +
+      'data-act="sonos-filter" value="' + esc(q) + '">' +
+      '<button class="np-src-search-x" data-act="sonos-filter-clear" aria-label="Clear search"' +
+      (q ? '' : ' hidden') + '>' + ICON.close + '</button>' +
+      '</div>';
+  }
+
+  /* Re-hides/shows favourite rows in place for every keystroke — no rebuild,
+     so the input never loses focus or the caret mid-word. Mirrors exactly
+     what sourceRows() computes at render time, just applied to DOM already
+     on screen instead of freshly generated markup. */
+  function patchSonosFilter(root) {
+    var q = (state.sonosFilter || '').trim().toLowerCase();
+    Array.prototype.forEach.call(root.querySelectorAll('.np-src-list'), function (list) {
+      var any = false;
+      Array.prototype.forEach.call(list.querySelectorAll('.np-src'), function (r) {
+        var n = r.querySelector('.np-src-n');
+        var show = !q || (n && n.textContent.toLowerCase().indexOf(q) !== -1);
+        r.hidden = !show;
+        if (show) any = true;
+      });
+      var empty = list.querySelector('.np-src-empty');
+      if (empty) {
+        empty.hidden = !(q && !any);
+        empty.textContent = 'Nothing matches “' + (state.sonosFilter || '') + '”.';
+      }
+    });
+    Array.prototype.forEach.call(root.querySelectorAll('.np-src-search-x'), function (btn) {
+      btn.hidden = !q;
+    });
+  }
+
   function sourceRows(t) {
     var a = t.attrs || {};
-    var list = (a.source_list || []).filter(function (x) { return x; });
+    var list = (a.source_list || []).filter(function (x) { return x; })
+      .sort(function (x, y) { return x.localeCompare(y, undefined, { sensitivity: 'base' }); });
     if (!list.length) {
       return '<p class="np-none muted2">Add favourites in the Sonos app and they’ll appear here.</p>';
     }
     var starting = startingSource(t);
-    return '<div class="np-src-list">' + list.map(function (name) {
+    var q = (state.sonosFilter || '').trim().toLowerCase();
+    var anyMatch = false;
+    var rows = list.map(function (name) {
       var on = !starting && a.source === name;
       var busy = starting === name;
-      return '<button class="np-src' + (on ? ' is-on' : '') + (busy ? ' is-starting' : '') +
-        '" data-act="ha" data-now="1" data-entity="' + esc(t.entity) +
+      var hide = q && name.toLowerCase().indexOf(q) === -1;
+      if (!hide) anyMatch = true;
+      return '<button class="np-src' + (on ? ' is-on' : '') + (busy ? ' is-starting' : '') + '"' +
+        (hide ? ' hidden' : '') +
+        ' data-act="ha" data-now="1" data-entity="' + esc(t.entity) +
         '" data-action="select_source" data-value="' + esc(name) + '" data-vstr="1" data-label="' + esc(name) + '">' +
         '<span class="np-src-ic">' + sourceIcon(name) + '</span>' +
         '<span class="np-src-n">' + esc(name) + '</span>' +
         (busy ? '<span class="np-src-tag">Starting…</span>'
               : (on ? '<span class="np-src-tag is-on">Playing</span>' : '')) +
         '</button>';
-    }).join('') + '</div>';
+    }).join('');
+    return sonosSearchHtml() + '<div class="np-src-list">' + rows +
+      '<p class="np-src-empty muted2"' + (q && !anyMatch ? '' : ' hidden') + '>Nothing matches “' + esc(state.sonosFilter) + '”.</p>' +
+      '</div>';
   }
 
   function nowPlayingHtml(t) {
@@ -2466,6 +2526,12 @@
     if (!state.np) return;
     var host = byId('npCard');
     if (!host) { state.np = null; return; }
+    /* A rebuild while the reader is mid-search would replace the input node
+       under their finger — the caret and the on-screen keyboard would both
+       go. patchSonosFilter already keeps the visible list correct without
+       one; a real rebuild picks back up as soon as they tap away (the
+       document-wide focusout -> renderCatchUp already does that). */
+    if (document.activeElement && document.activeElement.classList.contains('np-src-search-in')) return;
     var t = mediaTile(state.np);
     if (!t) return;
     /* the 15 s poll redraws the whole card — hold the favourites list where
@@ -3581,6 +3647,7 @@
     stopLiveCameras();          // before innerHTML='', so the src is blanked
     state.camLive = null;
     state.sonosTarget = null;
+    state.sonosFilter = '';
     host.innerHTML = '';
     state.np = null;
     state.climate = false;
@@ -3598,6 +3665,7 @@
     stopLiveCameras();          // one sheet replacing another must not leak
     state.camLive = null;
     state.sonosTarget = null;
+    state.sonosFilter = '';
 
     state.np = null;
     state.climate = false;
@@ -5309,6 +5377,14 @@
         state.sonosTarget = el.dataset.entity;
         updateSonosSheet();
         break;
+      case 'sonos-filter-clear': {
+        state.sonosFilter = '';
+        var root = el.closest('.np, .sn-sheet');
+        var input = root && root.querySelector('.np-src-search-in');
+        if (input) input.value = '';
+        if (root) patchSonosFilter(root);
+        break;
+      }
       case 'weather-open': openWeatherSheet(); break;
       case 'climate-open': openClimateSheet(); break;
       case 'solar-open': openSolarSheet(); break;
@@ -5348,6 +5424,11 @@
     if (e.target && e.target.id === 'f-date') {
       var h = byId('f-date-hint');
       if (h) h.textContent = e.target.value ? fmtDMY(e.target.value) : '';
+    }
+    if (e.target && e.target.classList && e.target.classList.contains('np-src-search-in')) {
+      state.sonosFilter = e.target.value;
+      var root = e.target.closest('.np, .sn-sheet');
+      if (root) patchSonosFilter(root);
     }
   });
 

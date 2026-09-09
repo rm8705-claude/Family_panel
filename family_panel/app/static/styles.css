@@ -3456,6 +3456,42 @@ html[data-theme="night"] select.inp {
 
 .np-none { font-size: 0.9375rem; }
 
+/* Jump to a favourite instead of hunting for it — see sonosSearchHtml() and
+   patchSonosFilter() in app.js, which keep every keystroke off the DOM
+   rebuild path so the caret and the on-screen keyboard never drop. */
+.np-src-search {
+  position: relative;
+  flex: 0 0 auto;
+  margin-bottom: 0.75rem;
+}
+.np-src-search-ic {
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--ink-3);
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.np-src-search-ic svg { width: 1.125rem; height: 1.125rem; display: block; }
+.np-src-search-in { width: 100%; padding-left: 2.5rem; padding-right: 2.5rem; }
+.np-src-search-x {
+  position: absolute;
+  right: 0.375rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2rem;
+  height: 2rem;
+  display: grid;
+  place-items: center;
+  color: var(--ink-3);
+  border-radius: 999px;
+}
+.np-src-search-x svg { width: 1rem; height: 1rem; display: block; }
+
+.np-src-empty { grid-column: 1 / -1; font-size: 0.9375rem; color: var(--ink-3); }
+
 .np-src-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
@@ -3512,7 +3548,7 @@ html[data-theme="night"] select.inp {
 
 .sn-sheet {
   position: relative;
-  width: min(40rem, 92vw);
+  width: min(58rem, 94vw);
   max-height: 92vh;
   display: flex;
   flex-direction: column;
@@ -3522,13 +3558,18 @@ html[data-theme="night"] select.inp {
   border-radius: var(--radius);
 }
 
+/* Side by side when there's room — a wall panel is wide, and scrolling to
+   find the second speaker just to pause it was the whole complaint. Falls
+   back to a single column (still scrollable) on a narrow viewport, or once
+   there are enough speakers that even two columns run long. */
 .sn-list {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  align-items: start;
+  gap: 1.25rem 1.75rem;
   margin-top: 1rem;
   padding-right: 0.25rem;
 }
@@ -3557,8 +3598,14 @@ html[data-theme="night"] select.inp {
   font-weight: 700;
 }
 
-.sn-speaker { border-top: 1px solid var(--hair); padding-top: 1.5rem; }
-.sn-speaker:first-child { border-top: none; padding-top: 0; }
+/* Self-contained cards now that they sit in a grid rather than a single
+   stacked column — a border-top divider only made sense one-above-the-other. */
+.sn-speaker {
+  border: 1px solid var(--hair);
+  border-radius: var(--radius-s);
+  padding: 1.25rem;
+  background: var(--card);
+}
 
 .sn-sp-head { display: flex; align-items: center; gap: 1rem; }
 
