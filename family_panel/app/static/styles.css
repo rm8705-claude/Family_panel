@@ -3664,6 +3664,24 @@ html[data-theme="night"] select.inp {
 .sn-speaker .np-sources { margin-top: 1rem; }
 .sn-speaker .np-src-list { max-height: 9rem; }
 
+/* "Play here too" / "Play separately" — see groupBtnHtml() in app.js. A
+   full-width ghost button under the transport/volume rows rather than
+   another icon key, since which way it reads changes with grouping state. */
+.np-group-btn {
+  display: block;
+  width: 100%;
+  min-height: var(--tap);
+  margin-top: 0.875rem;
+  padding: 0 0.875rem;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius-s);
+  background: var(--card-2);
+  color: var(--ink-2);
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-align: center;
+}
+
 /* ------------------------------------------------------- power flow ------ */
 /* The solar overlay: a diamond of four nodes with the live arms carrying
    dashes in the direction the power is going. Sun-sourced arms take --star,

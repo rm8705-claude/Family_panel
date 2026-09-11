@@ -2289,17 +2289,45 @@
       'S.browser_fallback_url=https%3A%2F%2Fplay.google.com%2Fstore%2Fapps%2Fdetails%3Fid%3Dcom.sonos.acr2;end">' +
       'Open Sonos app</a>' +
       '</div>' +
-      '<div class="sn-list">' + list.map(sonosSpeakerCard).join('') + '</div>' +
+      '<div class="sn-list">' + list.map(function (t) { return sonosSpeakerCard(t, list); }).join('') + '</div>' +
       sonosFavouritesHtml(list);
   }
 
-  function sonosSpeakerCard(t) {
+  /* Which other configured speakers this one is currently synced with —
+     Sonos (and most multiroom systems) list every member of the group in
+     group_members, itself included, so "grouped" means that list contains
+     someone else the panel also knows about. */
+  function groupedWith(t, list) {
+    var members = (t.attrs || {}).group_members || [];
+    return list.filter(function (o) { return o.entity !== t.entity && members.indexOf(o.entity) !== -1; });
+  }
+
+  /* "Play here too" / "Play separately" — see the join/unjoin actions in
+     ha.py. join is called ON the speaker whose audio should spread (the one
+     already playing), not the one being added, so the button built on the
+     silent speaker's own card has to target the OTHER entity. */
+  function groupBtnHtml(t, list) {
+    var withOthers = groupedWith(t, list);
+    if (withOthers.length) {
+      return '<button class="np-group-btn" data-act="ha" data-now="1" data-entity="' + esc(t.entity) +
+        '" data-action="unjoin" data-label="Play separately" aria-label="Play separately">Play separately</button>';
+    }
+    var leader = list.filter(function (o) { return o.entity !== t.entity && o.attrs && o.attrs.playing; })[0];
+    if (!leader) return '';
+    return '<button class="np-group-btn" data-act="ha" data-now="1" data-entity="' + esc(leader.entity) +
+      '" data-action="join" data-value="' + esc(t.entity) + '" data-vstr="1" ' +
+      'data-label="Play here too" aria-label="Play ' + esc(leader.label) + '’s music here too">' +
+      'Play ' + esc(leader.label) + '’s music here</button>';
+  }
+
+  function sonosSpeakerCard(t, list) {
     var a = t.attrs || {};
     var vol = typeof a.volume === 'number' ? Math.max(0, Math.min(1, a.volume)) : null;
     var pct = vol == null ? null : Math.round(vol * 100);
     var playing = !!a.playing;
     var can = !!t.allow_action;
     var starting = startingSource(t);
+    var withOthers = groupedWith(t, list);
     var btn = function (action, label, value, cls) {
       return '<button class="' + cls + '" data-act="ha" data-now="1" data-entity="' + esc(t.entity) +
         '" data-action="' + action + '"' + (value != null ? ' data-value="' + value + '"' : '') +
@@ -2309,7 +2337,9 @@
       '<div class="sn-sp-head"><div class="sn-sp-art">' + npArt(t) + '</div>' +
       '<div class="sn-sp-info">' +
       '<div class="sn-sp-name">' + esc(t.label) + ' · ' +
-      (starting ? 'Starting' : (playing ? 'Now playing' : 'Paused')) + '</div>' +
+      (starting ? 'Starting' : (playing ? 'Now playing' : 'Paused')) +
+      (withOthers.length ? ' · with ' + esc(withOthers.map(function (o) { return o.label; }).join(', ')) : '') +
+      '</div>' +
       '<div class="sn-sp-title">' + esc(starting ? starting : (a.title || 'Nothing playing')) + '</div>' +
       '<div class="sn-sp-artist">' + esc(starting ? 'Starting…' : (a.artist || (a.source || '—'))) + '</div>' +
       '</div></div>';
@@ -2331,6 +2361,7 @@
           btn('volume_set', 'Louder', volStep(vol, +1), 'np-vbtn') + '+</button>' +
           '<span class="np-pct mono">' + pct + '%</span></div>';
       }
+      out += groupBtnHtml(t, list);
     }
     return out + '</div>';
   }
@@ -6568,7 +6599,8 @@
         state: 'playing',
         attrs: {
           title: 'Gold Chains', artist: 'Angus & Julia Stone', volume: 0.34, playing: true,
-          source_list: FAVOURITES.slice(), source: 'Kitchen Disco', entity_picture: null
+          source_list: FAVOURITES.slice(), source: 'Kitchen Disco', entity_picture: null,
+          group_members: []
         }
       },
       /* A second speaker so the demo shows the grouped Sonos tile, not the
@@ -6578,7 +6610,8 @@
         state: 'paused',
         attrs: {
           title: null, artist: null, volume: 0.6, playing: false,
-          source_list: FAVOURITES.slice(), source: null, entity_picture: null
+          source_list: FAVOURITES.slice(), source: null, entity_picture: null,
+          group_members: []
         }
       },
       {
@@ -7365,6 +7398,30 @@
         }
       }
       else if (body.action === 'pause') { tile.attrs.playing = false; tile.state = 'paused'; }
+      /* Mirrors the real join/unjoin semantics: join is called on the
+         speaker whose audio spreads (tile, the leader), body.value is the
+         speaker being brought in. The demo hands the follower the leader's
+         now-playing so it visibly matches, same as a real Sonos would. */
+      else if (body.action === 'join') {
+        var joinee = M.tiles.filter(function (x) { return x.entity === body.value; })[0];
+        if (joinee) {
+          var members = [tile.entity, joinee.entity];
+          tile.attrs.group_members = members.slice();
+          joinee.attrs.group_members = members.slice();
+          joinee.attrs.title = tile.attrs.title;
+          joinee.attrs.artist = tile.attrs.artist;
+          joinee.attrs.source = tile.attrs.source;
+          joinee.attrs.playing = tile.attrs.playing;
+          joinee.state = tile.state;
+        }
+      }
+      else if (body.action === 'unjoin') {
+        (tile.attrs.group_members || []).forEach(function (e) {
+          var m = M.tiles.filter(function (x) { return x.entity === e; })[0];
+          if (m) m.attrs.group_members = (m.attrs.group_members || []).filter(function (x) { return x !== tile.entity; });
+        });
+        tile.attrs.group_members = [];
+      }
       else if (body.action === 'volume_set') {
         tile.attrs.volume = Math.max(0, Math.min(1, Number(body.value) || 0));
       }

@@ -138,6 +138,13 @@ def tile_shape(tile: dict, cached: dict | None) -> dict:
                         # the entity's source_list — the panel's "play something"
                         "source_list": attrs.get("source_list") or [],
                         "source": attrs.get("source"),
+                        # Which other configured speakers are currently synced
+                        # with this one, for the "play here too" / "play
+                        # separately" grouping controls. HA lists every member
+                        # of the group here, this entity included — solo just
+                        # means the list is [itself] or empty depending on the
+                        # integration.
+                        "group_members": attrs.get("group_members") or [],
                         # Point at our own proxy, not HA's path — see media_art.
                         # The cache key rides along so the browser refetches
                         # when the track changes and caches within a track.
@@ -203,6 +210,12 @@ ACTIONS = {
         # v = a name from the tile's source_list (a Sonos favourite)
         "select_source": ("media_player", "select_source",
                           lambda v: {"source": str(v)}),
+        # "join" is called ON the speaker whose audio should spread — HA's
+        # own semantics, not the speaker being added — with v = the entity
+        # being brought into its group. "unjoin" is called on the speaker
+        # leaving and takes no value.
+        "join": ("media_player", "join", lambda v: {"group_members": [str(v)]}),
+        "unjoin": ("media_player", "unjoin", lambda v: {}),
     },
     "fan": {
         "turn_on": ("fan", "turn_on", lambda v: {}),
