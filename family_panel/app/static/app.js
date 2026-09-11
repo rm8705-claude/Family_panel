@@ -227,6 +227,7 @@
 
   var SKIN_KEY = 'panel-skin';
   var THEME_MODE_KEY = 'panel-theme-mode';
+  var SONOS_PIN_KEY = 'panel-sonos-pin';
 
   function skinDef(id) {
     for (var i = 0; i < SKINS.length; i++) if (SKINS[i].id === id) return SKINS[i];
@@ -279,7 +280,8 @@
     flag: svg('<path d="M6.5 21.5V3.2"/><path d="M6.5 4.2h11l-2.1 3.6 2.1 3.6h-11z"/>'),
     mic: svg('<rect x="9" y="2.5" width="6" height="11.5" rx="3"/>' +
       '<path d="M5.5 11.5a6.5 6.5 0 0013 0"/><path d="M12 18v3.5"/>'),
-    search: svg('<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8"/>')
+    search: svg('<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8"/>'),
+    swap: svg('<path d="M7 7h13m0 0l-4-4m4 4l-4 4"/><path d="M17 17H4m0 0l4-4m-4 4l4 4"/>')
   };
 
   /* The power-flow family. These are kept as bare path markup rather than
@@ -384,6 +386,7 @@
     camLive: null,              // entity playing live on the camera wall
     sonosTarget: null,          // speaker a favourite starts on
     sonosFilter: '',            // favourites search text, "Sonos" tile only
+    sonosPin: null,             // entity pinned to the grouped Home tile, or auto
     solar: false,               // the power-flow overlay is open
     wgScrolled: false,          // the week grid has found its scroll position
     theme: 'day',               // the theme actually applied right now
@@ -2190,10 +2193,27 @@
     return ((D.ha && D.ha.tiles) || []).filter(function (t) { return t.type === 'media'; });
   }
 
+  /* Which speaker's title/artist the grouped Home tile leads with is normally
+     automatic (whoever's actually playing) — but "Sonos" and "Roam" are both
+     often idle at once, and which one then wins by list order isn't the one
+     you actually want to glance at. Pin sticks until swapped again, and
+     persists like the skin/theme choice: it's this physical panel's
+     preference, not the household's shared config. */
+  function readSonosPin() {
+    try { return localStorage.getItem(SONOS_PIN_KEY) || null; }
+    catch (e) { return null; }               // private mode / storage disabled
+  }
+
+  function setSonosPin(entity) {
+    state.sonosPin = entity;
+    try { localStorage.setItem(SONOS_PIN_KEY, entity); } catch (e) { /* nothing to do */ }
+  }
+
   /* SONOS — one speaker and the Home card tile IS that speaker, same as
      before. Two or more and it collapses into a single "Sonos" tile, same
      pattern as the aircon and camera groups: a count badge and whichever
-     speaker is actually playing, tapping opens every speaker at once. */
+     speaker is actually playing (or pinned), tapping opens every speaker at
+     once. The swap button cycles the pin to the next configured speaker. */
   function sonosTile(list, off) {
     if (list.length <= 1) {
       var only = list[0];
@@ -2204,16 +2224,22 @@
         (off ? '' : tileActions(only)) + '</div>';
     }
     var playing = list.filter(function (t) { return t.attrs && t.attrs.playing; });
-    var primary = playing[0] ||
+    var pinned = list.filter(function (t) { return t.entity === state.sonosPin; })[0];
+    var primary = pinned || playing[0] ||
       list.filter(function (t) { return t.attrs && t.attrs.title; })[0] || list[0];
     var a = primary.attrs || {};
+    var next = list[(list.indexOf(primary) + 1) % list.length];
     return '<div class="tile is-sonos' + (off ? ' is-off' : '') + '"' +
       (off ? '' : ' data-act="sonos-open" role="button" tabindex="0"') + '>' +
-      '<div class="t-label">Sonos<span class="t-count">' + list.length + '</span></div>' +
+      '<div class="t-label">Sonos<span class="t-count">' + list.length + '</span>' +
+      (off ? '' : '<button class="t-swap" data-act="sonos-swap" data-entity="' + esc(next.entity) +
+        '" aria-label="Show ' + esc(next.label) + ' instead">' + ICON.swap + '</button>') +
+      '</div>' +
       '<div class="t-value mono" style="font-size:1rem">' +
       esc(playing.length > 1 ? playing.length + ' playing' : (playing.length ? 'Playing' : 'Paused')) +
       '</div>' +
-      '<div class="t-sub">' + esc(a.title || '—') + (a.artist ? ' · ' + esc(a.artist) : '') + '</div>' +
+      '<div class="t-sub">' + esc(primary.label) + ' · ' + esc(a.title || 'Nothing playing') +
+      (a.artist ? ' · ' + esc(a.artist) : '') + '</div>' +
       '</div>';
   }
 
@@ -5377,6 +5403,10 @@
         state.sonosTarget = el.dataset.entity;
         updateSonosSheet();
         break;
+      case 'sonos-swap':
+        setSonosPin(el.dataset.entity);
+        renderSoon();
+        break;
       case 'sonos-filter-clear': {
         state.sonosFilter = '';
         var root = el.closest('.np, .sn-sheet');
@@ -5848,6 +5878,8 @@
     state.themeMode = (forced === 'night' || forced === 'day') ? forced : readThemeMode();
     applyTheme(state.themeMode === 'auto' ? autoTheme() : state.themeMode, false);
     renderThemeDebug();
+
+    state.sonosPin = readSonosPin();
 
     render();
     byId('railClock').textContent = clockNow();   // tick()'s first fire is 30s away

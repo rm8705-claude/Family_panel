@@ -1825,6 +1825,23 @@ ul, ol { list-style: none; }
    not a button — with three Sensibos in the row it was squeezed to the point
    where its own keys covered the whole tile */
 .tile.is-media, .tile.is-sonos { min-width: 13rem; flex-grow: 1.4; }
+
+/* Which speaker the grouped tile leads with, pinnable — see sonosTile() in
+   app.js. Scoped to .is-sonos rather than the shared .t-label so every other
+   tile's label keeps its plain block layout. */
+.tile.is-sonos .t-label { display: flex; align-items: center; }
+.t-swap {
+  margin-left: auto;
+  flex: 0 0 auto;
+  width: 1.75rem;
+  height: 1.75rem;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--ink-3);
+}
+.t-swap svg { width: 1.0625rem; height: 1.0625rem; display: block; }
+.t-swap:active { background: var(--card-2); color: var(--ink); }
 /* a read-out with no keys needs no width at all */
 .tile.is-climate { min-width: 8rem; }
 
