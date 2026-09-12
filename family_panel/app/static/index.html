@@ -4,7 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#EFE9DD">
-<meta name="color-scheme" content="light">
+<!-- `dark` has to be in here, and in styles.css's color-scheme, or an Android
+     WebView that is allowed to darken will invert the whole panel at paint
+     time while the DOM still says day — see the long note in styles.css. This
+     meta carries the same claim before the stylesheet lands. -->
+<meta name="color-scheme" content="light dark">
 <title>Family Panel</title>
 <!-- The version this page's JS was served as. index.html is no-cache and
      stamped per release, so this is always the build the running code came

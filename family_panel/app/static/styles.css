@@ -108,7 +108,19 @@
      face it replaced; its medium sits at 600, so emphasis reads 600 not 500. */
   --mono: 'Azeret Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
-  color-scheme: light;
+  /* MUST keep `dark` in the list, even though this is the day palette, and
+     the same goes for every light skin below.
+     `color-scheme: light` alone means "this page has no dark mode". An
+     Android WebView that is allowed to darken — Fully Kiosk on a tablet with
+     the system dark theme on, which battery saver turns on by itself — reads
+     that as permission to invert the panel algorithmically. That happens at
+     paint time, underneath the DOM: data-theme stays "day", every token keeps
+     its light value, ?debugtheme=1 reports day/paper, and the wall still shows
+     a dark panel with the accents left saturated. No skin, cache or Fully
+     Kiosk setting touches it, because nothing on the page is actually wrong.
+     Listing `dark` says the panel handles its own dark mode, which it does —
+     data-theme decides it — so the WebView leaves the pixels alone. */
+  color-scheme: light dark;
 }
 
 /* ---------------------------------------------------------------- night -- */
@@ -356,7 +368,7 @@ html[data-skin="eucalypt"] {
   --arc:         rgba(28, 35, 29, 0.22);
   --wet:         #3E6E77;
 
-  color-scheme: light;
+  color-scheme: light dark;      /* `dark` stays — see :root */
 }
 
 html[data-skin="eucalypt"][data-theme="night"] {
@@ -463,7 +475,7 @@ html[data-skin="coast"] {
   --arc:         rgba(29, 42, 51, 0.22);
   --wet:         #14657A;
 
-  color-scheme: light;
+  color-scheme: light dark;      /* `dark` stays — see :root */
 }
 
 html[data-skin="coast"][data-theme="night"] {
@@ -572,7 +584,7 @@ html[data-skin="ink"] {
   --arc:         rgba(11, 11, 13, 0.22);
   --wet:         #3F4E5C;
 
-  color-scheme: light;
+  color-scheme: light dark;      /* `dark` stays — see :root */
 }
 
 html[data-skin="ink"][data-theme="night"] {
