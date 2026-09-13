@@ -284,7 +284,20 @@
     swap: svg('<path d="M7 7h13m0 0l-4-4m4 4l-4 4"/><path d="M17 17H4m0 0l4-4m-4 4l4 4"/>'),
     together: svg('<rect x="2.5" y="4.5" width="8.5" height="15" rx="2.2"/>' +
       '<rect x="13" y="4.5" width="8.5" height="15" rx="2.2"/>' +
-      '<circle cx="6.75" cy="13.5" r="2.1"/><circle cx="17.25" cy="13.5" r="2.1"/>')
+      '<circle cx="6.75" cy="13.5" r="2.1"/><circle cx="17.25" cy="13.5" r="2.1"/>'),
+    /* House marks, not the real ATP/F1 logos — those are trademarks the panel
+       has no rights to and no way to fetch on a box with no internet access
+       to speak of, so these are drawn in the same stroke language as every
+       other icon here rather than pulled from anywhere. */
+    tennis: svg('<circle cx="12" cy="12" r="9"/>' +
+      '<path d="M6.3 4.8c2.6 3.4 2.6 11 0 14.4M17.7 4.8c-2.6 3.4-2.6 11 0 14.4"/>'),
+    chequered: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">' +
+      '<path d="M5 3v18"/>' +
+      '<g fill="currentColor" stroke="none">' +
+      '<rect x="5" y="4" width="3.5" height="3.5"/><rect x="12" y="4" width="3.5" height="3.5"/>' +
+      '<rect x="8.5" y="7.5" width="3.5" height="3.5"/><rect x="15.5" y="7.5" width="3.5" height="3.5"/>' +
+      '<rect x="5" y="11" width="3.5" height="3.5"/><rect x="12" y="11" width="3.5" height="3.5"/>' +
+      '</g></svg>'
   };
 
   /* The power-flow family. These are kept as bare path markup rather than
@@ -2198,34 +2211,46 @@
   }
 
   /* ------------------------------------------------------------- sports --- */
-  /* ATP men's singles and the F1 drivers' championship. Not a Home Assistant
-     tile — the panel fetches these itself (see sports.py) — but it lives on
-     the same shelf because that row is where the house's small read-outs are,
-     and a card of its own in the today grid would cost a row the schedule
-     currently uses.
+  /* ATP men's singles and the F1 championship — both drivers' and
+     constructors'. Not a Home Assistant tile — the panel fetches these
+     itself (see sports.py) — but it lives on the same shelf because that row
+     is where the house's small read-outs are, and a card of its own in the
+     today grid would cost a row the schedule currently uses.
 
-     The tile shows each leader; the table belongs behind a tap, because ten
+     The tile shows each leader; the tables belong behind a tap, because ten
      rows of anything is unreadable at tile size. */
 
-  var SPORTS = [
-    { key: 'atp', label: 'Tennis', unit: 'pts' },
-    { key: 'f1', label: 'F1', unit: 'pts' }
-  ];
-
-  function sportRows(key) {
-    var s = (D.sports && D.sports[key]) || null;
+  function atpRows() {
+    var s = D.sports && D.sports.atp;
     return (s && s.rows) || [];
+  }
+  function atpError() { return (D.sports && D.sports.atp && D.sports.atp.error) || null; }
+
+  function f1DriverRows() {
+    var s = D.sports && D.sports.f1 && D.sports.f1.drivers;
+    return (s && s.rows) || [];
+  }
+  function f1DriverError() {
+    var s = D.sports && D.sports.f1 && D.sports.f1.drivers;
+    return (s && s.error) || null;
+  }
+  function f1ConsRows() {
+    var s = D.sports && D.sports.f1 && D.sports.f1.constructors;
+    return (s && s.rows) || [];
+  }
+  function f1ConsError() {
+    var s = D.sports && D.sports.f1 && D.sports.f1.constructors;
+    return (s && s.error) || null;
   }
 
   function sportsHave() {
-    return SPORTS.some(function (s) { return sportRows(s.key).length; });
+    return !!(atpRows().length || f1DriverRows().length);
   }
 
   function sportsTile() {
     if (!sportsHave()) return '';
-    var lines = SPORTS.map(function (s) {
-      var top = sportRows(s.key)[0];
-      if (!top) return '';
+    var leaders = [atpRows()[0], f1DriverRows()[0]].filter(Boolean);
+    var lines = leaders.map(function (top) {
       return '<div class="sp-line">' +
         '<span class="sp-who">' + (top.flag ? '<span class="sp-flag">' + esc(top.flag) + '</span>' : '') +
         esc(top.name) + '</span>' +
@@ -2245,33 +2270,56 @@
       (up ? '▲' : '▼') + Math.abs(move) + '</span>';
   }
 
-  function sportsTableHtml(s) {
-    var rows = sportRows(s.key);
-    var err = ((D.sports && D.sports[s.key]) || {}).error;
-    if (!rows.length) {
-      return '<div class="sp-block"><div class="np-sec">' + esc(s.label) + '</div>' +
-        '<p class="np-none muted2">' +
-        esc(err ? 'Couldn’t reach the standings — ' + err : 'No standings yet.') +
-        '</p></div>';
-    }
-    return '<div class="sp-block"><div class="np-sec">' + esc(s.label) +
+  /* One position/flag/name/movement/points table — ATP, WDC and CWC all use
+     this, since a constructor is just a row with no code and no team of its
+     own to show. */
+  function sportsRowsHtml(rows) {
+    return '<div class="sp-table">' + rows.map(function (r) {
+      return '<div class="sp-row">' +
+        '<span class="sp-pos mono">' + esc(r.pos) + '</span>' +
+        '<span class="sp-flag">' + esc(r.flag || '') + '</span>' +
+        '<span class="sp-name">' + esc(r.name) +
+        (r.team ? '<span class="sp-team">' + esc(r.team) + '</span>' : '') + '</span>' +
+        moveHtml(r.move) +
+        '<span class="sp-pts mono">' + esc(r.points == null ? '—' : r.points) + '</span>' +
+        '</div>';
+    }).join('') + '</div>';
+  }
+
+  function sportsEmptyHtml(err) {
+    return '<p class="np-none muted2">' +
+      esc(err ? 'Couldn’t reach the standings — ' + err : 'No standings yet.') + '</p>';
+  }
+
+  function sportsSectionHead(icon, label, err) {
+    return '<div class="np-sec sp-sec-head"><span class="sp-sec-ic">' + icon + '</span>' +
+      esc(label) + (err ? ' <span class="sp-stale">· last known</span>' : '') + '</div>';
+  }
+
+  function atpBlockHtml() {
+    var rows = atpRows(), err = atpError();
+    return '<div class="sp-block">' + sportsSectionHead(ICON.tennis, 'ATP Rankings', err) +
+      (rows.length ? sportsRowsHtml(rows) : sportsEmptyHtml(err)) + '</div>';
+  }
+
+  function f1ColHtml(heading, rows, err) {
+    return '<div class="sp-col"><div class="sp-col-h">' + esc(heading) +
       (err ? ' <span class="sp-stale">· last known</span>' : '') + '</div>' +
-      '<div class="sp-table">' + rows.map(function (r) {
-        return '<div class="sp-row">' +
-          '<span class="sp-pos mono">' + esc(r.pos) + '</span>' +
-          '<span class="sp-flag">' + esc(r.flag || '') + '</span>' +
-          '<span class="sp-name">' + esc(r.name) +
-          (r.team ? '<span class="sp-team">' + esc(r.team) + '</span>' : '') + '</span>' +
-          moveHtml(r.move) +
-          '<span class="sp-pts mono">' + esc(r.points == null ? '—' : r.points) + '</span>' +
-          '</div>';
-      }).join('') + '</div></div>';
+      (rows.length ? sportsRowsHtml(rows) : sportsEmptyHtml(err)) + '</div>';
+  }
+
+  function f1BlockHtml() {
+    return '<div class="sp-block">' + sportsSectionHead(ICON.chequered, 'Formula 1', null) +
+      '<div class="sp-f1-cols">' +
+      f1ColHtml('Drivers (WDC)', f1DriverRows(), f1DriverError()) +
+      f1ColHtml('Constructors (CWC)', f1ConsRows(), f1ConsError()) +
+      '</div></div>';
   }
 
   function sportsSheetHtml() {
     return '<button class="close-x np-close" data-act="close-sheet" aria-label="Close">' + ICON.close + '</button>' +
       '<div class="np-label sp-head">Standings</div>' +
-      '<div class="sp-blocks">' + SPORTS.map(sportsTableHtml).join('') + '</div>' +
+      '<div class="sp-blocks">' + atpBlockHtml() + f1BlockHtml() + '</div>' +
       '<p class="sp-note muted2">Movement is since the table last changed — ' +
       'ATP publishes on Mondays, F1 after each race.</p>';
   }
@@ -7686,15 +7734,38 @@
           { id: '3', pos: 3, name: 'Alexander Zverev', points: 7285, code: 'GER', flag: '🇩🇪', team: null, move: 0 },
           { id: '4', pos: 4, name: 'Novak Djokovic', points: 5560, code: 'SRB', flag: '🇷🇸', team: null, move: 2 },
           { id: '5', pos: 5, name: 'Alex de Minaur', points: 4315, code: 'AUS', flag: '🇦🇺', team: null, move: -2 },
-          { id: '6', pos: 6, name: 'Taylor Fritz', points: 3985, code: 'USA', flag: '🇺🇸', team: null, move: null }
+          { id: '6', pos: 6, name: 'Taylor Fritz', points: 3985, code: 'USA', flag: '🇺🇸', team: null, move: null },
+          { id: '7', pos: 7, name: 'Casper Ruud', points: 3720, code: 'NOR', flag: '🇳🇴', team: null, move: 1 },
+          { id: '8', pos: 8, name: 'Holger Rune', points: 3410, code: 'DEN', flag: '🇩🇰', team: null, move: -1 },
+          { id: '9', pos: 9, name: 'Grigor Dimitrov', points: 3105, code: 'BUL', flag: '🇧🇬', team: null, move: 0 },
+          { id: '10', pos: 10, name: 'Ben Shelton', points: 2890, code: 'USA', flag: '🇺🇸', team: null, move: 2 }
         ] },
-        f1: { error: null, rows: [
-          { id: 'norris', pos: 1, name: 'Lando Norris', points: 310, code: 'NOR', flag: '🇬🇧', team: 'McLaren', move: 1 },
-          { id: 'verstappen', pos: 2, name: 'Max Verstappen', points: 285, code: 'VER', flag: '🇳🇱', team: 'Red Bull', move: -1 },
-          { id: 'leclerc', pos: 3, name: 'Charles Leclerc', points: 240, code: 'LEC', flag: '🇲🇨', team: 'Ferrari', move: 0 },
-          { id: 'piastri', pos: 4, name: 'Oscar Piastri', points: 232, code: 'PIA', flag: '🇦🇺', team: 'McLaren', move: 3 },
-          { id: 'russell', pos: 5, name: 'George Russell', points: 198, code: 'RUS', flag: '🇬🇧', team: 'Mercedes', move: -1 }
-        ] }
+        f1: {
+          drivers: { error: null, rows: [
+            { id: 'norris', pos: 1, name: 'Lando Norris', points: 310, code: 'NOR', flag: '🇬🇧', team: 'McLaren', move: 1 },
+            { id: 'verstappen', pos: 2, name: 'Max Verstappen', points: 285, code: 'VER', flag: '🇳🇱', team: 'Red Bull', move: -1 },
+            { id: 'leclerc', pos: 3, name: 'Charles Leclerc', points: 240, code: 'LEC', flag: '🇲🇨', team: 'Ferrari', move: 0 },
+            { id: 'piastri', pos: 4, name: 'Oscar Piastri', points: 232, code: 'PIA', flag: '🇦🇺', team: 'McLaren', move: 3 },
+            { id: 'russell', pos: 5, name: 'George Russell', points: 198, code: 'RUS', flag: '🇬🇧', team: 'Mercedes', move: -1 },
+            { id: 'hamilton', pos: 6, name: 'Lewis Hamilton', points: 176, code: 'HAM', flag: '🇬🇧', team: 'Ferrari', move: 0 },
+            { id: 'sainz', pos: 7, name: 'Carlos Sainz', points: 154, code: 'SAI', flag: '🇪🇸', team: 'Williams', move: 1 },
+            { id: 'alonso', pos: 8, name: 'Fernando Alonso', points: 98, code: 'ALO', flag: '🇪🇸', team: 'Aston Martin', move: -1 },
+            { id: 'gasly', pos: 9, name: 'Pierre Gasly', points: 66, code: 'GAS', flag: '🇫🇷', team: 'Alpine', move: 0 },
+            { id: 'albon', pos: 10, name: 'Alex Albon', points: 54, code: 'ALB', flag: '🇹🇭', team: 'Williams', move: null }
+          ] },
+          constructors: { error: null, rows: [
+            { id: 'mclaren', pos: 1, name: 'McLaren', points: 542, code: null, flag: '🇬🇧', team: null, move: 0 },
+            { id: 'ferrari', pos: 2, name: 'Ferrari', points: 416, code: null, flag: '🇮🇹', team: null, move: 0 },
+            { id: 'red_bull', pos: 3, name: 'Red Bull', points: 298, code: null, flag: '🇦🇹', team: null, move: 1 },
+            { id: 'mercedes', pos: 4, name: 'Mercedes', points: 264, code: null, flag: '🇩🇪', team: null, move: -1 },
+            { id: 'williams', pos: 5, name: 'Williams', points: 108, code: null, flag: '🇬🇧', team: null, move: 0 },
+            { id: 'aston_martin', pos: 6, name: 'Aston Martin', points: 98, code: null, flag: '🇬🇧', team: null, move: 1 },
+            { id: 'alpine', pos: 7, name: 'Alpine', points: 66, code: null, flag: '🇫🇷', team: null, move: -1 },
+            { id: 'haas', pos: 8, name: 'Haas', points: 41, code: null, flag: '🇺🇸', team: null, move: 0 },
+            { id: 'sauber', pos: 9, name: 'Kick Sauber', points: 18, code: null, flag: '🇨🇭', team: null, move: 0 },
+            { id: 'rb', pos: 10, name: 'Racing Bulls', points: 12, code: null, flag: '🇮🇹', team: null, move: 0 }
+          ] }
+        }
       };
     }
 

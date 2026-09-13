@@ -34,6 +34,7 @@ TIMEOUT = 25
 
 ATP_URL = "https://site.api.espn.com/apis/site/v2/sports/tennis/atp/rankings"
 F1_URL = "https://api.jolpi.ca/ergast/f1/current/driverstandings/?format=json"
+F1_CONS_URL = "https://api.jolpi.ca/ergast/f1/current/constructorstandings/?format=json"
 
 TOP_N = 10
 
@@ -264,6 +265,41 @@ def fetch_f1() -> list[dict]:
     return out[:TOP_N]
 
 
+# The constructors' championship — same shape as the drivers' so the sheet can
+# draw both with one function, just fetched from Ergast/Jolpica's other
+# standings list. There are only ever ~10 teams on the grid, so "top 10" here
+# means the whole championship, not a cut.
+
+def fetch_f1_constructors() -> list[dict]:
+    r = requests.get(F1_CONS_URL, timeout=TIMEOUT,
+                     headers={"User-Agent": "family-panel/1.0"})
+    r.raise_for_status()
+    lists = (r.json().get("MRData", {}).get("StandingsTable", {})
+             .get("StandingsLists") or [])
+    if not lists:
+        return []
+    out = []
+    for row in lists[0].get("ConstructorStandings", []):
+        cons = row.get("Constructor", {})
+        name = cons.get("name")
+        pos = _num(row.get("position"))
+        if pos is None or not name:
+            continue
+        iso2 = _iso2_from_nationality(cons.get("nationality"))
+        out.append({
+            "id": cons.get("constructorId") or name,
+            "pos": pos,
+            "name": name,
+            "points": _num(row.get("points")),
+            "code": None,
+            "flag": flag_emoji(iso2),
+            "team": None,
+            "src_prev": None,
+        })
+    out.sort(key=lambda r: r["pos"])
+    return out[:TOP_N]
+
+
 # --------------------------------------------------------- movement --------
 
 def _apply_movement(key: str, rows: list[dict]) -> list[dict]:
@@ -303,25 +339,38 @@ def _apply_movement(key: str, rows: list[dict]) -> list[dict]:
 
 # ---------------------------------------------------------- refresh --------
 
-def refresh(cfg: dict | None = None) -> dict:
-    """Fetch both. One sport failing must not cost the other its table, so each
-    keeps whatever it had and reports its own error."""
-    prev = latest() or {}
-    out = {"updated_at": db.utc_now_iso()}
-    errors = []
+def _fetch_one(key: str, fetch, prev_block: dict | None) -> dict:
+    """One source's block of the cached payload: fresh rows plus movement, or
+    whatever was there before plus why it wasn't replaced. Isolated per source
+    so the WDC table going stale never touches the ATP or CWC ones."""
+    try:
+        rows = _apply_movement(key, fetch())
+        return {"rows": rows, "error": None, "updated_at": db.utc_now_iso()}
+    except Exception as e:                            # noqa: BLE001 - reported
+        kept = (prev_block or {}).get("rows") or []
+        return {"rows": kept, "error": f"{key}: {e}"[:200],
+                "updated_at": (prev_block or {}).get("updated_at")}
 
-    for key, fetch in (("atp", fetch_atp), ("f1", fetch_f1)):
-        try:
-            rows = _apply_movement(key, fetch())
-            out[key] = {"rows": rows, "error": None,
-                        "updated_at": db.utc_now_iso()}
-        except Exception as e:                       # noqa: BLE001 - reported
-            errors.append(f"{key}: {e}")
-            kept = (prev.get(key) or {}).get("rows") or []
-            out[key] = {"rows": kept, "error": str(e)[:200],
-                        "updated_at": (prev.get(key) or {}).get("updated_at")}
+
+def refresh(cfg: dict | None = None) -> dict:
+    """Fetch all three tables. Each fails independently and keeps its own last
+    known rows — a dead ATP fetch must not cost F1 its table, and a dead
+    constructors fetch must not cost the drivers theirs."""
+    prev = latest() or {}
+    prev_f1 = prev.get("f1") or {}
+    out = {"updated_at": db.utc_now_iso()}
+
+    out["atp"] = _fetch_one("atp", fetch_atp, prev.get("atp"))
+    out["f1"] = {
+        "drivers": _fetch_one("f1", fetch_f1, prev_f1.get("drivers")),
+        "constructors": _fetch_one("f1_cons", fetch_f1_constructors,
+                                   prev_f1.get("constructors")),
+    }
 
     db.set_json_setting("sports:latest", out)
+    errors = [b["error"] for b in
+             (out["atp"], out["f1"]["drivers"], out["f1"]["constructors"])
+             if b["error"]]
     if errors:
         raise RuntimeError("; ".join(errors))
     return out

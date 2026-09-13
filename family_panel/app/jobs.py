@@ -170,8 +170,10 @@ def fetch_sports(config: dict) -> None:
     import sports
     try:
         data = sports.refresh(config.get("sports", {}))
-        detail = ", ".join(f"{k}: {len(data.get(k, {}).get('rows') or [])}"
-                           for k in ("atp", "f1"))
+        f1 = data.get("f1", {})
+        detail = (f"atp: {len(data.get('atp', {}).get('rows') or [])}, "
+                 f"f1 drivers: {len(f1.get('drivers', {}).get('rows') or [])}, "
+                 f"f1 constructors: {len(f1.get('constructors', {}).get('rows') or [])}")
         db.mark_sync("sports", True, detail)
     except Exception as e:
         # refresh() still cached whatever it did get, so a half-failure leaves
