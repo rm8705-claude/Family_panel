@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.18.0"
+APP_VERSION = "0.18.1"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -83,7 +83,7 @@ def healthz():
 @app.get("/api/status")
 def api_status():
     jobs = {}
-    for job in ("ics", "imap", "weather", "ha", "photos"):
+    for job in ("ics", "imap", "weather", "ha", "photos", "sports"):
         jobs[job] = db.get_json_setting(f"sync:{job}")
     feeds = {}
     for feed in CONFIG.get("ics_feeds", []):
