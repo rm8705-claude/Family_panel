@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.18.8"
+APP_VERSION = "0.18.9"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -922,14 +922,19 @@ def api_ha_action():
         lenders = db.get_json_setting("ha:tv_apps") or {}
         owner = next((t for t in CONFIG.get("ha_tiles", []) or []
                       if t.get("type") == "tv" and t.get("allow_action")
-                      and (lenders.get(t.get("entity")) or {}).get("entity") == entity),
+                      and (lenders.get(t.get("entity")) or {}).get("apps_entity") == entity),
                      None)
         if owner is None or body.get("action") != "select_source":
             return jsonify({"error": "Unknown tile"}), 404
     elif not tile.get("allow_action"):
         return jsonify({"error": "Actions are not enabled for this tile"}), 403
     try:
-        ha.call_action(entity, body.get("action", ""), body.get("value"))
+        # A television's Turn on is not a plain service call — which entity
+        # (or whether a magic packet) can actually do it varies by house.
+        if tile is not None and tile.get("type") == "tv" and body.get("action") == "turn_on":
+            ha.tv_turn_on(tile)
+        else:
+            ha.call_action(entity, body.get("action", ""), body.get("value"))
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except ha.NotConfigured:

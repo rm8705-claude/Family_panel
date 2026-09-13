@@ -90,36 +90,67 @@ def _tv_base(entity_id: str) -> str:
     return _TV_SUFFIX.sub("", entity_id)
 
 
-def _tv_apps_map(tv_entities: set[str], all_states: list[dict]) -> dict:
-    """For each TV tile entity that reports no apps, the sibling that does.
+SELECT_SOURCE = 2048             # MediaPlayerEntityFeature.SELECT_SOURCE
+TURN_ON = 128                    # MediaPlayerEntityFeature.TURN_ON
 
-    Returns {tile_entity: {"entity": <sibling id>, "source_list": [...]}} and
-    holds only the entities that actually need the loan — a tile pointed at
-    the live entity is absent from the map and uses its own list.
+
+def _feats(attrs: dict) -> int:
+    try:
+        return int(attrs.get("supported_features") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _tv_apps_map(tv_entities: set[str], all_states: list[dict]) -> dict:
+    """For each TV tile, which entity to aim its apps and its power at.
+
+    Returns {tile_entity: {"apps_entity", "source_list", "on_entity"}}.
+
+    apps_entity/source_list are the loan described above: absent (None/[])
+    when the tile's own entity reports its apps, since then nothing is needed.
+
+    on_entity is separate because the two capabilities do not travel together.
+    A webOS set only gains TURN_ON when Home Assistant has a way to wake it —
+    Wake-on-LAN — so an entity can report every app it has and still refuse to
+    be switched on, and asking anyway is a 500 from Home Assistant rather than
+    a polite refusal. So: the entity that actually declares TURN_ON, which may
+    be the tile's own, a sibling, or none of them.
     """
-    by_id, apps = {}, {}
+    by_id, apps, can_on = {}, {}, set()
     for s in all_states:
         eid = s.get("entity_id", "")
         if not eid.startswith("media_player."):
             continue
         attrs = s.get("attributes") or {}
         by_id[eid] = attrs
-        srcs = attrs.get("source_list") or []
-        if srcs:
-            apps[eid] = srcs
+        if attrs.get("source_list"):
+            apps[eid] = attrs["source_list"]
+        if _feats(attrs) & TURN_ON:
+            can_on.add(eid)
 
     out = {}
     for eid in tv_entities:
-        if (by_id.get(eid) or {}).get("source_list"):
-            continue                      # already the live one, nothing to lend
-        base = _tv_base(eid)
-        # Most apps wins, so a sibling with a stub list never beats the real
-        # one; the id is the tiebreak purely so the choice is stable between
-        # polls rather than flickering between two equal candidates.
-        best = sorted(((k, v) for k, v in apps.items() if _tv_base(k) == base),
-                      key=lambda kv: (-len(kv[1]), kv[0]))
-        if best:
-            out[eid] = {"entity": best[0][0], "source_list": best[0][1]}
+        own = by_id.get(eid) or {}
+        entry = {"apps_entity": None, "source_list": [], "on_entity": None}
+
+        if not own.get("source_list"):
+            base = _tv_base(eid)
+            # Most apps wins, so a sibling with a stub list never beats the
+            # real one; the id is the tiebreak purely so the choice is stable
+            # between polls rather than flickering between two equal ones.
+            best = sorted(((k, v) for k, v in apps.items() if _tv_base(k) == base),
+                          key=lambda kv: (-len(kv[1]), kv[0]))
+            if best:
+                entry["apps_entity"], entry["source_list"] = best[0][0], best[0][1]
+
+        if eid in can_on:
+            entry["on_entity"] = eid
+        else:
+            base = _tv_base(eid)
+            sibs = sorted(k for k in can_on if _tv_base(k) == base)
+            entry["on_entity"] = sibs[0] if sibs else None
+
+        out[eid] = entry
     return out
 
 
@@ -226,17 +257,22 @@ def tile_shape(tile: dict, cached: dict | None) -> dict:
         # Where the apps come from, when this entity has none of its own.
         # apps_entity is what select_source has to be sent to — the tile's own
         # entity would accept the call and do nothing, being the dead one.
+        helper = (db.get_json_setting("ha:tv_apps") or {}).get(tile["entity"]) or {}
         apps_entity = None
-        if not sources:
-            loan = (db.get_json_setting("ha:tv_apps") or {}).get(tile["entity"])
-            if loan:
-                sources = loan.get("source_list") or []
-                apps_entity = loan.get("entity")
+        if not sources and helper.get("source_list"):
+            sources = helper["source_list"]
+            apps_entity = helper.get("apps_entity")
+        # Whether anything at all can switch this set on — its own entity, a
+        # sibling, or a magic packet. The tile keeps its Turn on key either
+        # way (finding the remote is the whole point of it) but the panel can
+        # say what is missing instead of relaying a 500.
         out["attrs"] = {"on": state not in ("off", "standby", "unavailable",
                                             "unknown", None),
                         "source": attrs.get("source"),
                         "source_list": sources,
                         "apps_entity": apps_entity,
+                        "can_turn_on": bool(helper.get("on_entity")
+                                            or tile.get("tv_mac")),
                         "muted": bool(attrs.get("is_volume_muted"))}
     elif ttype == "fan":
         out["attrs"] = {"percentage": attrs.get("percentage"),
@@ -337,6 +373,55 @@ def call_action(entity: str, action: str, value=None) -> None:
     r.raise_for_status()
 
 
+def tv_turn_on(tile: dict) -> None:
+    """Switch a television on by whatever route the house actually has.
+
+    media_player.turn_on is not a thing every TV entity can do. A webOS set
+    is only switchable on over the network if something can wake it, so the
+    LG integration declares TURN_ON solely when Wake-on-LAN is set up for it;
+    without that the entity offers turn_off and not its opposite, and calling
+    it anyway returns a 500 from Home Assistant with no hint as to why. The
+    tile still has to carry a Turn on key — not being able to find the remote
+    is the entire reason it exists — so the panel finds a route instead:
+
+      1. the tile's own entity, if it declares TURN_ON;
+      2. a sibling of it that does, since a re-paired set leaves entities
+         behind and they do not all carry the same capabilities;
+      3. the magic packet itself, if the tile config names the set's MAC —
+         which is what the integration would be doing in case 1 anyway.
+
+    Nothing left means the set genuinely cannot be woken over the network,
+    and that is worth saying plainly rather than relaying a 500.
+    """
+    entity = tile.get("entity")
+    helper = (db.get_json_setting("ha:tv_apps") or {}).get(entity) or {}
+    on_entity = helper.get("on_entity")
+    if on_entity:
+        call_action(on_entity, "turn_on")
+        return
+
+    mac = str(tile.get("tv_mac") or "").strip()
+    if mac:
+        base, token = _api_base()
+        r = requests.post(f"{base}/services/wake_on_lan/send_magic_packet",
+                          headers=_headers(token), json={"mac": mac},
+                          timeout=TIMEOUT)
+        if r.status_code == 400:
+            # The service only exists once the Wake on LAN integration is
+            # added, and a missing service is a 400 that says nothing useful.
+            raise ValueError(
+                "Add the 'Wake on LAN' integration in Home Assistant "
+                "(Settings > Devices & Services > Add Integration) — the "
+                "panel has the TV's MAC but nothing to send the packet with.")
+        r.raise_for_status()
+        return
+
+    raise ValueError(
+        f"{entity} can't be switched on from Home Assistant — it only offers "
+        "turn off. Put the TV's MAC address in the tile's tv_mac option and "
+        "add the Wake on LAN integration, then this key will wake it.")
+
+
 def media_art(entity: str) -> tuple[bytes, str]:
     """Fetch a media player's album art through our own API connection.
 
@@ -397,7 +482,6 @@ def tv_candidates() -> list[dict]:
     base, token = _api_base()
     r = requests.get(f"{base}/states", headers=_headers(token), timeout=TIMEOUT)
     r.raise_for_status()
-    SELECT_SOURCE = 2048            # MediaPlayerEntityFeature.SELECT_SOURCE
     out = []
     for s in r.json():
         eid = s.get("entity_id", "")
@@ -405,10 +489,7 @@ def tv_candidates() -> list[dict]:
             continue
         attrs = s.get("attributes") or {}
         sources = attrs.get("source_list") or []
-        try:
-            feats = int(attrs.get("supported_features") or 0)
-        except (TypeError, ValueError):
-            feats = 0
+        feats = _feats(attrs)
         out.append({
             "entity": eid,
             "name": attrs.get("friendly_name"),
@@ -416,6 +497,10 @@ def tv_candidates() -> list[dict]:
             "device_class": attrs.get("device_class"),
             "apps": len(sources),
             "can_select_source": bool(feats & SELECT_SOURCE),
+            # The one that can be switched on is not always the one with the
+            # apps, so both are worth seeing side by side.
+            "can_turn_on": bool(feats & TURN_ON),
+            "can_turn_off": bool(feats & 256),
             "sample_apps": sources[:6],
         })
     # Most apps first: the entity worth configuring sorts itself to the top.

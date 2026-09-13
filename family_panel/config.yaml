@@ -5,7 +5,7 @@
 # together whenever you ship a change (see the repo's `ship` skill).
 name: "Family Panel"
 description: "Self-hosted family wall calendar: shared calendar, chores, lists, meal planner and Home Assistant tiles."
-version: "0.18.8"
+version: "0.18.9"
 slug: "family_panel"
 url: "https://github.com/rm8705-claude/family_panel"
 arch:
@@ -215,6 +215,11 @@ schema:
       label: "str"
       type: "list(sensor|cover|switch|climate|media|tv|camera_snapshot|presence|fan|solar|bin_day)"
       allow_action: "bool?"
+      # TV tile only. A webOS set can only be switched ON over the network if
+      # something wakes it, so give its MAC here (and add Home Assistant's
+      # "Wake on LAN" integration) when the media_player entity offers turn
+      # off but not turn on — see tv_turn_on() in ha.py.
+      tv_mac: "str?"
       # Solar tile only. These are FLAT, not nested under an `entities:` key:
       # the Supervisor treats any nested object in a schema as mandatory (only
       # a string type ending in `?` is skippable), so a nested block here would
