@@ -405,6 +405,9 @@
     sonosPin: null,             // entity pinned to the grouped Home tile, or auto
     sonosShare: false,          // the play-together sheet is open
     sports: false,              // the standings sheet is open
+    tvApps: false,              // the TV app picker is open
+    tvAppsEntity: null,         // which TV it's showing (only ever one, but…)
+    tvStart: null,              // {entity, name, at} — app we just asked for
     solar: false,               // the power-flow overlay is open
     wgScrolled: false,          // the week grid has found its scroll position
     theme: 'day',               // the theme actually applied right now
@@ -1824,8 +1827,10 @@
       }
       case 'tv': {
         var tvOn = !!a.on;
+        var tvStarting = tvOn ? tvStartingSource(t) : null;
         return '<div class="t-value mono" style="font-size:1.125rem">' + (tvOn ? 'On' : 'Off') + '</div>' +
-          '<div class="t-sub">' + esc(tvOn ? (a.source || 'On') : 'Off') + '</div>';
+          '<div class="t-sub">' + esc(tvOn ? (tvStarting ? 'Starting ' + tvStarting : (a.source || 'On')) : 'Off') +
+          (tvOn && a.muted ? ' <span class="t-badge">Muted</span>' : '') + '</div>';
       }
       case 'solar':
         return solarTileBody(t);
@@ -1864,11 +1869,20 @@
     };
     if (t.type === 'cover') { b.push(mk('open', 'Open')); b.push(mk('close', 'Close')); }
     else if (t.type === 'tv') {
-      /* The whole point of the tile: one key, for when the remote is under a
-         cushion. Which way it reads follows the set, so there is never a
-         guess about what the tap will do. */
+      /* On/off first, always — for when the remote is under a cushion.
+         Which way it reads follows the set, so there is never a guess about
+         what the tap will do. Mute and the app picker only make sense once
+         it's actually on. */
       var tvOn = !!(t.attrs && t.attrs.on);
       b.push(tvOn ? mk('turn_off', 'Turn off') : mk('turn_on', 'Turn on'));
+      if (tvOn) {
+        var tvMuted = !!(t.attrs && t.attrs.muted);
+        b.push(tvMuted ? mk('unmute', 'Unmute', null, 'osc') : mk('mute', 'Mute', null, 'osc'));
+        if ((t.attrs.source_list || []).length) {
+          b.push('<button class="t-btn" data-act="tv-apps-open" data-entity="' +
+            esc(t.entity) + '">Apps</button>');
+        }
+      }
     }
     else if (t.type === 'switch') {
       b.push(t.state === 'on' ? mk('turn_off', 'Turn off') : mk('turn_on', 'Turn on'));
@@ -2197,6 +2211,7 @@
       var sol = t.type === 'solar' && !off;
       return '<div class="tile' + (off ? ' is-off' : '') +
         (t.type === 'fan' ? ' is-fan' : '') +
+        (t.type === 'tv' ? ' is-tv' : '') +
         (t.type === 'solar' ? ' is-solar' : '') + '"' +
         (sol ? ' data-act="solar-open" role="button" tabindex="0"' : '') + '>' +
         '<div class="t-label">' + esc(t.label) + '</div>' + tileBody(t) +
@@ -2631,6 +2646,63 @@
     var tiles = (D.ha && D.ha.tiles) || [];
     for (var i = 0; i < tiles.length; i++) if (tiles[i].entity === entity) return tiles[i];
     return null;
+  }
+
+  /* --------------------------------------------------------------- tv apps */
+  /* "Click one and go direct to it" — every app the TV itself reports,
+     picked straight off select_source, same HA action Sonos favourites
+     already use. Reuses the .np-src-list/.np-src grid wholesale rather than
+     inventing a second one: it is already exactly this — a scrollable grid
+     of "tap this, it starts playing" buttons — and this way the two never
+     drift apart in how a "starting" row looks. Only the search box is left
+     out; a TV's app list doesn't run long enough to need one, and the box's
+     own JS (patchSonosFilter) is Sonos-specific. */
+
+  /* Which app was just tapped, if the TV hasn't caught up yet — same shape
+     and same reasoning as Sonos's startingSource(): a smart TV can take a
+     couple of seconds to actually switch, and the 15 s poll is slower still. */
+  function tvStartingSource(t) {
+    var s = state.tvStart;
+    if (!s || s.entity !== t.entity) return null;
+    if (Date.now() - s.at > 20000) { state.tvStart = null; return null; }
+    if ((t.attrs || {}).source === s.name) { state.tvStart = null; return null; }
+    return s.name;
+  }
+
+  function tvAppsHtml(entity) {
+    var t = mediaTile(entity);
+    if (!t) return '<div class="empty">That TV isn’t on the panel anymore.</div>';
+    var list = (t.attrs && t.attrs.source_list) || [];
+    if (!list.length) return '<div class="empty">No apps reported for this TV.</div>';
+    var current = (t.attrs || {}).source;
+    var starting = tvStartingSource(t);
+    return '<button class="close-x np-close" data-act="close-sheet" aria-label="Close">' + ICON.close + '</button>' +
+      '<div class="np-label tva-head">' + esc(t.label) + '</div>' +
+      '<div class="np-src-list">' + list.map(function (name) {
+        var on = !starting && name === current;
+        var busy = starting === name;
+        return '<button class="np-src' + (on ? ' is-on' : '') + (busy ? ' is-starting' : '') +
+          '" data-act="ha" data-entity="' + esc(entity) +
+          '" data-action="select_source" data-value="' + esc(name) + '" data-vstr="1" data-label="' + esc(name) + '">' +
+          '<span class="np-src-n">' + esc(name) + '</span>' +
+          (busy ? '<span class="np-src-tag">Starting…</span>'
+                : (on ? '<span class="np-src-tag is-on">Playing</span>' : '')) +
+          '</button>';
+      }).join('') + '</div>';
+  }
+
+  function openTvApps(entity) {
+    openSheet('<div class="tva-sheet" id="tvAppsCard" role="dialog" aria-modal="true" aria-label="Apps">' +
+      tvAppsHtml(entity) + '</div>', { raw: true, centre: true });
+    state.tvApps = true;
+    state.tvAppsEntity = entity;
+  }
+
+  function updateTvApps() {
+    if (!state.tvApps) return;
+    var host = byId('tvAppsCard');
+    if (!host) { state.tvApps = false; return; }
+    host.innerHTML = tvAppsHtml(state.tvAppsEntity);
   }
 
   function npArt(t) {
@@ -3918,6 +3990,7 @@
     updateSonosSheet();
     updateSonosShare();
     updateSportsSheet();
+    updateTvApps();
     updateWeatherSheet();
     updateClimateSheet();
     paintSolar();
@@ -3985,6 +4058,7 @@
     state.sonos = false;
     state.sonosShare = false;
     state.sports = false;
+    state.tvApps = false;
     state.weather = false;
     stopStatusRefresh();
     renderCatchUp();
@@ -4005,6 +4079,7 @@
     state.sonos = false;
     state.sonosShare = false;
     state.sports = false;
+    state.tvApps = false;
     state.weather = false;
     stopStatusRefresh();
     host.innerHTML = '<div class="scrim' + (opts.centre ? ' centre' : '') +
@@ -5456,8 +5531,16 @@
         render();
       }
     } else if (action === 'select_source') {
+      /* Shared by Sonos favourites and the TV app picker — both slots are set
+         unconditionally and each consumer (startingSource/tvStartingSource)
+         checks its own entity, so the one that doesn't apply here is just
+         inert rather than something to branch on. render() covers the TV
+         tile itself; the two update*() calls cover whichever sheet is open. */
       state.npStart = { entity: btn.dataset.entity, name: btn.dataset.value, at: Date.now() };
+      state.tvStart = { entity: btn.dataset.entity, name: btn.dataset.value, at: Date.now() };
       updateNowPlaying();
+      updateTvApps();
+      render();
     } else if (playPause) {
       /* Optimistic, same reason as volume above: Sonos itself can take a
          couple of seconds to react, and with nothing changing on screen
@@ -5705,6 +5788,7 @@
         updateSonosSheet();
         break;
       case 'sports-open': openSportsSheet(); break;
+      case 'tv-apps-open': openTvApps(el.dataset.entity); break;
       case 'sonos-share': openSonosShare(); break;
       case 'sonos-swap':
         setSonosPin(el.dataset.entity);
@@ -6868,7 +6952,11 @@
       },
       {
         entity: 'media_player.living_room_tv', label: 'TV', type: 'tv', allow_action: true,
-        state: 'on', attrs: { on: true, source: 'Netflix' }
+        state: 'on', attrs: { on: true, source: 'Netflix', muted: false, source_list: [
+          'Netflix', 'Disney+', 'Prime Video', 'Stan.', 'Apple Music', 'YouTube',
+          'ABC iview', 'SBS on Demand', '7plus', '9Now', 'Kayo', 'Live TV',
+          'HDMI 2', 'HDMI 3', 'PS5 Game Console', 'Web Browser'
+        ] }
       },
       {
         entity: 'media_player.living_sonos', label: 'Lounge', type: 'media', allow_action: true,
@@ -7644,6 +7732,8 @@
       }
       else if (body.action === 'oscillate_on') tile.attrs.oscillating = true;
       else if (body.action === 'oscillate_off') tile.attrs.oscillating = false;
+      else if (body.action === 'mute') tile.attrs.muted = true;
+      else if (body.action === 'unmute') tile.attrs.muted = false;
       /* the favourites list: picking one starts that station or playlist */
       else if (body.action === 'select_source') {
         var src = String(body.value == null ? '' : body.value);

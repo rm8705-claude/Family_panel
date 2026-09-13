@@ -155,14 +155,17 @@ def tile_shape(tile: dict, cached: dict | None) -> dict:
     elif ttype == "tv":
         # A media_player, but deliberately NOT type "media": that one collapses
         # every speaker into the one grouped Sonos tile, and a television has
-        # no business in there. The panel is not a remote — it is the "where is
-        # the remote" button — so only on/off and what is on are carried.
-        # "off" and "standby" are both off; anything the TV is unreachable for
-        # (unavailable/unknown/None) is off too, since a set the network can't
-        # see is not one anybody is watching.
+        # no business in there. The panel is still not a remote — no playback,
+        # no volume slider, no channel list — but on/off, what's on, mute, and
+        # jumping straight to an app are all things a wall panel earns its
+        # keep on. "off" and "standby" are both off; anything the TV is
+        # unreachable for (unavailable/unknown/None) is off too, since a set
+        # the network can't see is not one anybody is watching.
         out["attrs"] = {"on": state not in ("off", "standby", "unavailable",
                                             "unknown", None),
-                        "source": attrs.get("source")}
+                        "source": attrs.get("source"),
+                        "source_list": attrs.get("source_list") or [],
+                        "muted": bool(attrs.get("is_volume_muted"))}
     elif ttype == "fan":
         out["attrs"] = {"percentage": attrs.get("percentage"),
                         "oscillating": attrs.get("oscillating"),
@@ -232,6 +235,11 @@ ACTIONS = {
         # can turn it off and then never get it back.
         "turn_on": ("media_player", "turn_on", lambda v: {}),
         "turn_off": ("media_player", "turn_off", lambda v: {}),
+        # Two named actions rather than one boolean, same as turn_on/turn_off
+        # above — the button already knows which way it wants to go, so there
+        # is nothing to parse out of a value.
+        "mute": ("media_player", "volume_mute", lambda v: {"is_volume_muted": True}),
+        "unmute": ("media_player", "volume_mute", lambda v: {"is_volume_muted": False}),
     },
     "fan": {
         "turn_on": ("fan", "turn_on", lambda v: {}),

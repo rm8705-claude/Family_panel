@@ -1835,6 +1835,8 @@ ul, ol { list-style: none; }
 /* the two tiles carrying a row of keys ask for a bigger share of the row,
    so a full house of tiles doesn't push their controls onto a second line */
 .tile.is-fan { min-width: 11.5rem; flex-grow: 1.3; }
+/* same reasoning once the TV is on: Turn off + Mute + Apps is three keys */
+.tile.is-tv { min-width: 12rem; flex-grow: 1.3; }
 /* the media tile is tap-anywhere-to-open, so it has to keep a strip that is
    not a button — with three Sensibos in the row it was squeezed to the point
    where its own keys covered the whole tile */
@@ -3710,6 +3712,22 @@ html[data-theme="night"] select.inp {
   border-radius: var(--radius);
 }
 
+/* The TV app picker — same width as the Sonos multi-speaker sheet and the
+   same .np-src-list/.np-src grid Sonos favourites already use inside it, on
+   purpose: it's the same shape of thing, "tap this, it starts playing", and
+   this way a "Starting…" row looks identical wherever it appears. */
+.tva-sheet {
+  position: relative;
+  width: min(58rem, 94vw);
+  max-height: 92vh;
+  overflow-y: auto;
+  padding: 2.25rem;
+  background: var(--paper);
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+}
+.tva-head { text-align: center; margin-bottom: 1.25rem; }
+
 /* Side by side when there's room — a wall panel is wide, and scrolling to
    find the second speaker just to pause it was the whole complaint. Falls
    back to a single column (still scrollable) on a narrow viewport, or once
@@ -4753,7 +4771,7 @@ html[data-theme="night"] select.inp {
   }
   .tile { min-width: 0; }
   /* the two tiles that carry a whole control panel get the full width */
-  .tile.is-fan, .tile.is-media, .tile.is-sonos, .tile.is-solar { min-width: 0; grid-column: span 2; }
+  .tile.is-fan, .tile.is-media, .tile.is-sonos, .tile.is-solar, .tile.is-tv { min-width: 0; grid-column: span 2; }
   .tile.is-aircon { min-width: 0; }
   .tile.is-cams { grid-column: span 2; width: auto; height: 9rem; }
   .ha-offline { grid-column: span 2; }
@@ -4920,7 +4938,7 @@ html[data-theme="night"] select.inp {
   html { font-size: 16px; }
   .stage { padding-left: 1.25rem; padding-right: 1.25rem; }
   .ha-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .tile.is-fan, .tile.is-media, .tile.is-sonos { grid-column: span 1; }
+  .tile.is-fan, .tile.is-media, .tile.is-sonos, .tile.is-tv { grid-column: span 1; }
   .tile.is-cams { grid-column: span 3; height: 12rem; }
   .ha-offline { grid-column: span 3; }
   .cam-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
