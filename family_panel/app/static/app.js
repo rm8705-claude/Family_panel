@@ -1804,6 +1804,11 @@
           (on && fp != null ? '<span class="t-pct mono"> · ' + fp + '%</span>' : '') + '</div>' +
           '<div class="t-sub">' + (sub.length ? sub.join(' ') : '—') + '</div>';
       }
+      case 'tv': {
+        var tvOn = !!a.on;
+        return '<div class="t-value mono" style="font-size:1.125rem">' + (tvOn ? 'On' : 'Off') + '</div>' +
+          '<div class="t-sub">' + esc(tvOn ? (a.source || 'On') : 'Off') + '</div>';
+      }
       case 'solar':
         return solarTileBody(t);
       case 'presence':
@@ -1840,6 +1845,13 @@
         ' data-label="' + esc(label) + '">' + esc(label) + '</button>';
     };
     if (t.type === 'cover') { b.push(mk('open', 'Open')); b.push(mk('close', 'Close')); }
+    else if (t.type === 'tv') {
+      /* The whole point of the tile: one key, for when the remote is under a
+         cushion. Which way it reads follows the set, so there is never a
+         guess about what the tap will do. */
+      var tvOn = !!(t.attrs && t.attrs.on);
+      b.push(tvOn ? mk('turn_off', 'Turn off') : mk('turn_on', 'Turn on'));
+    }
     else if (t.type === 'switch') {
       b.push(t.state === 'on' ? mk('turn_off', 'Turn off') : mk('turn_on', 'Turn on'));
     } else if (t.type === 'climate') {
@@ -5311,6 +5323,14 @@
          stop a second tap piling on while this one is still in flight. */
       btn.disabled = true;
       btn.classList.add('is-busy');
+    } else if ((action === 'turn_on' || action === 'turn_off') && t && t.type === 'tv') {
+      /* Deliberately NOT optimistic, unlike the speakers. A television takes
+         several seconds to actually come up, and turn_on fails outright on a
+         set without Wake-on-LAN — painting "On" would flip to Off on the next
+         refresh and back again if it did wake, which is worse than waiting.
+         So: show the tap landed, and let the poll say what really happened. */
+      btn.disabled = true;
+      btn.classList.add('is-busy');
     }
     haSend(btn, !!attr || action === 'select_source' || playPause ||
       action === 'join' || action === 'unjoin');
@@ -6692,6 +6712,10 @@
         state: 'off', attrs: {}
       },
       {
+        entity: 'media_player.living_room_tv', label: 'TV', type: 'tv', allow_action: true,
+        state: 'on', attrs: { on: true, source: 'Netflix' }
+      },
+      {
         entity: 'media_player.living_sonos', label: 'Lounge', type: 'media', allow_action: true,
         state: 'playing',
         attrs: {
@@ -7445,7 +7469,7 @@
           tile.state = tile.attrs.hvac_mode;
         } else {
           tile.state = 'on';
-          if (tile.type === 'fan') tile.attrs.on = true;
+          if (tile.type === 'fan' || tile.type === 'tv') tile.attrs.on = true;
         }
       }
       else if (body.action === 'turn_off') {
@@ -7454,7 +7478,7 @@
           tile.attrs.hvac_mode = 'off';
         }
         tile.state = 'off';
-        if (tile.type === 'fan') tile.attrs.on = false;
+        if (tile.type === 'fan' || tile.type === 'tv') tile.attrs.on = false;
       }
       else if (body.action === 'set_temperature') tile.attrs.setpoint = Number(body.value);
       /* the Dyson: speed steps switch it on, oscillation is independent */

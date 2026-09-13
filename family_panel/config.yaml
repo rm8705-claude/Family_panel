@@ -5,7 +5,7 @@
 # together whenever you ship a change (see the repo's `ship` skill).
 name: "Family Panel"
 description: "Self-hosted family wall calendar: shared calendar, chores, lists, meal planner and Home Assistant tiles."
-version: "0.17.28"
+version: "0.17.29"
 slug: "family_panel"
 url: "https://github.com/rm8705-claude/family_panel"
 arch:
@@ -90,6 +90,23 @@ options:
       label: "Kitchen"
       type: "media"
       allow_action: true
+    # The television is `tv`, NOT `media`, even though HA calls both a
+    # media_player: `media` collapses every entity into the one grouped Sonos
+    # tile, and a TV in there is nonsense. `tv` carries on/off and nothing
+    # else on purpose — the panel is the "where is the remote" button, not a
+    # replacement for one.
+    #
+    # Needs HA's webOS TV integration (local, no cloud — NOT LG ThinQ, which
+    # is the cloud one for appliances). Turning the set ON only works if
+    # Wake-on-LAN is enabled on the TV itself: Settings -> General -> Mobile
+    # TV On, or Settings -> Support -> IP control settings on 2025+ sets.
+    # Without it the panel can turn the TV off and never get it back.
+    #
+    # Uncomment and swap in the real entity id off Developer tools -> States.
+    # - entity: "media_player.living_room_tv"
+    #   label: "TV"
+    #   type: "tv"
+    #   allow_action: true
     # Sungrow SH10RT + SBR via mkaiser's Modbus package over the WiNet-S2.
     # Sign conventions verified against HA's own binary_sensor.importing_power
     # and binary_sensor.battery_discharging on 2026-08-22, so no invert_* flags
@@ -196,7 +213,7 @@ schema:
   ha_tiles:
     - entity: "str?"
       label: "str"
-      type: "list(sensor|cover|switch|climate|media|camera_snapshot|presence|fan|solar|bin_day)"
+      type: "list(sensor|cover|switch|climate|media|tv|camera_snapshot|presence|fan|solar|bin_day)"
       allow_action: "bool?"
       # Solar tile only. These are FLAT, not nested under an `entities:` key:
       # the Supervisor treats any nested object in a schema as mandatory (only

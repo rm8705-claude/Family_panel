@@ -152,6 +152,17 @@ def tile_shape(tile: dict, cached: dict | None) -> dict:
                             f"/api/ha/art/{tile['entity']}"
                             f"?v={hashlib.sha1(attrs['entity_picture'].encode()).hexdigest()[:12]}"
                             if attrs.get("entity_picture") else None)}
+    elif ttype == "tv":
+        # A media_player, but deliberately NOT type "media": that one collapses
+        # every speaker into the one grouped Sonos tile, and a television has
+        # no business in there. The panel is not a remote — it is the "where is
+        # the remote" button — so only on/off and what is on are carried.
+        # "off" and "standby" are both off; anything the TV is unreachable for
+        # (unavailable/unknown/None) is off too, since a set the network can't
+        # see is not one anybody is watching.
+        out["attrs"] = {"on": state not in ("off", "standby", "unavailable",
+                                            "unknown", None),
+                        "source": attrs.get("source")}
     elif ttype == "fan":
         out["attrs"] = {"percentage": attrs.get("percentage"),
                         "oscillating": attrs.get("oscillating"),
@@ -216,6 +227,11 @@ ACTIONS = {
         # leaving and takes no value.
         "join": ("media_player", "join", lambda v: {"group_members": [str(v)]}),
         "unjoin": ("media_player", "unjoin", lambda v: {}),
+        # tv tiles. turn_on only reaches a set that is listening while "off":
+        # on webOS that means Wake-on-LAN turned on at the TV, otherwise HA
+        # can turn it off and then never get it back.
+        "turn_on": ("media_player", "turn_on", lambda v: {}),
+        "turn_off": ("media_player", "turn_off", lambda v: {}),
     },
     "fan": {
         "turn_on": ("fan", "turn_on", lambda v: {}),

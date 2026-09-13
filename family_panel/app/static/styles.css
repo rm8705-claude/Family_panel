@@ -1809,6 +1809,9 @@ ul, ol { list-style: none; }
   text-align: center;
 }
 
+/* a key waiting on something slow — the TV coming up, a track changing */
+.t-btn.is-busy { opacity: 0.5; }
+
 .t-btn.vol { flex: 0 0 auto; min-width: var(--tap); font-size: 1.125rem; font-family: var(--mono); }
 
 /* media volume read-out */
