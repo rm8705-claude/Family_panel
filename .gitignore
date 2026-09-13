@@ -1,0 +1,15 @@
+# Python bytecode, written next to the source whenever the app or a test
+# imports a module.
+__pycache__/
+*.py[cod]
+
+# The panel's own SQLite database and anything beside it. Created on first
+# run at app/data/panel.db (see PANEL_DB in db.py) — household data, and
+# never the same twice, so it belongs on the box and not in git.
+family_panel/app/data/
+
+# Local harness: index.html is served through Flask, which substitutes the
+# {{V}} version stamp, so testing the static files directly needs a copy with
+# that already filled in. It is disposable, and a forgotten one would be
+# served as a real page under the immutable cache header.
+family_panel/app/static/index.test.html
