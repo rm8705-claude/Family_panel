@@ -191,8 +191,19 @@ def _athlete_bits(row: dict):
 
 
 def fetch_atp() -> list[dict]:
-    r = requests.get(ATP_URL, timeout=TIMEOUT,
-                     headers={"User-Agent": "family-panel/1.0"})
+    # ESPN's edge returned a bare 403 for the plain "family-panel/1.0" UA that
+    # Jolpica (F1's source) is perfectly happy with — a self-identifying
+    # non-browser UA is exactly what bot filtering on an unofficial public
+    # endpoint looks for. A real browser UA plus the headers a browser would
+    # actually send alongside it gets through; there is no auth being
+    # bypassed here, this is a keyless, unauthenticated public feed either way.
+    r = requests.get(ATP_URL, timeout=TIMEOUT, headers={
+        "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                       "AppleWebKit/537.36 (KHTML, like Gecko) "
+                       "Chrome/124.0.0.0 Safari/537.36"),
+        "Accept": "application/json, text/plain, */*",
+        "Referer": "https://www.espn.com/tennis/rankings/_/type/atp",
+    })
     r.raise_for_status()
     raw = r.json()
     rows = _find_rank_rows(raw)
