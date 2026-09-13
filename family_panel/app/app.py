@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.18.4"
+APP_VERSION = "0.18.5"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -833,14 +833,28 @@ def api_sports():
 
 @app.get("/api/sports/raw")
 def api_sports_raw():
-    """The ATP payload the parser couldn't read, when that happens.
+    """What every ATP candidate endpoint actually said, last time it was tried.
 
-    ESPN's rankings feed is undocumented, so if they reshape it the useful
-    thing is the body itself rather than a log line on a headless box. Empty
-    whenever the last fetch parsed cleanly.
+    There is no documented ATP feed, so the panel works through a list of
+    candidates (sports.ATP_URLS, plus atp_rankings_url from the config if
+    set). This reports which one won, and for each that didn't: the status or
+    exception, and enough of the body to see what came back. On a headless box
+    it's the only way to tell "403 from that host" apart from "answered fine
+    but the shape moved" — which are completely different fixes.
     """
     import sports
-    return jsonify(sports.raw_debug() or {"raw": None, "note": "last ATP fetch parsed fine"})
+    log = sports.raw_debug()
+    if not log:
+        return jsonify({"note": "no ATP fetch recorded yet — the job runs "
+                                "hourly, and on add-on start"})
+    return jsonify({
+        "at": log.get("at"),
+        "winner": log.get("winner"),
+        "note": ("serving from this endpoint" if log.get("winner")
+                 else "every candidate failed; the tables below say how"),
+        "tried": log.get("tried") or [],
+        "candidates_in_order": sports.ATP_URLS,
+    })
 
 
 @app.get("/api/ha/tiles")

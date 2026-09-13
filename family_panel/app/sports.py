@@ -32,7 +32,17 @@ import db
 
 TIMEOUT = 25
 
-ATP_URL = "https://site.api.espn.com/apis/site/v2/sports/tennis/atp/rankings"
+# Tried in order until one yields a rankings table. All three are ESPN's own
+# public feeds on three DIFFERENT hosts — the first 403'd from the house's
+# address, and a sibling host is the cheapest thing left worth trying, since
+# edge protection is configured per-host. None of them can be reached from
+# where this is written, so none is verified; `atp_rankings_url` in the
+# add-on config takes precedence over the lot for exactly that reason.
+ATP_URLS = [
+    "https://site.api.espn.com/apis/site/v2/sports/tennis/atp/rankings",
+    "https://site.web.api.espn.com/apis/v2/sports/tennis/atp/rankings",
+    "https://sports.core.api.espn.com/v2/sports/tennis/leagues/atp/rankings",
+]
 F1_URL = "https://api.jolpi.ca/ergast/f1/current/driverstandings/?format=json"
 F1_CONS_URL = "https://api.jolpi.ca/ergast/f1/current/constructorstandings/?format=json"
 
@@ -190,33 +200,10 @@ def _athlete_bits(row: dict):
     return (str(name).strip() if name else None), (str(code).strip() if code else None)
 
 
-def fetch_atp() -> list[dict]:
-    # ESPN's edge returned a bare 403 for the plain "family-panel/1.0" UA that
-    # Jolpica (F1's source) is perfectly happy with — a self-identifying
-    # non-browser UA is exactly what bot filtering on an unofficial public
-    # endpoint looks for. A real browser UA plus the headers a browser would
-    # actually send alongside it gets through; there is no auth being
-    # bypassed here, this is a keyless, unauthenticated public feed either way.
-    r = requests.get(ATP_URL, timeout=TIMEOUT, headers={
-        "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                       "AppleWebKit/537.36 (KHTML, like Gecko) "
-                       "Chrome/124.0.0.0 Safari/537.36"),
-        "Accept": "application/json, text/plain, */*",
-        "Referer": "https://www.espn.com/tennis/rankings/_/type/atp",
-    })
-    r.raise_for_status()
-    raw = r.json()
-    rows = _find_rank_rows(raw)
-    if not rows:
-        # Keep enough of it to see the shape, then say so loudly.
-        db.set_json_setting("sports:atp_raw", {"at": db.utc_now_iso(),
-                                               "body": r.text[:4000]})
-        raise ValueError("no rankings table found in the ATP payload "
-                         "— see /api/sports/raw")
-    db.set_json_setting("sports:atp_raw", None)
-
+def _atp_rows_from(payload) -> list[dict]:
+    """Rank rows out of whatever JSON shape this source hands back."""
     out = []
-    for row in rows:
+    for row in _find_rank_rows(payload):
         pos = _num(_pick(row, _RANK_KEYS))
         name, code = _athlete_bits(row)
         if pos is None or not name:
@@ -237,6 +224,70 @@ def fetch_atp() -> list[dict]:
         })
     out.sort(key=lambda r: r["pos"])
     return out[:TOP_N]
+
+
+def fetch_atp(cfg: dict | None = None) -> list[dict]:
+    """Try each candidate ATP endpoint until one gives up a rankings table.
+
+    Why a list rather than one URL. ESPN answered the panel's first request
+    with a flat 403 — from the house's own address, not this sandbox's — and a
+    browser-shaped User-Agent didn't shift it. Every live tennis source is
+    unreachable from where this code gets written (ESPN, SofaScore, atptour,
+    tennisabstract all refuse the connection outright), so no amount of care
+    here can confirm a fix before it ships. Guessing one URL at a time and
+    waiting a release to find out is the wrong shape for that; trying several
+    and recording precisely what each one said is the right one.
+
+    `atp_rankings_url` in the add-on config jumps the queue, so a source that
+    does work can be pointed at without waiting for a release at all. The
+    parser hunts for the rankings table rather than following a fixed key
+    path (see _find_rank_rows), so a swapped-in URL has a fair chance of just
+    working, whatever its shape.
+
+    Every attempt — the winner and each failure, with status and a snippet —
+    is kept for /api/sports/raw. On a headless box that endpoint is the only
+    way anyone finds out WHY, and "403 from this host, 404 from that one" is
+    the difference between a five-minute fix and another blind round.
+    """
+    attempts = []
+    override = (cfg or {}).get("atp_rankings_url")
+    urls = ([override] if override else []) + ATP_URLS
+
+    for url in urls:
+        try:
+            r = requests.get(url, timeout=TIMEOUT, headers={
+                # A self-identifying non-browser UA is exactly what bot
+                # filtering on an unofficial public endpoint looks for. These
+                # are keyless, unauthenticated public feeds either way —
+                # nothing is being got past that wasn't already open.
+                "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                               "AppleWebKit/537.36 (KHTML, like Gecko) "
+                               "Chrome/124.0.0.0 Safari/537.36"),
+                "Accept": "application/json, text/plain, */*",
+                "Referer": "https://www.espn.com/tennis/rankings/_/type/atp",
+            })
+            if r.status_code != 200:
+                attempts.append({"url": url, "result": f"HTTP {r.status_code}",
+                                 "body": r.text[:400]})
+                continue
+            rows = _atp_rows_from(r.json())
+            if not rows:
+                attempts.append({"url": url, "result": "200, but no rankings "
+                                 "table found in the payload", "body": r.text[:800]})
+                continue
+            db.set_json_setting("sports:atp_raw",
+                                {"at": db.utc_now_iso(), "winner": url,
+                                 "tried": attempts})
+            return rows
+        except Exception as e:                        # noqa: BLE001 - recorded
+            attempts.append({"url": url, "result": f"{type(e).__name__}: {e}"[:200],
+                             "body": None})
+
+    db.set_json_setting("sports:atp_raw", {"at": db.utc_now_iso(),
+                                           "winner": None, "tried": attempts})
+    first = attempts[0]["result"] if attempts else "no candidates"
+    raise ValueError(f"no ATP source answered ({len(attempts)} tried, first: "
+                     f"{first}) — see /api/sports/raw")
 
 
 # -------------------------------------------------------------- F1 ---------
@@ -371,7 +422,7 @@ def refresh(cfg: dict | None = None) -> dict:
     prev_f1 = prev.get("f1") or {}
     out = {"updated_at": db.utc_now_iso()}
 
-    out["atp"] = _fetch_one("atp", fetch_atp, prev.get("atp"))
+    out["atp"] = _fetch_one("atp", lambda: fetch_atp(cfg), prev.get("atp"))
     out["f1"] = {
         "drivers": _fetch_one("f1", fetch_f1, prev_f1.get("drivers")),
         "constructors": _fetch_one("f1_cons", fetch_f1_constructors,

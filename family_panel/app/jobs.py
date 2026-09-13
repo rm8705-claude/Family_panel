@@ -169,7 +169,11 @@ def poll_ha(config: dict) -> None:
 def fetch_sports(config: dict) -> None:
     import sports
     try:
-        data = sports.refresh(config.get("sports", {}))
+        # The whole config, not a "sports" slice: the only option sports.py
+        # reads is the flat, optional atp_rankings_url. Flat and optional on
+        # purpose — a nested block in the schema would be mandatory, and that
+        # would invalidate every config already pasted into the add-on.
+        data = sports.refresh(config)
         f1 = data.get("f1", {})
         detail = (f"atp: {len(data.get('atp', {}).get('rows') or [])}, "
                  f"f1 drivers: {len(f1.get('drivers', {}).get('rows') or [])}, "

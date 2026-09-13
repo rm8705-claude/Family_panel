@@ -5,7 +5,7 @@
 # together whenever you ship a change (see the repo's `ship` skill).
 name: "Family Panel"
 description: "Self-hosted family wall calendar: shared calendar, chores, lists, meal planner and Home Assistant tiles."
-version: "0.18.4"
+version: "0.18.5"
 slug: "family_panel"
 url: "https://github.com/rm8705-claude/family_panel"
 arch:
@@ -238,6 +238,13 @@ schema:
     sleep: "match(^([01][0-9]|2[0-3]):[0-5][0-9]$)"
     wake: "match(^([01][0-9]|2[0-3]):[0-5][0-9]$)"
   admin_pin: "password"
+  # Point the ATP rankings at a different JSON endpoint. Optional, and flat
+  # rather than nested under a `sports:` block on purpose — the Supervisor
+  # treats a nested schema object as mandatory, which would invalidate every
+  # config already saved. The parser hunts for the rankings table rather than
+  # following a fixed key path, so most rank/points/player JSON will work as
+  # a drop-in. Left empty, the built-in candidates are tried in order.
+  atp_rankings_url: "str?"
   llm_provider: "list(anthropic|lmstudio)"
   anthropic_api_key: "password?"
   llm_model: "str?"
