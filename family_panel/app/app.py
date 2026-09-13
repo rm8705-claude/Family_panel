@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.18.5"
+APP_VERSION = "0.18.6"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -854,6 +854,11 @@ def api_sports_raw():
                  else "every candidate failed; the tables below say how"),
         "tried": log.get("tried") or [],
         "candidates_in_order": sports.ATP_URLS,
+        # The first rank row the winning source actually matched, after any
+        # reference-following (see _unwrap_espn_collection /
+        # _resolve_athlete_refs in sports.py) — real field names, not a
+        # guess. Only present once a candidate has actually won.
+        "sample_row": log.get("sample_row"),
     })
 
 

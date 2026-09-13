@@ -24,6 +24,7 @@ below goes looking for the table rather than trusting one fixed key path, and
 stashes the raw payload when it can't find it (see /api/sports/raw) so a shape
 change is a five-minute fix instead of a guessing game.
 """
+import json
 import re
 
 import requests
@@ -32,16 +33,25 @@ import db
 
 TIMEOUT = 25
 
-# Tried in order until one yields a rankings table. All three are ESPN's own
-# public feeds on three DIFFERENT hosts — the first 403'd from the house's
-# address, and a sibling host is the cheapest thing left worth trying, since
-# edge protection is configured per-host. None of them can be reached from
-# where this is written, so none is verified; `atp_rankings_url` in the
-# add-on config takes precedence over the lot for exactly that reason.
+# Tried in order until one yields a rankings table. Both are ESPN — there is
+# no other keyless ATP source worth the name — but on different hosts with
+# evidently different edge protection, confirmed against a real production
+# fetch (not from where this is written; every tennis host is unreachable
+# here):
+#   sports.core.api.espn.com  -> answered 200. First in line.
+#   site.api.espn.com         -> Akamai "Access Denied", reference number and
+#     all. Kept as a fallback in case that eases, but not likely to: Akamai's
+#     bot filtering fingerprints the TLS handshake itself, and Python's
+#     requests/urllib3 has a distinctive one no amount of User-Agent spoofing
+#     touches — the header changes tried before this never had a real chance.
+# (A third host, site.web.api.espn.com, 404'd outright — not "unverified",
+# actually wrong — and has been dropped rather than kept as dead weight.)
+#
+# `atp_rankings_url` in the add-on config still takes precedence over both,
+# for a source that turns out to work better than either.
 ATP_URLS = [
-    "https://site.api.espn.com/apis/site/v2/sports/tennis/atp/rankings",
-    "https://site.web.api.espn.com/apis/v2/sports/tennis/atp/rankings",
     "https://sports.core.api.espn.com/v2/sports/tennis/leagues/atp/rankings",
+    "https://site.api.espn.com/apis/site/v2/sports/tennis/atp/rankings",
 ]
 F1_URL = "https://api.jolpi.ca/ergast/f1/current/driverstandings/?format=json"
 F1_CONS_URL = "https://api.jolpi.ca/ergast/f1/current/constructorstandings/?format=json"
@@ -111,6 +121,31 @@ def _iso2_from_nationality(text: str | None) -> str | None:
     if not text:
         return None
     return DEMONYM_TO_ISO2.get(str(text).strip().lower())
+
+
+# ESPN's core API (sports.core.api.espn.com, as opposed to their "site"
+# surface) gives an athlete's country as a plain name — "Italy", not
+# "Italian" or "ITA" — under `citizenship`. Same top-ATP-100 coverage as
+# DEMONYM_TO_ISO2 above, just keyed the other way.
+COUNTRY_NAME_TO_ISO2 = {
+    "united states": "US", "argentina": "AR", "australia": "AU",
+    "austria": "AT", "belgium": "BE", "brazil": "BR", "great britain": "GB",
+    "united kingdom": "GB", "canada": "CA", "china": "CN", "colombia": "CO",
+    "czech republic": "CZ", "czechia": "CZ", "denmark": "DK",
+    "netherlands": "NL", "finland": "FI", "france": "FR", "germany": "DE",
+    "hungary": "HU", "india": "IN", "indonesia": "ID", "ireland": "IE",
+    "italy": "IT", "japan": "JP", "mexico": "MX", "monaco": "MC",
+    "new zealand": "NZ", "poland": "PL", "portugal": "PT", "russia": "RU",
+    "spain": "ES", "sweden": "SE", "switzerland": "CH", "thailand": "TH",
+    "serbia": "RS", "croatia": "HR", "norway": "NO", "bulgaria": "BG",
+    "chile": "CL", "kazakhstan": "KZ", "south korea": "KR", "chinese taipei": "TW",
+}
+
+
+def _iso2_from_country_name(text: str | None) -> str | None:
+    if not text:
+        return None
+    return COUNTRY_NAME_TO_ISO2.get(str(text).strip().lower())
 
 
 # ------------------------------------------------------------- ATP ---------
@@ -190,7 +225,8 @@ def _athlete_bits(row: dict):
             if m:
                 code = m.group(1)
     if not code:
-        for key in ("countryCode", "country", "nationality", "abbreviation"):
+        for key in ("countryCode", "country", "nationality", "abbreviation",
+                    "citizenship"):
             v = ath.get(key) or row.get(key)
             if isinstance(v, dict):
                 v = _pick(v, ("abbreviation", "name", "alt"))
@@ -200,21 +236,91 @@ def _athlete_bits(row: dict):
     return (str(name).strip() if name else None), (str(code).strip() if code else None)
 
 
-def _atp_rows_from(payload) -> list[dict]:
-    """Rank rows out of whatever JSON shape this source hands back."""
+# ---------------------------------------------------- ESPN's linked data ---
+# ESPN's "core" API (sports.core.api.espn.com) is a different animal from
+# their "site" API (site.api.espn.com): where "site" embeds everything, "core"
+# is HATEOAS-style — a query answers with {"$ref": url} pointers rather than
+# the resource itself, all the way down to each individual athlete. Confirmed
+# against a real response: a rankings query returned exactly one item, a
+# pointer to that week's actual rankings resource, not a list of ranks.
+#
+# This can't be verified end to end from where it's written — the host is
+# unreachable here just like every other tennis source — so it's built to
+# fail soft and say exactly what it saw: a ref that won't resolve is left in
+# place rather than losing the whole table, and every hop that mattered goes
+# into /api/sports/raw.
+
+REF_HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                   "AppleWebKit/537.36 (KHTML, like Gecko) "
+                   "Chrome/124.0.0.0 Safari/537.36"),
+    "Accept": "application/json, text/plain, */*",
+}
+
+
+def _deref(url: str, timeout: int) -> dict:
+    r = requests.get(url, timeout=timeout, headers=REF_HEADERS)
+    r.raise_for_status()
+    return r.json()
+
+
+def _is_ref(node) -> bool:
+    return isinstance(node, dict) and isinstance(node.get("$ref"), str)
+
+
+def _unwrap_espn_collection(payload, timeout: int):
+    """If this is a paginated list of {$ref} pointers rather than the
+    resource itself, follow the first one — a current-rankings query has
+    exactly one live list to report, never several to choose between — and
+    return what THAT points at. Anything else (a payload that already embeds
+    real data, whether from ESPN's "site" surface or a completely different
+    source someone's pointed atp_rankings_url at) passes through unchanged,
+    so this is a no-op everywhere except the one shape it exists for."""
+    items = payload.get("items") if isinstance(payload, dict) else None
+    if isinstance(items, list) and items and _is_ref(items[0]):
+        return _deref(items[0]["$ref"], timeout)
+    return payload
+
+
+def _resolve_athlete_refs(rows: list[dict], timeout: int, limit: int) -> list[dict]:
+    """Follow each row's `athlete` link if it's a bare pointer rather than
+    embedded data — core-API rankings link out to the athlete instead of
+    including their name, exactly the same shape the collection above needs
+    unwrapping for. Bounded to `limit` rows, since the panel only keeps the
+    top TOP_N regardless of how many the source hands back, and best-effort:
+    a row whose athlete link 404s keeps whatever it already had (nothing)
+    rather than losing the other nine over one bad link."""
+    for row in rows[:limit]:
+        ath = row.get("athlete")
+        if _is_ref(ath):
+            try:
+                row["athlete"] = _deref(ath["$ref"], timeout)
+            except Exception:
+                pass
+    return rows
+
+
+def _build_atp_rows(raw_rows: list[dict]) -> list[dict]:
+    """Our row shape from already-located rank dicts (see _find_rank_rows) —
+    split out from fetch_atp so athlete refs can be resolved in between
+    finding the rows and reading names out of them."""
     out = []
-    for row in _find_rank_rows(payload):
+    for row in raw_rows:
         pos = _num(_pick(row, _RANK_KEYS))
         name, code = _athlete_bits(row)
         if pos is None or not name:
             continue
-        iso2 = _iso2_from_code(code)
+        # `code` might be a 3-letter IOC code, an ISO2 already, OR a full
+        # country name (ESPN's core API's `citizenship` gives "Italy", not
+        # "ITA") — try the code table first since it's the common case, the
+        # name table second.
+        iso2 = _iso2_from_code(code) or _iso2_from_country_name(code)
         out.append({
             "id": str(_pick(row, ("id", "athleteId")) or name),
             "pos": pos,
             "name": name,
             "points": _num(_pick(row, _POINT_KEYS)),
-            "code": (code or "").upper()[:3] or None,
+            "code": (code or "").upper()[:3] if code and len(code) <= 3 else None,
             "flag": flag_emoji(iso2),
             "team": None,
             # The source's own previous rank is better than our diff when it is
@@ -224,6 +330,11 @@ def _atp_rows_from(payload) -> list[dict]:
         })
     out.sort(key=lambda r: r["pos"])
     return out[:TOP_N]
+
+
+def _atp_rows_from(payload) -> list[dict]:
+    """Convenience wrapper for tests and any source with no refs to resolve."""
+    return _build_atp_rows(_find_rank_rows(payload))
 
 
 def fetch_atp(cfg: dict | None = None) -> list[dict]:
@@ -244,6 +355,12 @@ def fetch_atp(cfg: dict | None = None) -> list[dict]:
     path (see _find_rank_rows), so a swapped-in URL has a fair chance of just
     working, whatever its shape.
 
+    A candidate that answers 200 still isn't necessarily the data: ESPN's core
+    API answers a rankings query with a link to the actual resource, and each
+    rank row with a link to the actual athlete, rather than embedding either —
+    see _unwrap_espn_collection/_resolve_athlete_refs. Confirmed against a
+    real response, not guessed.
+
     Every attempt — the winner and each failure, with status and a snippet —
     is kept for /api/sports/raw. On a headless box that endpoint is the only
     way anyone finds out WHY, and "403 from this host, 404 from that one" is
@@ -255,29 +372,38 @@ def fetch_atp(cfg: dict | None = None) -> list[dict]:
 
     for url in urls:
         try:
-            r = requests.get(url, timeout=TIMEOUT, headers={
-                # A self-identifying non-browser UA is exactly what bot
-                # filtering on an unofficial public endpoint looks for. These
-                # are keyless, unauthenticated public feeds either way —
-                # nothing is being got past that wasn't already open.
-                "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                               "AppleWebKit/537.36 (KHTML, like Gecko) "
-                               "Chrome/124.0.0.0 Safari/537.36"),
-                "Accept": "application/json, text/plain, */*",
+            r = requests.get(url, timeout=TIMEOUT, headers=REF_HEADERS | {
                 "Referer": "https://www.espn.com/tennis/rankings/_/type/atp",
             })
             if r.status_code != 200:
                 attempts.append({"url": url, "result": f"HTTP {r.status_code}",
                                  "body": r.text[:400]})
                 continue
-            rows = _atp_rows_from(r.json())
-            if not rows:
+
+            payload = _unwrap_espn_collection(r.json(), TIMEOUT)
+            raw_rows = _find_rank_rows(payload)
+            if not raw_rows:
                 attempts.append({"url": url, "result": "200, but no rankings "
-                                 "table found in the payload", "body": r.text[:800]})
+                                 "table found in the payload",
+                                 "body": json.dumps(payload)[:800]})
                 continue
+
+            raw_rows = _resolve_athlete_refs(raw_rows, TIMEOUT, TOP_N + 3)
+            rows = _build_atp_rows(raw_rows)
+            if not rows:
+                # The table was found but nothing in it had both a position
+                # and a readable name — most likely every athlete ref failed
+                # to resolve. Keep one resolved (or unresolved) row on hand so
+                # the real field names are visible, not just "it was empty".
+                attempts.append({"url": url, "result": "found a rankings table "
+                                 "but couldn't read any athlete out of it",
+                                 "body": json.dumps(raw_rows[0])[:800] if raw_rows else None})
+                continue
+
             db.set_json_setting("sports:atp_raw",
                                 {"at": db.utc_now_iso(), "winner": url,
-                                 "tried": attempts})
+                                 "tried": attempts,
+                                 "sample_row": raw_rows[0] if raw_rows else None})
             return rows
         except Exception as e:                        # noqa: BLE001 - recorded
             attempts.append({"url": url, "result": f"{type(e).__name__}: {e}"[:200],
