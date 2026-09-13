@@ -2839,6 +2839,49 @@
 
   function flowLive(f, k) { return f.amount[k] > W_DEAD; }
 
+  /* One line under the chips naming whatever is worth noticing right now. ONE
+     line, not a list: the tile is read at a glance from across the room, and
+     three competing facts read as none. Ordered by what you would actually do
+     about it — something big being on, then money going out the meter, then
+     the good news.
+     House load is the only figure here the tile doesn't already show, so the
+     quiet default is that rather than nothing: the line always says something
+     true instead of appearing only in emergencies.
+     These watt thresholds suit a 10 kW inverter and the SBR battery; they are
+     the one thing to retune if the hardware changes. */
+  var SOL_NOTE = {
+    heavyLoad:   5000,
+    bigImport:   1500,
+    bigPv:       6500,
+    fastCharge:  3000,
+    battFullPct:   98,
+    battLowPct:    15
+  };
+
+  function solarNote(f) {
+    if (f.dead) return null;
+    if (f.load != null && f.load >= SOL_NOTE.heavyLoad) {
+      return { tone: 'warn', text: 'Heavy use · ' + kwUnit(f.load) };
+    }
+    if (f.importing && -f.grid >= SOL_NOTE.bigImport) {
+      return { tone: 'warn', text: 'Buying · ' + kwUnit(f.grid) };
+    }
+    if (f.pv != null && f.pv >= SOL_NOTE.bigPv) {
+      return { tone: 'sun', text: 'Big sun · ' + kwUnit(f.pv) };
+    }
+    if (f.charging && f.bat >= SOL_NOTE.fastCharge) {
+      return { tone: 'ok', text: 'Charging · ' + kwUnit(f.bat) };
+    }
+    if (f.pct != null && f.pct >= SOL_NOTE.battFullPct) {
+      return { tone: 'ok', text: 'Battery full' };
+    }
+    if (f.pct != null && f.pct <= SOL_NOTE.battLowPct && !f.charging) {
+      return { tone: 'warn', text: 'Battery low · ' + Math.round(f.pct) + '%' };
+    }
+    if (f.load != null) return { tone: '', text: 'House · ' + kwUnit(f.load) };
+    return null;
+  }
+
   /* ---- the compact tile ---- */
 
   function solarTileBody(t) {
@@ -2860,11 +2903,14 @@
       grid = '<span class="sol-grid"><span class="d">grid idle</span></span>';
     }
 
+    var note = solarNote(f);
     return '<div class="sol-main">' +
       '<span class="sol-sun' + (f.producing ? ' is-on' : '') + '">' + ICON.sun + '</span>' +
       '<span class="sol-pv mono">' + kwText(f.pv) + '</span>' +
       '<span class="sol-u">kW</span></div>' +
-      '<div class="sol-chips">' + pill + grid + '</div>';
+      '<div class="sol-chips">' + pill + grid + '</div>' +
+      (note ? '<div class="sol-note' + (note.tone ? ' is-' + note.tone : '') + '">' +
+        esc(note.text) + '</div>' : '');
   }
 
   /* ---- the power-flow overlay ---- */
