@@ -281,7 +281,10 @@
     mic: svg('<rect x="9" y="2.5" width="6" height="11.5" rx="3"/>' +
       '<path d="M5.5 11.5a6.5 6.5 0 0013 0"/><path d="M12 18v3.5"/>'),
     search: svg('<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8"/>'),
-    swap: svg('<path d="M7 7h13m0 0l-4-4m4 4l-4 4"/><path d="M17 17H4m0 0l4-4m-4 4l4 4"/>')
+    swap: svg('<path d="M7 7h13m0 0l-4-4m4 4l-4 4"/><path d="M17 17H4m0 0l4-4m-4 4l4 4"/>'),
+    together: svg('<rect x="2.5" y="4.5" width="8.5" height="15" rx="2.2"/>' +
+      '<rect x="13" y="4.5" width="8.5" height="15" rx="2.2"/>' +
+      '<circle cx="6.75" cy="13.5" r="2.1"/><circle cx="17.25" cy="13.5" r="2.1"/>')
   };
 
   /* The power-flow family. These are kept as bare path markup rather than
@@ -387,6 +390,7 @@
     sonosTarget: null,          // speaker a favourite starts on
     sonosFilter: '',            // favourites search text, "Sonos" tile only
     sonosPin: null,             // entity pinned to the grouped Home tile, or auto
+    sonosShare: false,          // the play-together sheet is open
     solar: false,               // the power-flow overlay is open
     wgScrolled: false,          // the week grid has found its scroll position
     theme: 'day',               // the theme actually applied right now
@@ -1826,52 +1830,43 @@
 
   function capitalise(s) { s = String(s || ''); return s.charAt(0).toUpperCase() + s.slice(1); }
 
-  /* Confirm-tap protects the things you would hate to trigger by accident —
-     covers, heating, switches. Media is harmless and fiddly, so play/pause
-     and the volume steps fire on the first tap. */
   function tileActions(t) {
     if (!t.allow_action) return '';
     var b = [];
-    var mk = function (action, label, value, now, cls) {
+    var mk = function (action, label, value, cls) {
       return '<button class="t-btn' + (cls ? ' ' + cls : '') + '" data-act="ha" data-entity="' +
         esc(t.entity) + '" data-action="' + esc(action) + '"' +
         (value != null ? ' data-value="' + esc(value) + '"' : '') +
-        (now ? ' data-now="1"' : '') +
         ' data-label="' + esc(label) + '">' + esc(label) + '</button>';
     };
     if (t.type === 'cover') { b.push(mk('open', 'Open')); b.push(mk('close', 'Close')); }
     else if (t.type === 'switch') {
       b.push(t.state === 'on' ? mk('turn_off', 'Turn off') : mk('turn_on', 'Turn on'));
     } else if (t.type === 'climate') {
-      /* API.md: set_temperature acts immediately — the owner asked for the
-         double tap to go. Only climate on/off still arms first, and that
-         lives in the whole-house sheet. With more than one Sensibo the tile
-         drops its keys entirely and becomes a read-out: three sets of
-         steppers in one row is a thicket, and the sheet has the room. */
+      /* With more than one Sensibo the tile drops its keys entirely and
+         becomes a read-out: three sets of steppers in one row is a thicket,
+         and the sheet has the room. */
       if (climateTiles().length > 1) return '';
       var sp = (t.attrs && t.attrs.setpoint) != null ? t.attrs.setpoint : 23;
-      b.push(mk('set_temperature', '−', sp - 1, true, 'vol'));
-      b.push(mk('set_temperature', '+', sp + 1, true, 'vol'));
+      b.push(mk('set_temperature', '−', sp - 1, 'vol'));
+      b.push(mk('set_temperature', '+', sp + 1, 'vol'));
     } else if (t.type === 'media') {
-      b.push((t.attrs && t.attrs.playing) ? mk('pause', 'Pause', null, true) : mk('play', 'Play', null, true));
+      b.push((t.attrs && t.attrs.playing) ? mk('pause', 'Pause') : mk('play', 'Play'));
       var vol = t.attrs && typeof t.attrs.volume === 'number' ? t.attrs.volume : null;
       if (vol != null) {
-        b.push(mk('volume_set', '−', volStep(vol, -1), true, 'vol'));
-        b.push(mk('volume_set', '+', volStep(vol, +1), true, 'vol'));
+        b.push(mk('volume_set', '−', volStep(vol, -1), 'vol'));
+        b.push(mk('volume_set', '+', volStep(vol, +1), 'vol'));
       }
     } else if (t.type === 'fan') {
-      /* API.md: the fan's on/off is a confirm-tap like every other appliance;
-         the percentage steps act at once, and so does oscillation — nudging
-         the airflow is not the kind of thing you regret. */
       var fa = t.attrs || {};
       var fon = fa.on != null ? !!fa.on : t.state === 'on';
       b.push(fon ? mk('turn_off', 'Turn off') : mk('turn_on', 'Turn on'));
       b.push(fa.oscillating
-        ? mk('oscillate_off', 'Osc off', null, true, 'osc')
-        : mk('oscillate_on', 'Osc on', null, true, 'osc'));
+        ? mk('oscillate_off', 'Osc off', null, 'osc')
+        : mk('oscillate_on', 'Osc on', null, 'osc'));
       var fp = typeof fa.percentage === 'number' ? fa.percentage : 0;
-      b.push(mk('set_percentage', '−', pctStep(fp, -1), true, 'vol'));
-      b.push(mk('set_percentage', '+', pctStep(fp, +1), true, 'vol'));
+      b.push(mk('set_percentage', '−', pctStep(fp, -1), 'vol'));
+      b.push(mk('set_percentage', '+', pctStep(fp, +1), 'vol'));
     }
     return b.length ? '<div class="tile-acts">' + b.join('') + '</div>' : '';
   }
@@ -2262,16 +2257,29 @@
   function sonosFavouritesHtml(list) {
     var target = sonosTarget(list);
     if (!target) return '';
-    var picker = list.length < 2 ? '' :
+    /* Room pills and the play-together key share one row, directly under the
+       "Play something on X" heading. Grouping used to be a button at the foot
+       of each speaker card, where the card list's own scroll hid it — the one
+       control you go looking for was the one you had to find first. */
+    var row = list.length < 2 ? '' :
+      '<div class="sn-target-row">' +
       '<div class="sn-target">' + list.map(function (t) {
         return '<button class="sn-tgt' + (t.entity === target.entity ? ' is-on' : '') +
           '" data-act="sonos-target" data-entity="' + esc(t.entity) + '">' +
           esc(t.label) + '</button>';
-      }).join('') + '</div>';
+      }).join('') + '</div>' +
+      sonosShareBtnHtml(list) +
+      '</div>';
     return '<div class="np-sources sn-favs">' +
       '<div class="np-sec">Play something' +
       (list.length > 1 ? ' on <b>' + esc(target.label) + '</b>' : '') + '</div>' +
-      picker + sourceRows(target) + '</div>';
+      row + sourceRows(target) + '</div>';
+  }
+
+  function sonosShareBtnHtml(list) {
+    var together = list.some(function (t) { return groupedWith(t, list).length; });
+    return '<button class="sn-share' + (together ? ' is-on' : '') + '" data-act="sonos-share">' +
+      ICON.together + '<span>' + (together ? 'Playing together' : 'Play together') + '</span></button>';
   }
 
   function sonosSheetHtml() {
@@ -2302,22 +2310,91 @@
     return list.filter(function (o) { return o.entity !== t.entity && members.indexOf(o.entity) !== -1; });
   }
 
-  /* "Play here too" / "Play separately" — see the join/unjoin actions in
-     ha.py. join is called ON the speaker whose audio should spread (the one
-     already playing), not the one being added, so the button built on the
-     silent speaker's own card has to target the OTHER entity. */
-  function groupBtnHtml(t, list) {
-    var withOthers = groupedWith(t, list);
-    if (withOthers.length) {
-      return '<button class="np-group-btn" data-act="ha" data-now="1" data-entity="' + esc(t.entity) +
-        '" data-action="unjoin" data-label="Play separately" aria-label="Play separately">Play separately</button>';
+  /* The play-together sheet: what is playing, where it is playing from, and a
+     switch per room. Reached from the key beside the room pills — see
+     sonosShareBtnHtml. join is called ON the speaker whose audio spreads (the
+     leader), with the room being added as the value; unjoin is called on the
+     room leaving. Getting those two round the wrong way is the easy mistake,
+     so the row builds each direction explicitly. */
+  function sonosShareHtml() {
+    var list = mediaTiles();
+    if (list.length < 2) {
+      return '<button class="close-x np-close" data-act="close-sheet" aria-label="Close">' + ICON.close + '</button>' +
+        '<div class="empty">Only one speaker is set up on the panel.</div>';
     }
-    var leader = list.filter(function (o) { return o.entity !== t.entity && o.attrs && o.attrs.playing; })[0];
-    if (!leader) return '';
-    return '<button class="np-group-btn" data-act="ha" data-now="1" data-entity="' + esc(leader.entity) +
-      '" data-action="join" data-value="' + esc(t.entity) + '" data-vstr="1" ' +
-      'data-label="Play here too" aria-label="Play ' + esc(leader.label) + '’s music here too">' +
-      'Play ' + esc(leader.label) + '’s music here</button>';
+    var leader = list.filter(function (t) { return (t.attrs || {}).playing; })[0] || sonosTarget(list);
+    var a = leader.attrs || {};
+    return '<button class="close-x np-close" data-act="close-sheet" aria-label="Close">' + ICON.close + '</button>' +
+      '<button class="sh-back" data-act="sonos-open" aria-label="Back to the speakers">' + ICON.left + '</button>' +
+      '<div class="np-label sh-head">Play together</div>' +
+      '<div class="sh-now">' +
+      '<div class="sh-track">' + esc(a.title || 'Nothing playing') + '</div>' +
+      '<div class="sh-from">' + (a.artist ? esc(a.artist) + ' · ' : '') +
+      'playing on <b>' + esc(leader.label) + '</b></div>' +
+      '</div>' +
+      '<div class="sh-rooms">' +
+      list.map(function (t) { return sonosShareRoomHtml(t, leader, list); }).join('') +
+      '</div>' +
+      '<p class="sh-note muted2">Rooms switched on play the same thing, in sync. ' +
+      'Switch one off and it keeps playing on its own.</p>';
+  }
+
+  function sonosShareRoomHtml(t, leader, list) {
+    if (t.entity === leader.entity) {
+      return '<div class="sh-room is-src"><span class="sh-room-n">' + esc(t.label) + '</span>' +
+        '<span class="sh-room-tag">Source</span></div>';
+    }
+    var on = groupedWith(t, list).some(function (o) { return o.entity === leader.entity; });
+    return '<button class="sh-room' + (on ? ' is-on' : '') + '" data-act="ha"' +
+      ' data-entity="' + esc(on ? t.entity : leader.entity) + '"' +
+      ' data-action="' + (on ? 'unjoin' : 'join') + '"' +
+      (on ? '' : ' data-value="' + esc(t.entity) + '" data-vstr="1"') +
+      ' data-label="' + esc(t.label) + '"' +
+      ' aria-pressed="' + (on ? 'true' : 'false') + '">' +
+      '<span class="sh-room-n">' + esc(t.label) + '</span>' +
+      '<span class="sh-sw" aria-hidden="true"><i></i></span></button>';
+  }
+
+  function openSonosShare() {
+    openSheet('<div class="sh-sheet" id="sonosShareCard" role="dialog" aria-modal="true" ' +
+      'aria-label="Play together">' + sonosShareHtml() + '</div>', { raw: true, centre: true });
+    state.sonosShare = true;
+  }
+
+  function updateSonosShare() {
+    if (!state.sonosShare) return;
+    var host = byId('sonosShareCard');
+    if (!host) { state.sonosShare = false; return; }
+    host.innerHTML = sonosShareHtml();
+  }
+
+  /* Group/ungroup in the local copy so a switch moves under the finger rather
+     than a poll later — the same shape the next refresh will confirm. The
+     demo's fake backend has to model exactly this, so it calls it too. */
+  function applyGroupLocally(tiles, action, entity, value) {
+    var find = function (e) { return tiles.filter(function (x) { return x.entity === e; })[0]; };
+    var lead = find(entity);
+    if (!lead || !lead.attrs) return;
+    if (action === 'join') {
+      var follower = find(value);
+      if (!follower || !follower.attrs) return;
+      var members = [lead.entity, follower.entity];
+      lead.attrs.group_members = members.slice();
+      follower.attrs.group_members = members.slice();
+      follower.attrs.title = lead.attrs.title;
+      follower.attrs.artist = lead.attrs.artist;
+      follower.attrs.source = lead.attrs.source;
+      follower.attrs.playing = lead.attrs.playing;
+      follower.state = lead.state;
+      return;
+    }
+    (lead.attrs.group_members || []).forEach(function (e) {
+      var m = find(e);
+      if (m && m.attrs) {
+        m.attrs.group_members = (m.attrs.group_members || []).filter(function (x) { return x !== lead.entity; });
+      }
+    });
+    lead.attrs.group_members = [];
   }
 
   function sonosSpeakerCard(t, list) {
@@ -2329,7 +2406,7 @@
     var starting = startingSource(t);
     var withOthers = groupedWith(t, list);
     var btn = function (action, label, value, cls) {
-      return '<button class="' + cls + '" data-act="ha" data-now="1" data-entity="' + esc(t.entity) +
+      return '<button class="' + cls + '" data-act="ha" data-entity="' + esc(t.entity) +
         '" data-action="' + action + '"' + (value != null ? ' data-value="' + value + '"' : '') +
         ' data-label="' + esc(label) + '" aria-label="' + esc(label) + '">';
     };
@@ -2361,7 +2438,6 @@
           btn('volume_set', 'Louder', volStep(vol, +1), 'np-vbtn') + '+</button>' +
           '<span class="np-pct mono">' + pct + '%</span></div>';
       }
-      out += groupBtnHtml(t, list);
     }
     return out + '</div>';
   }
@@ -2502,7 +2578,7 @@
       if (!hide) anyMatch = true;
       return '<button class="np-src' + (on ? ' is-on' : '') + (busy ? ' is-starting' : '') + '"' +
         (hide ? ' hidden' : '') +
-        ' data-act="ha" data-now="1" data-entity="' + esc(t.entity) +
+        ' data-act="ha" data-entity="' + esc(t.entity) +
         '" data-action="select_source" data-value="' + esc(name) + '" data-vstr="1" data-label="' + esc(name) + '">' +
         '<span class="np-src-ic">' + sourceIcon(name) + '</span>' +
         '<span class="np-src-n">' + esc(name) + '</span>' +
@@ -2523,7 +2599,7 @@
     var can = !!t.allow_action;
     var starting = startingSource(t);
     var btn = function (action, label, value, cls) {
-      return '<button class="' + cls + '" data-act="ha" data-now="1" data-entity="' + esc(t.entity) +
+      return '<button class="' + cls + '" data-act="ha" data-entity="' + esc(t.entity) +
         '" data-action="' + action + '"' + (value != null ? ' data-value="' + value + '"' : '') +
         ' data-label="' + esc(label) + '" aria-label="' + esc(label) + '">';
     };
@@ -2640,7 +2716,7 @@
     var sp = a.setpoint != null ? Number(a.setpoint) : 23;
     var mode = a.hvac_mode || t.state || 'off';
     var step = function (label, value) {
-      return '<button class="t-btn cl-step" data-act="ha" data-now="1" data-entity="' + esc(t.entity) +
+      return '<button class="t-btn cl-step" data-act="ha" data-entity="' + esc(t.entity) +
         '" data-action="set_temperature" data-value="' + esc(value) +
         '" data-label="' + esc(label) + '" aria-label="' + esc(label) + '">' + esc(label) + '</button>';
     };
@@ -2687,14 +2763,11 @@
     state.climate = true;
   }
 
-  /* Keep the sheet in step with the 15 s HA poll and with optimistic taps —
-     but never redraw out from under a button that is waiting for its second
-     tap, or the confirm would vanish mid-gesture. */
+  /* Keep the sheet in step with the 15 s HA poll and with optimistic taps. */
   function updateClimateSheet() {
     if (!state.climate) return;
     var host = byId('climateCard');
     if (!host) { state.climate = false; return; }
-    if (host.querySelector('[data-armed="1"]')) return;
     host.innerHTML = climateSheetHtml();
   }
 
@@ -3524,11 +3597,11 @@
      five. One dirty flag and one frame-deferred pass collapses all of that
      into a single rebuild.
 
-     Three things hold a rebuild off, and all three set the flag instead of
-     dropping the work: a finger in a text field (the caret and the soft
-     keyboard belong to the reader), a tile waiting for its confirm tap, and
-     the panel being behind the sleep overlay or the picture frame. Each of
-     those has a wake-up that flushes the flag, so nothing waits forever. */
+     Two things hold a rebuild off, and both set the flag instead of dropping
+     the work: a finger in a text field (the caret and the soft keyboard
+     belong to the reader), and the panel being behind the sleep overlay or
+     the picture frame. Each has a wake-up that flushes the flag, so nothing
+     waits forever. */
 
   var renderDirty = false;
   var renderQueued = false;
@@ -3547,12 +3620,8 @@
     return !!(v && v.contains(a));
   }
 
-  function armedTile() {
-    return !!document.querySelector('.t-btn[data-armed="1"]');
-  }
-
-  /* force = the rebuild was asked for by a tap, so only the dark-panel and
-     armed-confirm holds apply; a poll additionally yields to typing. */
+  /* force = the rebuild was asked for by a tap, so only the dark-panel hold
+     applies; a poll additionally yields to typing. */
   function scheduleRender(force) {
     renderDirty = true;
     if (renderQueued) return;
@@ -3563,7 +3632,7 @@
       ran = true;
       renderQueued = false;
       if (!renderDirty) return;
-      if (panelDark() || armedTile()) return;          // stays dirty
+      if (panelDark()) return;                         // stays dirty
       if (!force && typingInView()) return;            // stays dirty
       renderDirty = false;
       render();
@@ -3597,9 +3666,6 @@
   function renderNow() {
     var v = byId('view');
     if (!v) return;
-    /* Never redraw out from under a button waiting for its second tap — the
-       15 s tile poll used to wipe the confirm mid-gesture. */
-    if (armedTile()) { renderDirty = true; return; }
     var keep = {};
     Array.prototype.forEach.call(v.querySelectorAll('[data-keep]'), function (el) {
       keep[el.dataset.keep] = {
@@ -3645,6 +3711,7 @@
     renderRail();
     updateNowPlaying();
     updateSonosSheet();
+    updateSonosShare();
     updateWeatherSheet();
     updateClimateSheet();
     paintSolar();
@@ -3710,6 +3777,7 @@
     state.climate = false;
     state.solar = false;
     state.sonos = false;
+    state.sonosShare = false;
     state.weather = false;
     stopStatusRefresh();
     renderCatchUp();
@@ -3728,6 +3796,7 @@
     state.climate = false;
     state.solar = false;
     state.sonos = false;
+    state.sonosShare = false;
     state.weather = false;
     stopStatusRefresh();
     host.innerHTML = '<div class="scrim' + (opts.centre ? ' centre' : '') +
@@ -5137,8 +5206,6 @@
 
   /* ------------------------------------------------------------ HA actions - */
 
-  var armTimer = null;
-
   function haSend(btn, quiet) {
     var body = { entity: btn.dataset.entity, action: btn.dataset.action };
     if (btn.dataset.value !== undefined && btn.dataset.value !== '') {
@@ -5163,57 +5230,44 @@
      set_temperature joined them when the confirm-tap came off the aircon. */
   var STEP_ATTR = { volume_set: 'volume', set_percentage: 'percentage', set_temperature: 'setpoint' };
 
+  /* Every tap acts at once. There used to be a tap-again-to-confirm arm on the
+     appliance keys — covers, switches, heating on/off — on the theory that
+     those are the ones you would hate to hit by accident. On a wall panel it
+     read as the button being broken: the owner's call is that a finger on a
+     panel in your own hallway means what it says. */
   function haTap(btn) {
-    if (btn.dataset.now === '1') {          // media/fan: no confirm, act at once
-      var action = btn.dataset.action;
-      var attr = STEP_ATTR[action];
-      var tiles = (D.ha && D.ha.tiles) || [];
-      var t = tiles.filter(function (x) { return x.entity === btn.dataset.entity; })[0];
-      var playPause = action === 'play' || action === 'pause';
-      if (attr) {                           // optimistic, so repeat taps step
-        if (t && t.attrs) {
-          t.attrs[attr] = Number(btn.dataset.value);
-          if (attr === 'percentage' && t.attrs.percentage > 0) { t.attrs.on = true; t.state = 'on'; }
-          render();
-        }
-      } else if (action === 'select_source') {
-        state.npStart = { entity: btn.dataset.entity, name: btn.dataset.value, at: Date.now() };
-        updateNowPlaying();
-      } else if (playPause) {
-        /* Optimistic, same reason as volume above: Sonos itself can take a
-           couple of seconds to react, and with nothing changing on screen
-           in the meantime a tap reads as dead rather than just slow. */
-        if (t && t.attrs) { t.attrs.playing = action === 'play'; render(); }
-      } else if (action === 'oscillate_on' || action === 'oscillate_off') {
-        if (t && t.attrs) { t.attrs.oscillating = action === 'oscillate_on'; render(); }
-      } else if (action === 'next' || action === 'previous') {
-        /* Nothing to predict here, so at least show the tap landed and
-           stop a second tap piling on while this one is still in flight. */
-        btn.disabled = true;
-        btn.classList.add('is-busy');
+    var action = btn.dataset.action;
+    var attr = STEP_ATTR[action];
+    var tiles = (D.ha && D.ha.tiles) || [];
+    var t = tiles.filter(function (x) { return x.entity === btn.dataset.entity; })[0];
+    var playPause = action === 'play' || action === 'pause';
+    if (attr) {                           // optimistic, so repeat taps step
+      if (t && t.attrs) {
+        t.attrs[attr] = Number(btn.dataset.value);
+        if (attr === 'percentage' && t.attrs.percentage > 0) { t.attrs.on = true; t.state = 'on'; }
+        render();
       }
-      haSend(btn, !!attr || action === 'select_source' || playPause);
-      return;
+    } else if (action === 'select_source') {
+      state.npStart = { entity: btn.dataset.entity, name: btn.dataset.value, at: Date.now() };
+      updateNowPlaying();
+    } else if (playPause) {
+      /* Optimistic, same reason as volume above: Sonos itself can take a
+         couple of seconds to react, and with nothing changing on screen
+         in the meantime a tap reads as dead rather than just slow. */
+      if (t && t.attrs) { t.attrs.playing = action === 'play'; render(); }
+    } else if (action === 'join' || action === 'unjoin') {
+      applyGroupLocally(tiles, action, btn.dataset.entity, btn.dataset.value);
+      render();
+    } else if (action === 'oscillate_on' || action === 'oscillate_off') {
+      if (t && t.attrs) { t.attrs.oscillating = action === 'oscillate_on'; render(); }
+    } else if (action === 'next' || action === 'previous') {
+      /* Nothing to predict here, so at least show the tap landed and
+         stop a second tap piling on while this one is still in flight. */
+      btn.disabled = true;
+      btn.classList.add('is-busy');
     }
-    if (btn.dataset.armed === '1') {
-      clearTimeout(armTimer);
-      btn.dataset.armed = '';
-      btn.textContent = btn.dataset.label;
-      haSend(btn);
-      renderCatchUp();          // polls held off while the confirm stood
-      return;
-    }
-    Array.prototype.forEach.call(document.querySelectorAll('.t-btn[data-armed="1"]'), function (b) {
-      b.dataset.armed = ''; b.textContent = b.dataset.label;
-    });
-    btn.dataset.armed = '1';
-    btn.textContent = 'Tap again to confirm';
-    clearTimeout(armTimer);
-    armTimer = setTimeout(function () {
-      btn.dataset.armed = '';
-      btn.textContent = btn.dataset.label;
-      renderCatchUp();          // the confirm timed out — let the view catch up
-    }, 3000);
+    haSend(btn, !!attr || action === 'select_source' || playPause ||
+      action === 'join' || action === 'unjoin');
   }
 
   /* ------------------------------------------------------- event delegation */
@@ -5434,6 +5488,7 @@
         state.sonosTarget = el.dataset.entity;
         updateSonosSheet();
         break;
+      case 'sonos-share': openSonosShare(); break;
       case 'sonos-swap':
         setSonosPin(el.dataset.entity);
         renderSoon();
@@ -5585,9 +5640,9 @@
      anything but optional; hooking up photos later replaces the plain
      ground with the picture frame, nothing else changes.
 
-     It gives way to two things without argument: any sheet or armed confirm
-     (you were in the middle of something), and the sleep overlay (at 9 pm the
-     wall goes dark, photos or not). */
+     It gives way to two things without argument: an open sheet (you were in
+     the middle of something), and the sleep overlay (at 9 pm the wall goes
+     dark, photos or not). */
 
   var SV = {
     on: false,
@@ -5627,7 +5682,6 @@
     /* .innerHTML !== '' serialised an open sheet's whole subtree to a string
        thirty times a minute — asking whether it has a child is free. */
     return byId('sheetHost').firstChild !== null ||
-      !!document.querySelector('[data-armed="1"]') ||
       !byId('sleep').hidden;
   }
 
@@ -5809,7 +5863,6 @@
     var idleMs = svCfg().idleMs;
     var sinceInput = Date.now() - SV.lastInput;
     var sheetOpen = byId('sheetHost').firstChild !== null;
-    var armed = !!document.querySelector('[data-armed="1"]');
     var sleepUp = !byId('sleep').hidden;
     el.textContent =
       'poll ticks (every 2s):  ' + saverDebugTicks + '\n' +
@@ -5818,12 +5871,11 @@
       'idle threshold:         ' + Math.round(idleMs / 1000) + 's\n' +
       'time since last input:  ' + Math.round(sinceInput / 1000) + 's\n' +
       'sheet open (blocks it): ' + sheetOpen + '\n' +
-      'tile armed (blocks it): ' + armed + '\n' +
       'sleep overlay up:       ' + sleepUp + '  (own overlay takes over instead)\n' +
       'inSleepWindow():        ' + inSleepWindow() + '  (sleep=' +
       ((D.status && D.status.config && D.status.config.screen || {}).sleep) + ' wake=' +
       ((D.status && D.status.config && D.status.config.screen || {}).wake) + ')\n' +
-      'would start now:        ' + (!sheetOpen && !armed && !sleepUp &&
+      'would start now:        ' + (!sheetOpen && !sleepUp &&
         !inSleepWindow() && sinceInput >= idleMs);
   }
 
@@ -5860,9 +5912,8 @@
     byId('railClock').textContent = clockNow();
     renderSpine();
     renderWeekNow();
-    // refresh the now rule + past-event dimming, but never mid-confirm
-    if (!panelDark() && (state.view === 'today' || state.view === 'day') &&
-        !armedTile()) {
+    // refresh the now rule + past-event dimming
+    if (!panelDark() && (state.view === 'today' || state.view === 'day')) {
       var v = byId('view');
       if (v && v.querySelector('.now-rule')) renderPoll();
     }
@@ -6595,7 +6646,7 @@
         state: 'off', attrs: {}
       },
       {
-        entity: 'media_player.living_sonos', label: 'Sonos', type: 'media', allow_action: true,
+        entity: 'media_player.living_sonos', label: 'Lounge', type: 'media', allow_action: true,
         state: 'playing',
         attrs: {
           title: 'Gold Chains', artist: 'Angus & Julia Stone', volume: 0.34, playing: true,
@@ -6606,7 +6657,7 @@
       /* A second speaker so the demo shows the grouped Sonos tile, not the
          single-speaker one — most real households have more than one. */
       {
-        entity: 'media_player.roam', label: 'Roam', type: 'media', allow_action: true,
+        entity: 'media_player.roam', label: 'Kitchen', type: 'media', allow_action: true,
         state: 'paused',
         attrs: {
           title: null, artist: null, volume: 0.6, playing: false,
@@ -7398,29 +7449,10 @@
         }
       }
       else if (body.action === 'pause') { tile.attrs.playing = false; tile.state = 'paused'; }
-      /* Mirrors the real join/unjoin semantics: join is called on the
-         speaker whose audio spreads (tile, the leader), body.value is the
-         speaker being brought in. The demo hands the follower the leader's
-         now-playing so it visibly matches, same as a real Sonos would. */
-      else if (body.action === 'join') {
-        var joinee = M.tiles.filter(function (x) { return x.entity === body.value; })[0];
-        if (joinee) {
-          var members = [tile.entity, joinee.entity];
-          tile.attrs.group_members = members.slice();
-          joinee.attrs.group_members = members.slice();
-          joinee.attrs.title = tile.attrs.title;
-          joinee.attrs.artist = tile.attrs.artist;
-          joinee.attrs.source = tile.attrs.source;
-          joinee.attrs.playing = tile.attrs.playing;
-          joinee.state = tile.state;
-        }
-      }
-      else if (body.action === 'unjoin') {
-        (tile.attrs.group_members || []).forEach(function (e) {
-          var m = M.tiles.filter(function (x) { return x.entity === e; })[0];
-          if (m) m.attrs.group_members = (m.attrs.group_members || []).filter(function (x) { return x !== tile.entity; });
-        });
-        tile.attrs.group_members = [];
+      /* Same grouping rules the panel predicts with, so the demo cannot
+         quietly disagree with the optimistic update drawn over it. */
+      else if (body.action === 'join' || body.action === 'unjoin') {
+        applyGroupLocally(M.tiles, body.action, body.entity, body.value);
       }
       else if (body.action === 'volume_set') {
         tile.attrs.volume = Math.max(0, Math.min(1, Number(body.value) || 0));
