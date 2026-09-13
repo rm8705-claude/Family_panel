@@ -309,6 +309,48 @@ def camera_stream(entity: str):
     return r, r.headers.get("Content-Type", "multipart/x-mixed-replace")
 
 
+def tv_candidates() -> list[dict]:
+    """Every media_player Home Assistant knows, and whether it can drive a TV.
+
+    Re-pairing a webOS set leaves its old entity behind rather than replacing
+    it, so a house ends up with two or three plausible-looking entities for one
+    television and only one of them is actually connected. They are impossible
+    to tell apart by name — the dead one is often the tidier-looking id — but
+    trivial to tell apart by what they report: the live one carries the app
+    list, the others carry nothing.
+
+    So: state, app count, and whether the entity claims SELECT_SOURCE, for each.
+    The one with apps is the one to put in the tile.
+    """
+    base, token = _api_base()
+    r = requests.get(f"{base}/states", headers=_headers(token), timeout=TIMEOUT)
+    r.raise_for_status()
+    SELECT_SOURCE = 2048            # MediaPlayerEntityFeature.SELECT_SOURCE
+    out = []
+    for s in r.json():
+        eid = s.get("entity_id", "")
+        if not eid.startswith("media_player."):
+            continue
+        attrs = s.get("attributes") or {}
+        sources = attrs.get("source_list") or []
+        try:
+            feats = int(attrs.get("supported_features") or 0)
+        except (TypeError, ValueError):
+            feats = 0
+        out.append({
+            "entity": eid,
+            "name": attrs.get("friendly_name"),
+            "state": s.get("state"),
+            "device_class": attrs.get("device_class"),
+            "apps": len(sources),
+            "can_select_source": bool(feats & SELECT_SOURCE),
+            "sample_apps": sources[:6],
+        })
+    # Most apps first: the entity worth configuring sorts itself to the top.
+    out.sort(key=lambda c: (-c["apps"], c["entity"]))
+    return out
+
+
 def camera_snapshot(entity: str) -> tuple[bytes, str]:
     base, token = _api_base()
     r = requests.get(f"{base}/camera_proxy/{entity}",

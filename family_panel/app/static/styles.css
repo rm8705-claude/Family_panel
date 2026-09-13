@@ -3728,6 +3728,13 @@ html[data-theme="night"] select.inp {
 }
 .tva-head { text-align: center; margin-bottom: 1.25rem; }
 
+/* Why there's nothing to show, when there's nothing to show — a blank sheet
+   from across the room is indistinguishable from a broken one. */
+.tva-none { max-width: 34rem; margin: 0 auto; text-align: center; }
+.tva-none p { margin: 0 0 0.75rem; font-size: 1rem; line-height: 1.5; }
+.tva-none p:last-child { margin-bottom: 0; }
+.tva-none .mono { font-family: var(--mono); font-size: 0.9375rem; word-break: break-all; }
+
 /* Side by side when there's room — a wall panel is wide, and scrolling to
    find the second speaker just to pause it was the whole complaint. Falls
    back to a single column (still scrollable) on a narrow viewport, or once

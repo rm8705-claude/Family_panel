@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.18.6"
+APP_VERSION = "0.18.7"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -860,6 +860,27 @@ def api_sports_raw():
         # guess. Only present once a candidate has actually won.
         "sample_row": log.get("sample_row"),
     })
+
+
+@app.get("/api/ha/tv_candidates")
+def api_ha_tv_candidates():
+    """Which media_player entity a `tv` tile should actually point at.
+
+    A re-paired television leaves duplicate entities behind and only the live
+    one reports its apps, so the Apps button comes up empty when the tile is
+    wired to one of the ghosts. This lists every media_player with its app
+    count, most apps first — the top row is the one to configure.
+    """
+    import ha
+    try:
+        return jsonify({"candidates": ha.tv_candidates(),
+                        "note": "configure the tile with the entity reporting "
+                                "the most apps; zero means it isn't the one "
+                                "connected to the set"})
+    except ha.NotConfigured:
+        return jsonify({"error": "Home Assistant is not configured"}), 503
+    except Exception as e:
+        return jsonify({"error": f"Home Assistant did not respond ({e})"}), 502
 
 
 @app.get("/api/ha/tiles")

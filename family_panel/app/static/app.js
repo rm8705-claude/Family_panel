@@ -1878,10 +1878,13 @@
       if (tvOn) {
         var tvMuted = !!(t.attrs && t.attrs.muted);
         b.push(tvMuted ? mk('unmute', 'Unmute', null, 'osc') : mk('mute', 'Mute', null, 'osc'));
-        if ((t.attrs.source_list || []).length) {
-          b.push('<button class="t-btn" data-act="tv-apps-open" data-entity="' +
-            esc(t.entity) + '">Apps</button>');
-        }
+        /* Shown whenever the set is on, even with no app list to open yet.
+           Gating it on source_list meant the one case that needed explaining
+           — wrong entity, so no apps — was also the case where the button
+           vanished without trace, which is unreadable from the wall. The
+           sheet says what went wrong instead. */
+        b.push('<button class="t-btn" data-act="tv-apps-open" data-entity="' +
+          esc(t.entity) + '">Apps</button>');
       }
     }
     else if (t.type === 'switch') {
@@ -2671,9 +2674,31 @@
 
   function tvAppsHtml(entity) {
     var t = mediaTile(entity);
-    if (!t) return '<div class="empty">That TV isn’t on the panel anymore.</div>';
+    var close = '<button class="close-x np-close" data-act="close-sheet" aria-label="Close">' +
+      ICON.close + '</button>';
+    if (!t) return close + '<div class="empty">That TV isn’t on the panel anymore.</div>';
     var list = (t.attrs && t.attrs.source_list) || [];
-    if (!list.length) return '<div class="empty">No apps reported for this TV.</div>';
+    /* An empty list is nearly always the tile pointing at the wrong entity.
+       A webOS TV that's been re-paired leaves duplicates behind — same set,
+       two or three entities — and only the one actually talking to the TV
+       reports its apps; the others sit there looking plausible and answer
+       nothing. Say so, and name what was asked, rather than showing a blank
+       sheet that leaves you guessing from three metres away. */
+    if (!list.length) {
+      return close +
+        '<div class="np-label tva-head">' + esc(t.label) + '</div>' +
+        '<div class="tva-none">' +
+        '<p><b>No app list from this TV.</b></p>' +
+        '<p class="muted2">The panel asked <span class="mono">' + esc(entity) + '</span>' +
+        (t.attrs && t.attrs.on ? ', which is on but reports no apps.'
+                               : ", which is off — a set that's off can't list its apps.") +
+        '</p>' +
+        '<p class="muted2">If this set has more than one entity in Home Assistant, ' +
+        'only the one actually connected to it reports apps. Open ' +
+        '<span class="mono">/api/ha/tv_candidates</span> on the panel to see ' +
+        'which of them does, then point the tile at that one.</p>' +
+        '</div>';
+    }
     var current = (t.attrs || {}).source;
     var starting = tvStartingSource(t);
     return '<button class="close-x np-close" data-act="close-sheet" aria-label="Close">' + ICON.close + '</button>' +
