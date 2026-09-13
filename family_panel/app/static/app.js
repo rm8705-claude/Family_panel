@@ -2666,7 +2666,11 @@
      couple of seconds to actually switch, and the 15 s poll is slower still. */
   function tvStartingSource(t) {
     var s = state.tvStart;
-    if (!s || s.entity !== t.entity) return null;
+    /* The launch is aimed at whichever entity carries the app list, which on
+       a re-paired set is a sibling of the tile's own (see apps_entity). The
+       pending note belongs to the tile either way, so match on both — keyed
+       on the tile alone, "Starting…" silently never appeared. */
+    if (!s || (s.entity !== t.entity && s.entity !== (t.attrs || {}).apps_entity)) return null;
     if (Date.now() - s.at > 20000) { state.tvStart = null; return null; }
     if ((t.attrs || {}).source === s.name) { state.tvStart = null; return null; }
     return s.name;
@@ -2701,13 +2705,18 @@
     }
     var current = (t.attrs || {}).source;
     var starting = tvStartingSource(t);
+    /* A re-paired set leaves duplicate entities behind and only one of them
+       carries the app list; the backend finds that one and lends it here.
+       The launch has to be aimed at the lender — the tile's own entity would
+       take select_source and silently do nothing, being the dead one. */
+    var launchAt = (t.attrs && t.attrs.apps_entity) || entity;
     return '<button class="close-x np-close" data-act="close-sheet" aria-label="Close">' + ICON.close + '</button>' +
       '<div class="np-label tva-head">' + esc(t.label) + '</div>' +
       '<div class="np-src-list">' + list.map(function (name) {
         var on = !starting && name === current;
         var busy = starting === name;
         return '<button class="np-src' + (on ? ' is-on' : '') + (busy ? ' is-starting' : '') +
-          '" data-act="ha" data-entity="' + esc(entity) +
+          '" data-act="ha" data-entity="' + esc(launchAt) +
           '" data-action="select_source" data-value="' + esc(name) + '" data-vstr="1" data-label="' + esc(name) + '">' +
           '<span class="np-src-n">' + esc(name) + '</span>' +
           (busy ? '<span class="np-src-tag">Starting…</span>'

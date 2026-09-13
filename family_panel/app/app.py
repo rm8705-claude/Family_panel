@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.18.7"
+APP_VERSION = "0.18.8"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -911,8 +911,22 @@ def api_ha_action():
     tile = next((t for t in CONFIG.get("ha_tiles", []) or []
                  if t.get("entity") == entity), None)
     if tile is None:
-        return jsonify({"error": "Unknown tile"}), 404
-    if not tile.get("allow_action"):
+        # One entity that is not a tile is still allowed to be driven: the
+        # duplicate media_player a re-paired TV leaves behind, which is the
+        # only one of the set's entities that carries the app list (see
+        # _tv_apps_map in ha.py). Launching an app has to be aimed at it, so
+        # the tile's own permission is lent to it — narrowly. It has to be a
+        # lender the last poll actually recorded for a TV tile that allows
+        # actions, and select_source is the only thing it may be asked to do;
+        # everything else about the set is still driven through the tile.
+        lenders = db.get_json_setting("ha:tv_apps") or {}
+        owner = next((t for t in CONFIG.get("ha_tiles", []) or []
+                      if t.get("type") == "tv" and t.get("allow_action")
+                      and (lenders.get(t.get("entity")) or {}).get("entity") == entity),
+                     None)
+        if owner is None or body.get("action") != "select_source":
+            return jsonify({"error": "Unknown tile"}), 404
+    elif not tile.get("allow_action"):
         return jsonify({"error": "Actions are not enabled for this tile"}), 403
     try:
         ha.call_action(entity, body.get("action", ""), body.get("value"))

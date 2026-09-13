@@ -9,6 +9,7 @@ serving the last-known state (greyed out) while HA is unreachable.
 """
 import hashlib
 import os
+import re
 from datetime import datetime
 
 import requests
@@ -67,6 +68,61 @@ def wanted_entities(tiles: list[dict]) -> set[str]:
     return out
 
 
+# Re-pairing a webOS television in Home Assistant does not replace its old
+# entity, it adds a new one beside it. The house is then left with two or
+# three media_players for one set, identical in name, and only the live one
+# carries source_list. A tile pointed at one of the dead ones works for
+# on/off (HA still routes the command to the TV) but reports no apps — so
+# the app picker had nothing to show and no way to say why.
+#
+# Making somebody find the right entity by hand and edit it into the add-on
+# config is a fix that only works if they can tell the entities apart, which
+# is the exact thing that isn't possible from the names. So the panel does
+# it: at every poll it looks for a sibling of each TV tile's entity that DOES
+# carry apps, and lends the tile that list. Siblings are the entities whose
+# id is the same once Home Assistant's uniquifying "_2"/"_3" suffix is off.
+_TV_SUFFIX = re.compile(r"_\d+$")
+
+
+def _tv_base(entity_id: str) -> str:
+    """A TV entity id with HA's duplicate-suffix stripped, for matching
+    siblings: media_player.lg_tv_2 and media_player.lg_tv share a base."""
+    return _TV_SUFFIX.sub("", entity_id)
+
+
+def _tv_apps_map(tv_entities: set[str], all_states: list[dict]) -> dict:
+    """For each TV tile entity that reports no apps, the sibling that does.
+
+    Returns {tile_entity: {"entity": <sibling id>, "source_list": [...]}} and
+    holds only the entities that actually need the loan — a tile pointed at
+    the live entity is absent from the map and uses its own list.
+    """
+    by_id, apps = {}, {}
+    for s in all_states:
+        eid = s.get("entity_id", "")
+        if not eid.startswith("media_player."):
+            continue
+        attrs = s.get("attributes") or {}
+        by_id[eid] = attrs
+        srcs = attrs.get("source_list") or []
+        if srcs:
+            apps[eid] = srcs
+
+    out = {}
+    for eid in tv_entities:
+        if (by_id.get(eid) or {}).get("source_list"):
+            continue                      # already the live one, nothing to lend
+        base = _tv_base(eid)
+        # Most apps wins, so a sibling with a stub list never beats the real
+        # one; the id is the tiebreak purely so the choice is stable between
+        # polls rather than flickering between two equal candidates.
+        best = sorted(((k, v) for k, v in apps.items() if _tv_base(k) == base),
+                      key=lambda kv: (-len(kv[1]), kv[0]))
+        if best:
+            out[eid] = {"entity": best[0][0], "source_list": best[0][1]}
+    return out
+
+
 def refresh(tiles: list[dict]) -> None:
     """Poll /api/states once and cache the configured entities' states."""
     if not tiles:
@@ -75,10 +131,15 @@ def refresh(tiles: list[dict]) -> None:
     wanted = wanted_entities(tiles)
     r = requests.get(f"{base}/states", headers=_headers(token), timeout=TIMEOUT)
     r.raise_for_status()
+    payload = r.json()
     states = {s["entity_id"]: {"state": s.get("state"),
                                "attributes": s.get("attributes", {})}
-              for s in r.json() if s.get("entity_id") in wanted}
+              for s in payload if s.get("entity_id") in wanted}
     db.set_json_setting("ha:states", {"at": db.utc_now_iso(), "states": states})
+    # The whole payload is already here, so the sibling scan is free; doing it
+    # at poll time keeps tile_shape() a pure read.
+    tvs = {t["entity"] for t in tiles if t.get("type") == "tv" and t.get("entity")}
+    db.set_json_setting("ha:tv_apps", _tv_apps_map(tvs, payload) if tvs else {})
 
 
 def _bin_day_fields(attrs: dict) -> dict:
@@ -161,10 +222,21 @@ def tile_shape(tile: dict, cached: dict | None) -> dict:
         # keep on. "off" and "standby" are both off; anything the TV is
         # unreachable for (unavailable/unknown/None) is off too, since a set
         # the network can't see is not one anybody is watching.
+        sources = attrs.get("source_list") or []
+        # Where the apps come from, when this entity has none of its own.
+        # apps_entity is what select_source has to be sent to — the tile's own
+        # entity would accept the call and do nothing, being the dead one.
+        apps_entity = None
+        if not sources:
+            loan = (db.get_json_setting("ha:tv_apps") or {}).get(tile["entity"])
+            if loan:
+                sources = loan.get("source_list") or []
+                apps_entity = loan.get("entity")
         out["attrs"] = {"on": state not in ("off", "standby", "unavailable",
                                             "unknown", None),
                         "source": attrs.get("source"),
-                        "source_list": attrs.get("source_list") or [],
+                        "source_list": sources,
+                        "apps_entity": apps_entity,
                         "muted": bool(attrs.get("is_volume_muted"))}
     elif ttype == "fan":
         out["attrs"] = {"percentage": attrs.get("percentage"),
