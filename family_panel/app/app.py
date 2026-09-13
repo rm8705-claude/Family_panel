@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.17.29"
+APP_VERSION = "0.18.0"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -820,6 +820,27 @@ def api_weather():
     if data is None:
         return jsonify({"available": False})
     return jsonify({"available": True, **data})
+
+
+@app.get("/api/sports")
+def api_sports():
+    import sports
+    data = sports.latest()
+    if data is None:
+        return jsonify({"available": False})
+    return jsonify({"available": True, **data})
+
+
+@app.get("/api/sports/raw")
+def api_sports_raw():
+    """The ATP payload the parser couldn't read, when that happens.
+
+    ESPN's rankings feed is undocumented, so if they reshape it the useful
+    thing is the body itself rather than a log line on a headless box. Empty
+    whenever the last fetch parsed cleanly.
+    """
+    import sports
+    return jsonify(sports.raw_debug() or {"raw": None, "note": "last ATP fetch parsed fine"})
 
 
 @app.get("/api/ha/tiles")

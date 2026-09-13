@@ -391,6 +391,7 @@
     sonosFilter: '',            // favourites search text, "Sonos" tile only
     sonosPin: null,             // entity pinned to the grouped Home tile, or auto
     sonosShare: false,          // the play-together sheet is open
+    sports: false,              // the standings sheet is open
     solar: false,               // the power-flow overlay is open
     wgScrolled: false,          // the week grid has found its scroll position
     theme: 'day',               // the theme actually applied right now
@@ -401,7 +402,7 @@
   var D = {
     status: null, agenda: null, chores: null, imports: null, ha: null,
     weather: null, lists: null, recipes: null, mealplan: null, stars: null,
-    photos: null,
+    photos: null, sports: null,
     byDate: {}, agendaFrom: null, agendaTo: null
   };
 
@@ -698,6 +699,10 @@
 
   function loadWeather() {
     return bg(GET('/api/weather'), function (d) { D.weather = d; });
+  }
+
+  function loadSports() {
+    return bg(GET('/api/sports'), function (d) { D.sports = d; });
   }
 
   function loadPhotos() {
@@ -2184,10 +2189,104 @@
         '<div class="t-label">' + esc(t.label) + '</div>' + tileBody(t) +
         (off ? '' : tileActions(t)) + '</div>';
     }).join('');
+    /* The sports tile is the panel's own, not Home Assistant's, so it rides
+       after the HA tiles and is unaffected by HA being down. */
     return '<section class="card a-ha">' +
-      '<div class="ha-row">' + body +
+      '<div class="ha-row">' + body + sportsTile() +
       (off ? '<span class="ha-offline">HA offline — showing last known</span>' : '') +
       '</div></section>';
+  }
+
+  /* ------------------------------------------------------------- sports --- */
+  /* ATP men's singles and the F1 drivers' championship. Not a Home Assistant
+     tile — the panel fetches these itself (see sports.py) — but it lives on
+     the same shelf because that row is where the house's small read-outs are,
+     and a card of its own in the today grid would cost a row the schedule
+     currently uses.
+
+     The tile shows each leader; the table belongs behind a tap, because ten
+     rows of anything is unreadable at tile size. */
+
+  var SPORTS = [
+    { key: 'atp', label: 'Tennis', unit: 'pts' },
+    { key: 'f1', label: 'F1', unit: 'pts' }
+  ];
+
+  function sportRows(key) {
+    var s = (D.sports && D.sports[key]) || null;
+    return (s && s.rows) || [];
+  }
+
+  function sportsHave() {
+    return SPORTS.some(function (s) { return sportRows(s.key).length; });
+  }
+
+  function sportsTile() {
+    if (!sportsHave()) return '';
+    var lines = SPORTS.map(function (s) {
+      var top = sportRows(s.key)[0];
+      if (!top) return '';
+      return '<div class="sp-line">' +
+        '<span class="sp-who">' + (top.flag ? '<span class="sp-flag">' + esc(top.flag) + '</span>' : '') +
+        esc(top.name) + '</span>' +
+        '<span class="sp-pts mono">' + esc(top.points == null ? '—' : top.points) + '</span></div>';
+    }).join('');
+    return '<div class="tile is-sports" data-act="sports-open" role="button" tabindex="0">' +
+      '<div class="t-label">Sports</div>' + lines + '</div>';
+  }
+
+  /* +n rose, -n fell, 0 held, null not known yet (a cold start, before there
+     is anything to compare against). */
+  function moveHtml(move) {
+    if (move == null) return '<span class="sp-move"></span>';
+    if (move === 0) return '<span class="sp-move is-hold">–</span>';
+    var up = move > 0;
+    return '<span class="sp-move ' + (up ? 'is-up' : 'is-down') + '">' +
+      (up ? '▲' : '▼') + Math.abs(move) + '</span>';
+  }
+
+  function sportsTableHtml(s) {
+    var rows = sportRows(s.key);
+    var err = ((D.sports && D.sports[s.key]) || {}).error;
+    if (!rows.length) {
+      return '<div class="sp-block"><div class="np-sec">' + esc(s.label) + '</div>' +
+        '<p class="np-none muted2">' +
+        esc(err ? 'Couldn’t reach the standings — ' + err : 'No standings yet.') +
+        '</p></div>';
+    }
+    return '<div class="sp-block"><div class="np-sec">' + esc(s.label) +
+      (err ? ' <span class="sp-stale">· last known</span>' : '') + '</div>' +
+      '<div class="sp-table">' + rows.map(function (r) {
+        return '<div class="sp-row">' +
+          '<span class="sp-pos mono">' + esc(r.pos) + '</span>' +
+          '<span class="sp-flag">' + esc(r.flag || '') + '</span>' +
+          '<span class="sp-name">' + esc(r.name) +
+          (r.team ? '<span class="sp-team">' + esc(r.team) + '</span>' : '') + '</span>' +
+          moveHtml(r.move) +
+          '<span class="sp-pts mono">' + esc(r.points == null ? '—' : r.points) + '</span>' +
+          '</div>';
+      }).join('') + '</div></div>';
+  }
+
+  function sportsSheetHtml() {
+    return '<button class="close-x np-close" data-act="close-sheet" aria-label="Close">' + ICON.close + '</button>' +
+      '<div class="np-label sp-head">Standings</div>' +
+      '<div class="sp-blocks">' + SPORTS.map(sportsTableHtml).join('') + '</div>' +
+      '<p class="sp-note muted2">Movement is since the table last changed — ' +
+      'ATP publishes on Mondays, F1 after each race.</p>';
+  }
+
+  function openSportsSheet() {
+    openSheet('<div class="sp-sheet" id="sportsCard" role="dialog" aria-modal="true" ' +
+      'aria-label="Standings">' + sportsSheetHtml() + '</div>', { raw: true, centre: true });
+    state.sports = true;
+  }
+
+  function updateSportsSheet() {
+    if (!state.sports) return;
+    var host = byId('sportsCard');
+    if (!host) { state.sports = false; return; }
+    host.innerHTML = sportsSheetHtml();
   }
 
   /* ------------------------------------------------------- now playing ---- */
@@ -3770,6 +3869,7 @@
     updateNowPlaying();
     updateSonosSheet();
     updateSonosShare();
+    updateSportsSheet();
     updateWeatherSheet();
     updateClimateSheet();
     paintSolar();
@@ -3836,6 +3936,7 @@
     state.solar = false;
     state.sonos = false;
     state.sonosShare = false;
+    state.sports = false;
     state.weather = false;
     stopStatusRefresh();
     renderCatchUp();
@@ -3855,6 +3956,7 @@
     state.solar = false;
     state.sonos = false;
     state.sonosShare = false;
+    state.sports = false;
     state.weather = false;
     stopStatusRefresh();
     host.innerHTML = '<div class="scrim' + (opts.centre ? ' centre' : '') +
@@ -5554,6 +5656,7 @@
         state.sonosTarget = el.dataset.entity;
         updateSonosSheet();
         break;
+      case 'sports-open': openSportsSheet(); break;
       case 'sonos-share': openSonosShare(); break;
       case 'sonos-swap':
         setSonosPin(el.dataset.entity);
@@ -6043,7 +6146,8 @@
         if (!st) statusRetry(5000);
         render();
         updateSleep();
-        return Promise.all([loadAgenda(), loadChores(), loadWeather(), loadHa(), loadPhotos()]);
+        return Promise.all([loadAgenda(), loadChores(), loadWeather(), loadHa(),
+          loadPhotos(), loadSports()]);
       })
       .then(function () {
         updateTheme(false);      // real sunset/sunrise have landed by now
@@ -6095,6 +6199,9 @@
       solo('poll:weather', loadWeather).then(function () { updateTheme(); renderPoll(); });
       solo('poll:mealplan', function () { return loadMealplan(mealAnchor()); }).then(renderPoll);
       solo('poll:photos', loadPhotos);
+      /* The backend only refreshes these hourly and neither sport can change
+         faster than that, so this is just picking up what it already has. */
+      solo('poll:sports', loadSports).then(renderPoll);
       /* Both of these are loaded once at boot and never again, so a boot that
          raced the add-on's start left the panel with no recipes and no lists
          for the rest of the week. */
@@ -7566,6 +7673,30 @@
 
     /* ---- weather ---- */
     if (path === '/api/weather') return M.weather;
+
+    /* Standings as the backend shapes them (sports.py): flags already resolved
+       to emoji, `move` already signed — +n rose, -n fell, 0 held, null not
+       known yet. The demo carries one of each so the sheet can be read. */
+    if (path === '/api/sports') {
+      return {
+        available: true, updated_at: new Date().toISOString(),
+        atp: { error: null, rows: [
+          { id: '1', pos: 1, name: 'Jannik Sinner', points: 11500, code: 'ITA', flag: '🇮🇹', team: null, move: 1 },
+          { id: '2', pos: 2, name: 'Carlos Alcaraz', points: 9030, code: 'ESP', flag: '🇪🇸', team: null, move: -1 },
+          { id: '3', pos: 3, name: 'Alexander Zverev', points: 7285, code: 'GER', flag: '🇩🇪', team: null, move: 0 },
+          { id: '4', pos: 4, name: 'Novak Djokovic', points: 5560, code: 'SRB', flag: '🇷🇸', team: null, move: 2 },
+          { id: '5', pos: 5, name: 'Alex de Minaur', points: 4315, code: 'AUS', flag: '🇦🇺', team: null, move: -2 },
+          { id: '6', pos: 6, name: 'Taylor Fritz', points: 3985, code: 'USA', flag: '🇺🇸', team: null, move: null }
+        ] },
+        f1: { error: null, rows: [
+          { id: 'norris', pos: 1, name: 'Lando Norris', points: 310, code: 'NOR', flag: '🇬🇧', team: 'McLaren', move: 1 },
+          { id: 'verstappen', pos: 2, name: 'Max Verstappen', points: 285, code: 'VER', flag: '🇳🇱', team: 'Red Bull', move: -1 },
+          { id: 'leclerc', pos: 3, name: 'Charles Leclerc', points: 240, code: 'LEC', flag: '🇲🇨', team: 'Ferrari', move: 0 },
+          { id: 'piastri', pos: 4, name: 'Oscar Piastri', points: 232, code: 'PIA', flag: '🇦🇺', team: 'McLaren', move: 3 },
+          { id: 'russell', pos: 5, name: 'George Russell', points: 198, code: 'RUS', flag: '🇬🇧', team: 'Mercedes', move: -1 }
+        ] }
+      };
+    }
 
     var err404 = new Error('No mock for ' + method + ' ' + path);
     err404.status = 404;

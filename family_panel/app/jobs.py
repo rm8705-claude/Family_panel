@@ -166,6 +166,20 @@ def poll_ha(config: dict) -> None:
         db.mark_sync("ha", False, str(e)[:200])
 
 
+def fetch_sports(config: dict) -> None:
+    import sports
+    try:
+        data = sports.refresh(config.get("sports", {}))
+        detail = ", ".join(f"{k}: {len(data.get(k, {}).get('rows') or [])}"
+                           for k in ("atp", "f1"))
+        db.mark_sync("sports", True, detail)
+    except Exception as e:
+        # refresh() still cached whatever it did get, so a half-failure leaves
+        # the working sport on screen; this only records why the other broke.
+        log.warning("sports fetch failed: %s", e)
+        db.mark_sync("sports", False, str(e)[:200])
+
+
 def sync_photos(config: dict) -> None:
     import photos
     try:
@@ -198,6 +212,14 @@ def start(config: dict) -> BackgroundScheduler:
     # photos change rarely; 6-hourly keeps a shared album fresh same-day
     # without hammering Google's share pages
     add("photos", sync_photos, mins.get("photos", 360))
+    # ATP publishes on Mondays and F1 only moves after a race, so hourly is
+    # already far more often than either can change. Unlike the other jobs
+    # this one is skippable: it calls two services outside the house, and a
+    # household that doesn't follow either shouldn't be doing that all year to
+    # feed a tile it never wanted. sync_minutes.sports: 0 turns it off, and
+    # with no standings cached the tile doesn't draw at all.
+    if float(mins.get("sports", 60)) > 0:
+        add("sports", fetch_sports, mins.get("sports", 60))
     sched.start()
 
     # First run of everything straight away (in the scheduler's thread pool).

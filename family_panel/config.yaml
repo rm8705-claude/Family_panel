@@ -5,7 +5,7 @@
 # together whenever you ship a change (see the repo's `ship` skill).
 name: "Family Panel"
 description: "Self-hosted family wall calendar: shared calendar, chores, lists, meal planner and Home Assistant tiles."
-version: "0.17.29"
+version: "0.18.0"
 slug: "family_panel"
 url: "https://github.com/rm8705-claude/family_panel"
 arch:
@@ -251,6 +251,9 @@ schema:
     imap: "int"
     weather: "int"
     ha: "float"
+    # ATP + F1 standings. Omitted = hourly; 0 turns the fetch off entirely and
+    # the tile stops drawing with it.
+    sports: "int?"
   photos:
     folder: "str?"
     shared_album_url: "str?"

@@ -1884,6 +1884,85 @@ ul, ol { list-style: none; }
 .sol-grid .d { letter-spacing: 0.02em; }
 .sol-grid b { color: var(--ink-2); font-weight: 700; }
 .sol-grid .u { font-size: 0.6875rem; }
+/* ------------------------------------------------------------- sports --- */
+/* ATP and F1 standings: each leader on the shelf tile, the tables behind a
+   tap. Flags are emoji (see sports.py) — Android renders them, which is what
+   the wall and the phones are. */
+
+.tile.is-sports { min-width: 13rem; flex-grow: 1.2; cursor: pointer; }
+.sp-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+.sp-who {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sp-flag { font-size: 1em; margin-right: 0.375rem; }
+.sp-pts { flex: 0 0 auto; font-size: 0.875rem; color: var(--ink-2); }
+
+.sp-sheet {
+  position: relative;
+  width: min(34rem, 94vw);
+  max-height: 92vh;
+  overflow-y: auto;
+  padding: 2.25rem;
+  background: var(--paper);
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+}
+.sp-head { text-align: center; margin-bottom: 1.25rem; }
+.sp-blocks { display: flex; flex-direction: column; gap: 1.5rem; }
+.sp-block .np-sec { margin-bottom: 0.5rem; }
+.sp-stale { color: var(--ink-3); font-weight: 400; text-transform: none; letter-spacing: 0; }
+
+.sp-table { display: flex; flex-direction: column; gap: 0.125rem; }
+.sp-row {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-height: 2.75rem;
+  padding: 0 0.625rem;
+  border-radius: var(--radius-s);
+}
+.sp-row:nth-child(odd) { background: var(--card-2); }
+.sp-pos {
+  flex: 0 0 1.5rem;
+  text-align: right;
+  font-size: 0.875rem;
+  color: var(--ink-3);
+}
+.sp-row .sp-flag { flex: 0 0 auto; font-size: 1.125rem; margin-right: 0; }
+.sp-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sp-team { color: var(--ink-3); font-weight: 400; font-size: 0.8125rem; margin-left: 0.5rem; }
+.sp-move {
+  flex: 0 0 2.5rem;
+  text-align: right;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  font-family: var(--mono);
+}
+.sp-move.is-up { color: var(--ok); }
+.sp-move.is-down { color: var(--hero); }
+.sp-move.is-hold { color: var(--ink-3); font-weight: 400; }
+.sp-row .sp-pts { flex: 0 0 3.5rem; text-align: right; font-size: 0.9375rem; color: var(--ink); }
+.sp-note { margin-top: 1.25rem; font-size: 0.8125rem; text-align: center; }
+
 /* the solar tile's one-line read on what's notable — see solarNote() */
 .sol-note {
   margin-top: 0.375rem;
