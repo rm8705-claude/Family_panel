@@ -492,9 +492,10 @@ def tv_turn_on(tile: dict) -> None:
 # set has finished coming up — sending select_source at a TV that is still
 # booting is accepted and ignored. So: wait for it to say it is on, then ask,
 # then ask again a couple of times if it still isn't ready.
-TV_WAKE_WAIT_S = 30          # give up waiting for the set to come up
+TV_WAKE_WAIT_S = 45          # give up waiting for the set to come up
 TV_WAKE_POLL_S = 2
-TV_LAUNCH_TRIES = 4
+TV_LAUNCH_TRIES = 6          # after it is up, while the app entity reconnects
+TV_LAUNCH_GAP_S = 3
 TV_OFF_STATES = ("off", "standby", "unavailable", "unknown", None)
 
 
@@ -508,6 +509,25 @@ def _entity_state(entity: str) -> str | None:
         return None
     r.raise_for_status()
     return (r.json() or {}).get("state")
+
+
+def _tv_any_on(entities: list[str]) -> bool:
+    """Whether any of a television's entities says the set is up.
+
+    A set has more than one, and they do not agree while it is waking. The LG
+    integration's entity — the one that carries the apps — goes `unavailable`
+    rather than `off` when it loses the television, and it only reconnects
+    once the set is properly up; the Cast entity beside it flips to `on` as
+    soon as the panel is lit. Asking all of them means the launch starts at
+    the first sign of life rather than at the slowest one's.
+    """
+    for e in entities:
+        try:
+            if _entity_state(e) not in TV_OFF_STATES:
+                return True
+        except Exception:                      # noqa: BLE001 - try the next
+            continue
+    return False
 
 
 def tv_apps_entity(tile: dict) -> str:
@@ -531,41 +551,43 @@ def tv_launch(tile: dict, source) -> bool:
     if not name:
         raise ValueError("No app was named")
     target = tv_apps_entity(tile)
-    try:
-        awake = _entity_state(target) not in TV_OFF_STATES
-    except requests.RequestException:
-        awake = False
-    if awake:
+    # Both of the set's entities count as "is it up?" — see _tv_any_on.
+    watch = [target] if target == tile["entity"] else [target, tile["entity"]]
+    if _tv_any_on(watch):
         call_action(target, "select_source", name)
         return True
 
     # Raises ValueError with a plain reason when nothing in the house can
     # wake this set, which is the answer the panel wants to show.
     tv_turn_on(tile)
-    threading.Thread(target=_tv_launch_when_awake, args=(target, name),
+    threading.Thread(target=_tv_launch_when_awake, args=(target, watch, name),
                      daemon=True, name="tv-launch").start()
     return False
 
 
-def _tv_launch_when_awake(entity: str, source: str) -> None:
+def _tv_launch_when_awake(entity: str, watch: list[str], source: str) -> None:
     """Wait for a woken set to come up, then start the app on it. Runs off the
-    request thread — nobody is waiting on the far end of the tap, and half a
-    minute is a long time to hold a gunicorn thread open."""
+    request thread — nobody is waiting on the far end of the tap, and a minute
+    is a long time to hold a gunicorn thread open.
+
+    The set being up and the app entity being ready to take a request are two
+    different moments: on a re-paired LG the entity that carries the apps
+    reconnects a good few seconds after the panel lights. So the wait is on
+    any of the set's entities, and then the request is simply retried at the
+    one that has to take it until it does.
+    """
     deadline = time.monotonic() + TV_WAKE_WAIT_S
     while time.monotonic() < deadline:
         time.sleep(TV_WAKE_POLL_S)
-        try:
-            if _entity_state(entity) in TV_OFF_STATES:
-                continue
-        except Exception:                      # noqa: BLE001 - keep waiting
+        if not _tv_any_on(watch):
             continue
-        for attempt in range(TV_LAUNCH_TRIES):
+        for _ in range(TV_LAUNCH_TRIES):
             try:
                 call_action(entity, "select_source", source)
                 return
-            except Exception as e:             # noqa: BLE001
+            except Exception as e:             # noqa: BLE001 - it is waking
                 log.info("%s not ready for %s yet (%s)", entity, source, e)
-                time.sleep(TV_WAKE_POLL_S)
+                time.sleep(TV_LAUNCH_GAP_S)
         log.warning("%s came up but would not start %s", entity, source)
         return
     log.warning("%s did not come up within %ss, so %s was not started",

@@ -73,7 +73,13 @@ Everything else (`ha_tiles`, Magic Import, weather) can be added later.
 
 ## Troubleshooting
 
-**The TV's Apps list is empty.** Re-pairing a television in Home Assistant
+**The TV's Apps list is empty.** A television only lists its apps over a live
+connection, so a set that has never been on while the panel was watching has
+nothing to show. Switch it on once — the picker has a **Turn on** key for
+exactly this — and the panel remembers its apps from then on, including while
+the set is off.
+
+If it is on and the list is still empty: re-pairing a television in Home Assistant
 adds a second entity beside the old one rather than replacing it, and only
 the one actually connected to the set reports its apps — the others look
 plausible and answer nothing. The panel finds the live one by itself where it
