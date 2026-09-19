@@ -8,13 +8,18 @@ State polling caches into the settings table so /api/ha/tiles can keep
 serving the last-known state (greyed out) while HA is unreachable.
 """
 import hashlib
+import logging
 import os
 import re
+import threading
+import time
 from datetime import datetime
 
 import requests
 
 import db
+
+log = logging.getLogger("family-panel.ha")
 
 TIMEOUT = 10
 
@@ -101,22 +106,36 @@ def _feats(attrs: dict) -> int:
         return 0
 
 
-def _tv_apps_map(tv_entities: set[str], all_states: list[dict]) -> dict:
+def _tv_apps_map(tv_entities: set[str], all_states: list[dict],
+                 previous: dict | None = None) -> dict:
     """For each TV tile, which entity to aim its apps and its power at.
 
-    Returns {tile_entity: {"apps_entity", "source_list", "on_entity"}}.
+    Returns {tile_entity: {"apps_entity", "source_list", "on_entity",
+    "remembered"}}.
 
-    apps_entity/source_list are the loan described above: absent (None/[])
-    when the tile's own entity reports its apps, since then nothing is needed.
+    source_list is the best app list the panel can find for that tile, and
+    apps_entity says where it came from: None when the tile's own entity
+    reports it, otherwise the entity select_source has to be aimed at (the
+    loan described above — the tile's own would take the call and do nothing,
+    being the dead one).
+
+    A television only reports its apps while it is switched on and talking:
+    webOS builds source_list from a live connection, so the moment the set
+    goes off the list goes with it. Walking up to a dark panel and being
+    shown nothing to watch is the state the picker is MOST needed in, so the
+    last list a tile had is remembered (that is `previous`, the map the last
+    poll stored) and handed back flagged `remembered` until the set is up and
+    reporting for itself again.
 
     on_entity is separate because the two capabilities do not travel together.
     A webOS set only gains TURN_ON when Home Assistant has a way to wake it —
     Wake-on-LAN — so an entity can report every app it has and still refuse to
     be switched on, and asking anyway is a 500 from Home Assistant rather than
     a polite refusal. So: the entity that actually declares TURN_ON, which may
-    be the tile's own, a sibling, or none of them.
+    be the tile's own, a sibling, the one television in the house that does,
+    or none of them.
     """
-    by_id, apps, can_on = {}, {}, set()
+    by_id, apps, can_on, tvish = {}, {}, set(), set()
     for s in all_states:
         eid = s.get("entity_id", "")
         if not eid.startswith("media_player."):
@@ -127,13 +146,33 @@ def _tv_apps_map(tv_entities: set[str], all_states: list[dict]) -> dict:
             apps[eid] = attrs["source_list"]
         if _feats(attrs) & TURN_ON:
             can_on.add(eid)
+        # device_class "tv" is how Home Assistant's television integrations
+        # (webOS, Android TV, Samsung) mark themselves, and no speaker sets
+        # it — so this is the set of entities that are a TV rather than a
+        # Sonos with favourites in its source_list.
+        if attrs.get("device_class") == "tv":
+            tvish.add(eid)
+
+    # The one television in the house that reports its apps, if there is
+    # exactly one. Sibling matching (below) only finds the duplicates Home
+    # Assistant leaves behind when a set is RE-paired — it shares the tile's
+    # entity id. A set added fresh under a different id (media_player.lg_c4
+    # beside a tile pointed at media_player.living_room_tv) is invisible to
+    # it, and that is the other half of "the Apps button comes up empty".
+    # One unambiguous candidate is safe to lend from; two would be a guess,
+    # so with two the panel says nothing rather than aiming at the wrong set.
+    lone = [e for e in sorted(tvish) if apps.get(e)]
+    lone_tv = lone[0] if len(lone) == 1 else None
 
     out = {}
     for eid in tv_entities:
         own = by_id.get(eid) or {}
-        entry = {"apps_entity": None, "source_list": [], "on_entity": None}
+        entry = {"apps_entity": None, "source_list": [], "on_entity": None,
+                 "remembered": False}
 
-        if not own.get("source_list"):
+        if own.get("source_list"):
+            entry["source_list"] = own["source_list"]
+        else:
             base = _tv_base(eid)
             # Most apps wins, so a sibling with a stub list never beats the
             # real one; the id is the tiebreak purely so the choice is stable
@@ -142,13 +181,27 @@ def _tv_apps_map(tv_entities: set[str], all_states: list[dict]) -> dict:
                           key=lambda kv: (-len(kv[1]), kv[0]))
             if best:
                 entry["apps_entity"], entry["source_list"] = best[0][0], best[0][1]
+            elif lone_tv and lone_tv != eid:
+                entry["apps_entity"], entry["source_list"] = lone_tv, apps[lone_tv]
+
+        # Nothing live anywhere: the set is off, so show what it had last time.
+        if not entry["source_list"]:
+            was = (previous or {}).get(eid) or {}
+            if was.get("source_list"):
+                entry["source_list"] = was["source_list"]
+                entry["apps_entity"] = was.get("apps_entity")
+                entry["remembered"] = True
 
         if eid in can_on:
             entry["on_entity"] = eid
         else:
             base = _tv_base(eid)
             sibs = sorted(k for k in can_on if _tv_base(k) == base)
-            entry["on_entity"] = sibs[0] if sibs else None
+            # Same reasoning as the app list: the entity that can wake the set
+            # is not always the one the tile names, and on a house with one
+            # television there is no ambiguity about which set that is.
+            entry["on_entity"] = (sibs[0] if sibs else
+                                  (lone_tv if lone_tv in can_on else None))
 
         out[eid] = entry
     return out
@@ -170,7 +223,10 @@ def refresh(tiles: list[dict]) -> None:
     # The whole payload is already here, so the sibling scan is free; doing it
     # at poll time keeps tile_shape() a pure read.
     tvs = {t["entity"] for t in tiles if t.get("type") == "tv" and t.get("entity")}
-    db.set_json_setting("ha:tv_apps", _tv_apps_map(tvs, payload) if tvs else {})
+    # The previous map is the tile's memory of its apps, for the polls where
+    # the set is off and reports none — see _tv_apps_map.
+    was = db.get_json_setting("ha:tv_apps") or {}
+    db.set_json_setting("ha:tv_apps", _tv_apps_map(tvs, payload, was) if tvs else {})
 
 
 def _bin_day_fields(attrs: dict) -> dict:
@@ -254,14 +310,18 @@ def tile_shape(tile: dict, cached: dict | None) -> dict:
         # unreachable for (unavailable/unknown/None) is off too, since a set
         # the network can't see is not one anybody is watching.
         sources = attrs.get("source_list") or []
-        # Where the apps come from, when this entity has none of its own.
-        # apps_entity is what select_source has to be sent to — the tile's own
-        # entity would accept the call and do nothing, being the dead one.
+        # Where the apps come from, when this entity has none of its own —
+        # a sibling, the one other television in the house, or the list this
+        # tile had last time it was on. apps_entity is what select_source has
+        # to be sent to; the panel resolves it again at launch time (see
+        # tv_launch) so the tile never has to carry the routing.
         helper = (db.get_json_setting("ha:tv_apps") or {}).get(tile["entity"]) or {}
         apps_entity = None
+        remembered = False
         if not sources and helper.get("source_list"):
             sources = helper["source_list"]
             apps_entity = helper.get("apps_entity")
+            remembered = bool(helper.get("remembered"))
         # Whether anything at all can switch this set on — its own entity, a
         # sibling, or a magic packet. The tile keeps its Turn on key either
         # way (finding the remote is the whole point of it) but the panel can
@@ -271,6 +331,11 @@ def tile_shape(tile: dict, cached: dict | None) -> dict:
                         "source": attrs.get("source"),
                         "source_list": sources,
                         "apps_entity": apps_entity,
+                        # True when the list is the one the set reported last
+                        # time it was on rather than one it is reporting now —
+                        # the picker says so, since an app that has since been
+                        # uninstalled would otherwise just fail silently.
+                        "apps_remembered": remembered,
                         "can_turn_on": bool(helper.get("on_entity")
                                             or tile.get("tv_mac")),
                         "muted": bool(attrs.get("is_volume_muted"))}
@@ -420,6 +485,91 @@ def tv_turn_on(tile: dict) -> None:
         f"{entity} can't be switched on from Home Assistant — it only offers "
         "turn off. Put the TV's MAC address in the tile's tv_mac option and "
         "add the Wake on LAN integration, then this key will wake it.")
+
+
+# A television takes its time. webOS answers a magic packet in a second or
+# two, but the app that has to be launched on it is not listening until the
+# set has finished coming up — sending select_source at a TV that is still
+# booting is accepted and ignored. So: wait for it to say it is on, then ask,
+# then ask again a couple of times if it still isn't ready.
+TV_WAKE_WAIT_S = 30          # give up waiting for the set to come up
+TV_WAKE_POLL_S = 2
+TV_LAUNCH_TRIES = 4
+TV_OFF_STATES = ("off", "standby", "unavailable", "unknown", None)
+
+
+def _entity_state(entity: str) -> str | None:
+    """One entity's state straight from Home Assistant, not the poll cache —
+    waking a set and watching for it is a second-by-second business and the
+    cache is 15 seconds behind."""
+    base, token = _api_base()
+    r = requests.get(f"{base}/states/{entity}", headers=_headers(token), timeout=TIMEOUT)
+    if r.status_code == 404:
+        return None
+    r.raise_for_status()
+    return (r.json() or {}).get("state")
+
+
+def tv_apps_entity(tile: dict) -> str:
+    """Which entity a TV tile's app launches have to be aimed at — its own
+    unless the last poll found the list on a sibling or on the one other
+    television in the house (see _tv_apps_map)."""
+    helper = (db.get_json_setting("ha:tv_apps") or {}).get(tile.get("entity")) or {}
+    return helper.get("apps_entity") or tile["entity"]
+
+
+def tv_launch(tile: dict, source) -> bool:
+    """Put an app on the television, switching the set on first if it is off.
+
+    "Netflix" from a dark panel used to be three separate acts — turn the set
+    on, wait for it, then find the app — and the middle one is the panel's
+    job, not the household's. Returns True when the app was selected there and
+    then, False when the set had to be woken and the launch is following it up
+    in the background (the tile paints "Starting…" either way).
+    """
+    name = str(source or "").strip()
+    if not name:
+        raise ValueError("No app was named")
+    target = tv_apps_entity(tile)
+    try:
+        awake = _entity_state(target) not in TV_OFF_STATES
+    except requests.RequestException:
+        awake = False
+    if awake:
+        call_action(target, "select_source", name)
+        return True
+
+    # Raises ValueError with a plain reason when nothing in the house can
+    # wake this set, which is the answer the panel wants to show.
+    tv_turn_on(tile)
+    threading.Thread(target=_tv_launch_when_awake, args=(target, name),
+                     daemon=True, name="tv-launch").start()
+    return False
+
+
+def _tv_launch_when_awake(entity: str, source: str) -> None:
+    """Wait for a woken set to come up, then start the app on it. Runs off the
+    request thread — nobody is waiting on the far end of the tap, and half a
+    minute is a long time to hold a gunicorn thread open."""
+    deadline = time.monotonic() + TV_WAKE_WAIT_S
+    while time.monotonic() < deadline:
+        time.sleep(TV_WAKE_POLL_S)
+        try:
+            if _entity_state(entity) in TV_OFF_STATES:
+                continue
+        except Exception:                      # noqa: BLE001 - keep waiting
+            continue
+        for attempt in range(TV_LAUNCH_TRIES):
+            try:
+                call_action(entity, "select_source", source)
+                return
+            except Exception as e:             # noqa: BLE001
+                log.info("%s not ready for %s yet (%s)", entity, source, e)
+                time.sleep(TV_WAKE_POLL_S)
+        log.warning("%s came up but would not start %s", entity, source)
+        return
+    log.warning("%s did not come up within %ss, so %s was not started",
+                entity, TV_WAKE_WAIT_S, source)
 
 
 def media_art(entity: str) -> tuple[bytes, str]:

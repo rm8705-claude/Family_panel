@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.18.9"
+APP_VERSION = "0.19.0"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -933,6 +933,13 @@ def api_ha_action():
         # (or whether a magic packet) can actually do it varies by house.
         if tile is not None and tile.get("type") == "tv" and body.get("action") == "turn_on":
             ha.tv_turn_on(tile)
+        # Nor is picking an app: the set may be off, in which case "put the
+        # cricket on" means wake it, wait for it, and then start the app —
+        # one tap, not three. ha.tv_launch also works out which entity the
+        # launch has to be aimed at, so the panel sends the tile's own.
+        elif tile is not None and tile.get("type") == "tv" and body.get("action") == "launch_app":
+            return jsonify({"ok": True,
+                            "waking": not ha.tv_launch(tile, body.get("value"))})
         else:
             ha.call_action(entity, body.get("action", ""), body.get("value"))
     except ValueError as e:

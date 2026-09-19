@@ -1799,6 +1799,10 @@ ul, ol { list-style: none; }
 /* wrap rather than squeeze: a narrow tile puts its second row of keys
    underneath (the fan's four, the media tile's three on a 1280 panel) */
 .tile-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 0.5rem; }
+/* Why a tile has no keys, on the one tile where that reads as a fault —
+   see tileActions() in app.js. */
+.t-ro { font-size: 0.8125rem; line-height: 1.4; color: var(--ink-3); }
+.t-ro .mono { font-family: var(--mono); }
 
 .t-btn {
   flex: 1 1 auto;
@@ -3720,13 +3724,29 @@ html[data-theme="night"] select.inp {
   position: relative;
   width: min(58rem, 94vw);
   max-height: 92vh;
-  overflow-y: auto;
   padding: 2.25rem;
   background: var(--paper);
   border: 1px solid var(--hair);
   border-radius: var(--radius);
 }
-.tva-head { text-align: center; margin-bottom: 1.25rem; }
+.tva-head { text-align: center; margin-bottom: 0.5rem; }
+
+/* What tapping an app is about to do — it reads differently on a set that is
+   already on and one that has to be woken first, and from three metres away
+   those two look the same otherwise. */
+.tva-note {
+  margin: 0 0 1rem;
+  text-align: center;
+  font-size: 1rem;
+  color: var(--ink-2);
+}
+.tva-note.is-on { color: var(--ink-3); font-size: 0.9375rem; }
+.tva-note + .tva-note { margin-top: -0.625rem; font-size: 0.875rem; }
+
+/* The sheet itself scrolls for its heading and search box; the app grid gets
+   whatever height is left, so the first row of apps is never below the fold. */
+.tva-sheet { display: flex; flex-direction: column; overflow: hidden; }
+.tva-list { min-height: 0; }
 
 /* Why there's nothing to show, when there's nothing to show — a blank sheet
    from across the room is indistinguishable from a broken one. */
@@ -3738,10 +3758,22 @@ html[data-theme="night"] select.inp {
 /* Side by side when there's room — a wall panel is wide, and scrolling to
    find the second speaker just to pause it was the whole complaint. Falls
    back to a single column (still scrollable) on a narrow viewport, or once
-   there are enough speakers that even two columns run long. */
+   there are enough speakers that even two columns run long.
+
+   flex-shrink: 0 is the point of this block. The favourites below are a
+   grid of however many stations are saved in the Sonos app — two dozen, on
+   a household that uses it — and as a flex sibling that asked for all of
+   that height, so the speakers got squashed and every card was clipped
+   just under its Play key. The volume keys, which is the one control you
+   reach for without looking, were below a fold that nothing announced. So:
+   the speakers take the height their cards actually need, the favourites
+   take what's left and scroll inside themselves, and the cap here is what
+   keeps a house with six speakers from pushing the favourites off the
+   bottom instead. */
 .sn-list {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   min-height: 0;
+  max-height: 62vh;
   overflow-y: auto;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
@@ -3754,9 +3786,18 @@ html[data-theme="night"] select.inp {
 .sn-head { display: flex; align-items: center; gap: 1rem; padding-right: 3rem; }
 .sn-app { flex: 0 0 auto; text-decoration: none; }
 
-/* One favourites list for the household, pinned below the speakers. */
-.sn-favs { border-top: 1px solid var(--hair); padding-top: 1.25rem; margin-top: 0.5rem; }
+/* One favourites list for the household, pinned below the speakers — and
+   the part that gives way when the sheet runs out of room, not the
+   speakers (see .sn-list). */
+.sn-favs {
+  flex: 1 1 auto;
+  min-height: 0;
+  border-top: 1px solid var(--hair);
+  padding-top: 1.25rem;
+  margin-top: 0.5rem;
+}
 .sn-favs .np-sec b { color: var(--ink); }
+.sn-favs .np-src-list { max-height: 26rem; }
 
 /* Room pills on the left, the play-together key hard right on the same line. */
 .sn-target-row {
@@ -3847,7 +3888,13 @@ html[data-theme="night"] select.inp {
 /* Reused overlay parts, sized down to fit stacked several-to-a-sheet rather
    than filling the whole card as they do in the single-speaker view. */
 .sn-speaker .np-transport { padding-top: 1rem; }
-.sn-speaker .np-vol { margin-top: 0.875rem; }
+/* Slightly tighter than the single-speaker overlay's: these sit in a grid
+   column, and at full size the − bar + % row wrapped onto two lines on a
+   narrow one, which put the bar back below the fold it was just rescued
+   from. */
+.sn-speaker .np-vol { margin-top: 0.875rem; gap: 0.5rem; }
+.sn-speaker .np-vbtn { width: var(--tap); height: var(--tap); font-size: 1.5rem; }
+.sn-speaker .np-pct { min-width: 2.75rem; font-size: 0.9375rem; }
 .sn-speaker .np-sources { margin-top: 1rem; }
 .sn-speaker .np-src-list { max-height: 9rem; }
 
@@ -4907,6 +4954,11 @@ html[data-theme="night"] select.inp {
   .np-sources { margin-top: 1rem; padding-top: 0.875rem; }
   .np-src-list { grid-template-columns: minmax(0, 1fr); overflow: visible; }
   .np-src { min-height: 3.5rem; }
+  /* …except the two lists that ARE their sheet's scroller. Those sheets are
+     height-bounded (the speakers and the TV's heading sit above them and
+     stay put), so a visible overflow here clips the list with nothing left
+     to scroll it with. */
+  .tva-list, .sn-favs .np-src-list { overflow-y: auto; }
 
   /* ---- the power-flow overlay: full-screen, diagram above the figures ---- */
 

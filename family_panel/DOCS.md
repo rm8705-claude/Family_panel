@@ -32,7 +32,8 @@ Everything else (`ha_tiles`, Magic Import, weather) can be added later.
 | `people` | The people whose calendars/chores/stars this panel tracks. Each needs a short `id` (used internally, e.g. `rohan`), a display `name`, and a `colour` (hex, used for their events/chores). Include one entry with `id: family` for shared/whole-family events. |
 | `ics_feeds` | One entry per Google Calendar to show. `name` is just a label, `url` is the calendar's secret ICS address, `person` must match one of the `id`s in `people`. |
 | `weather.lat` / `weather.lon` | Coordinates for the weather strip (Open-Meteo, no API key needed). Defaults to Brisbane. |
-| `ha_tiles` | Home Assistant entities to show as tiles. `entity` is the entity ID (find it under **Developer tools → States**), `label` is what's shown on the tile, `type` is one of `sensor`, `cover`, `switch`, `climate`, `media`, `camera_snapshot`, `presence`. Set `allow_action: true` to let the tile control the entity (open/close, play/pause, setpoint) — every action still needs a confirm tap. The `solar` type is the exception: it has no single `entity`, and instead takes `pv_power`, `load_power`, `grid_power`, `battery_power` and `battery_level` flat on the tile (see `deploy/SETUP.md`). |
+| `ha_tiles` | Home Assistant entities to show as tiles. `entity` is the entity ID (find it under **Developer tools → States**), `label` is what's shown on the tile, `type` is one of `sensor`, `cover`, `switch`, `climate`, `media`, `tv`, `fan`, `camera_snapshot`, `presence`, `bin_day`. Set `allow_action: true` to let the tile control the entity (open/close, play/pause, setpoint) — every action still needs a confirm tap. The `solar` type is the exception: it has no single `entity`, and instead takes `pv_power`, `load_power`, `grid_power`, `battery_power` and `battery_level` flat on the tile (see `deploy/SETUP.md`). |
+| `ha_tiles` — `tv` tiles | A television is `tv`, not `media`. The tile carries on/off, mute and an **Apps** key that opens the picker: every app the set reports, tap one and it starts. The picker opens whether the set is on or off — tapping an app on a sleeping TV switches it on, waits for it, and then opens the app. Switching a webOS set **on** over the network needs something that can wake it: enable Wake-on-LAN at the TV (**Settings → General → Mobile TV On**, or **Settings → Support → IP control settings** on 2025+ sets), or give the tile a `tv_mac` and add Home Assistant's **Wake on LAN** integration. |
 | `screen.sleep` / `screen.wake` | 24-hour `HH:MM`. Between these times the panel shows a dim night clock instead of the full dashboard. This is the *in-app* sleep overlay — it doesn't turn a tablet's backlight off; see SETUP.md for that. |
 | `admin_pin` | 4-digit PIN required for settings changes and redeeming stars. Change it from the default. |
 | `llm_provider` | `anthropic` (cloud, needs `anthropic_api_key`) or `lmstudio` (a local LLM server on your LAN, needs `lmstudio_base_url`) — used only for Magic Import. |
@@ -71,6 +72,16 @@ Everything else (`ha_tiles`, Magic Import, weather) can be added later.
    per-job last-sync times if something looks stale.
 
 ## Troubleshooting
+
+**The TV's Apps list is empty.** Re-pairing a television in Home Assistant
+adds a second entity beside the old one rather than replacing it, and only
+the one actually connected to the set reports its apps — the others look
+plausible and answer nothing. The panel finds the live one by itself where it
+can, and remembers the last list a set reported so the picker still works
+while the TV is off. When it genuinely has nothing, open
+`http://homeassistant.local:8080/api/ha/tv_candidates`: it lists every
+`media_player` with its app count, most apps first, and the top row is the
+entity to put in the tile.
 
 See the troubleshooting table at the end of `deploy/SETUP.md` in the
 family-panel repository — it covers the add-on not starting, blank camera
