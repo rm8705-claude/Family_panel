@@ -2720,14 +2720,29 @@
        rather than showing a blank sheet that leaves you guessing from three
        metres away. */
     if (!list.length) {
+      /* Off and never seen: not a fault, just a set that has never been on
+         while the panel was watching. A television lists its apps over a live
+         connection and nowhere else, so the remedy is one evening's use — say
+         that, and put the key to start it right here rather than sending
+         anyone back out to the tile. */
+      var fix = a.on
+        ? '<p class="muted2">The panel asked <span class="mono">' + esc(entity) + '</span>, ' +
+          'which is on but reports no apps.</p>'
+        : '<p>A television only lists its apps while it is on. Switch it on once — ' +
+          'from here, the tile, or the remote — and the panel will remember them ' +
+          'from then on, including while the set is off.</p>' +
+          (a.can_turn_on
+            ? '<p class="tva-none-act"><button class="btn" data-act="ha" data-entity="' +
+              esc(entity) + '" data-action="turn_on" data-label="Turn on">Turn on</button></p>'
+            : '<p class="muted2">Nothing here can switch it on, so it has to be the ' +
+              'remote. To fix that: enable Wake-on-LAN at the set, or give the tile a ' +
+              '<span class="mono">tv_mac</span> and add Home Assistant’s Wake on LAN ' +
+              'integration.</p>');
       return close +
         '<div class="np-label tva-head">' + esc(t.label) + '</div>' +
         '<div class="tva-none">' +
-        '<p><b>No app list from this TV.</b></p>' +
-        '<p class="muted2">The panel asked <span class="mono">' + esc(entity) + '</span>' +
-        (a.on ? ', which is on but reports no apps.'
-              : ", which is off, and it has never reported any while it was on.") +
-        '</p>' +
+        '<p><b>' + (a.on ? 'No app list from this TV.' : 'Nothing to show yet.') + '</b></p>' +
+        fix +
         '<p class="muted2">If this set has more than one entity in Home Assistant, ' +
         'only the one actually connected to it reports apps. Open ' +
         '<span class="mono">/api/ha/tv_candidates</span> on the panel to see ' +
