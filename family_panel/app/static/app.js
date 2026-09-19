@@ -401,7 +401,7 @@
     camIdx: 0,                  // which channel the grouped Cameras tile shows
     camLive: null,              // entity playing live on the camera wall
     sonosTarget: null,          // speaker a favourite starts on
-    sonosFilter: '',            // favourites search text, "Sonos" tile only
+    srcFilter: '',              // search text, Sonos favourites and the TV app list
     sonosPin: null,             // entity pinned to the grouped Home tile, or auto
     sonosShare: false,          // the play-together sheet is open
     sports: false,              // the standings sheet is open
@@ -1827,9 +1827,14 @@
       }
       case 'tv': {
         var tvOn = !!a.on;
-        var tvStarting = tvOn ? tvStartingSource(t) : null;
-        return '<div class="t-value mono" style="font-size:1.125rem">' + (tvOn ? 'On' : 'Off') + '</div>' +
-          '<div class="t-sub">' + esc(tvOn ? (tvStarting ? 'Starting ' + tvStarting : (a.source || 'On')) : 'Off') +
+        /* Also while it's off: an app tapped on a sleeping set wakes it, and
+           the thirty-odd seconds that takes are the ones where the tile has
+           to show something is happening. */
+        var tvStarting = tvStartingSource(t);
+        return '<div class="t-value mono" style="font-size:1.125rem">' +
+          (tvOn ? 'On' : (tvStarting ? 'Waking' : 'Off')) + '</div>' +
+          '<div class="t-sub">' +
+          esc(tvStarting ? 'Starting ' + tvStarting : (tvOn ? (a.source || 'On') : 'Off')) +
           (tvOn && a.muted ? ' <span class="t-badge">Muted</span>' : '') + '</div>';
       }
       case 'solar':
@@ -1859,7 +1864,16 @@
   function capitalise(s) { s = String(s || ''); return s.charAt(0).toUpperCase() + s.slice(1); }
 
   function tileActions(t) {
-    if (!t.allow_action) return '';
+    if (!t.allow_action) {
+      /* A television is the one tile where read-only reads as broken rather
+         than deliberate — the whole reason it's up there is the keys. Say
+         which line of config is missing instead of drawing a dead card. */
+      return t.type === 'tv'
+        ? '<div class="tile-acts"><span class="t-ro">Read-only — add ' +
+          '<span class="mono">allow_action: true</span> to this tile to switch ' +
+          'it on and pick an app.</span></div>'
+        : '';
+    }
     var b = [];
     var mk = function (action, label, value, cls) {
       return '<button class="t-btn' + (cls ? ' ' + cls : '') + '" data-act="ha" data-entity="' +
@@ -1878,14 +1892,16 @@
       if (tvOn) {
         var tvMuted = !!(t.attrs && t.attrs.muted);
         b.push(tvMuted ? mk('unmute', 'Unmute', null, 'osc') : mk('mute', 'Mute', null, 'osc'));
-        /* Shown whenever the set is on, even with no app list to open yet.
-           Gating it on source_list meant the one case that needed explaining
-           — wrong entity, so no apps — was also the case where the button
-           vanished without trace, which is unreadable from the wall. The
-           sheet says what went wrong instead. */
-        b.push('<button class="t-btn" data-act="tv-apps-open" data-entity="' +
-          esc(t.entity) + '">Apps</button>');
       }
+      /* On or off, and never gated on source_list. Gating it on the set
+         being on meant that walking up to a dark panel to put something on
+         took a tap, a wait and then a hunt — and gating it on the app list
+         meant the one case that needed explaining (wrong entity, so no
+         apps) was also the case where the button vanished without trace.
+         Tapping an app on a set that's off now wakes it and starts the app;
+         the sheet says so, and says what went wrong when nothing can. */
+      b.push('<button class="t-btn" data-act="tv-apps-open" data-entity="' +
+        esc(t.entity) + '">Apps</button>');
     }
     else if (t.type === 'switch') {
       b.push(t.state === 'on' ? mk('turn_off', 'Turn off') : mk('turn_on', 'Turn on'));
@@ -2653,49 +2669,64 @@
 
   /* --------------------------------------------------------------- tv apps */
   /* "Click one and go direct to it" — every app the TV itself reports,
-     picked straight off select_source, same HA action Sonos favourites
-     already use. Reuses the .np-src-list/.np-src grid wholesale rather than
-     inventing a second one: it is already exactly this — a scrollable grid
-     of "tap this, it starts playing" buttons — and this way the two never
-     drift apart in how a "starting" row looks. Only the search box is left
-     out; a TV's app list doesn't run long enough to need one, and the box's
-     own JS (patchSonosFilter) is Sonos-specific. */
+     started through launch_app, which is select_source with the waking of a
+     sleeping set wrapped around it. Reuses the .np-src-list/.np-src grid
+     wholesale rather than inventing a second one: it is already exactly
+     this — a scrollable grid of "tap this, it starts playing" buttons — and
+     this way the two never drift apart in how a "starting" row looks.
+
+     Two things the sheet used to get wrong, and the whole reason for the
+     shape below. It only opened on a set that was already on, and a set
+     that's off reports no apps — so the panel showed nothing to watch in
+     exactly the state where "put something on" is what you walked up to it
+     for. Now: the picker opens whether the set is on or off, the backend
+     remembers the list the TV last reported (see _tv_apps_map in ha.py), and
+     tapping an app wakes the set and starts it — one tap, the panel does the
+     waiting (see tv_launch). */
 
   /* Which app was just tapped, if the TV hasn't caught up yet — same shape
      and same reasoning as Sonos's startingSource(): a smart TV can take a
-     couple of seconds to actually switch, and the 15 s poll is slower still. */
+     couple of seconds to actually switch, longer from cold, and the 15 s
+     poll is slower still. Generous, because a set being woken from cold has
+     to boot before the app even starts. */
   function tvStartingSource(t) {
     var s = state.tvStart;
-    /* The launch is aimed at whichever entity carries the app list, which on
-       a re-paired set is a sibling of the tile's own (see apps_entity). The
-       pending note belongs to the tile either way, so match on both — keyed
-       on the tile alone, "Starting…" silently never appeared. */
+    /* Launches are aimed at the tile now — the backend works out which
+       entity actually has to take select_source — but a sheet left open
+       across a reload could still carry the old lender, so match on both. */
     if (!s || (s.entity !== t.entity && s.entity !== (t.attrs || {}).apps_entity)) return null;
-    if (Date.now() - s.at > 20000) { state.tvStart = null; return null; }
+    if (Date.now() - s.at > 45000) { state.tvStart = null; return null; }
     if ((t.attrs || {}).source === s.name) { state.tvStart = null; return null; }
     return s.name;
   }
+
+  /* The app list runs to forty-odd entries on a modern set — every app
+     installed on it, plus its inputs — so once it is past a screenful the
+     search box earns its place. Under that it is just a box in the way. */
+  var TVA_SEARCH_FROM = 12;
 
   function tvAppsHtml(entity) {
     var t = mediaTile(entity);
     var close = '<button class="close-x np-close" data-act="close-sheet" aria-label="Close">' +
       ICON.close + '</button>';
     if (!t) return close + '<div class="empty">That TV isn’t on the panel anymore.</div>';
-    var list = (t.attrs && t.attrs.source_list) || [];
-    /* An empty list is nearly always the tile pointing at the wrong entity.
-       A webOS TV that's been re-paired leaves duplicates behind — same set,
-       two or three entities — and only the one actually talking to the TV
-       reports its apps; the others sit there looking plausible and answer
-       nothing. Say so, and name what was asked, rather than showing a blank
-       sheet that leaves you guessing from three metres away. */
+    var a = t.attrs || {};
+    var list = a.source_list || [];
+    /* An empty list with nothing remembered either is nearly always the tile
+       pointing at the wrong entity. A webOS TV that's been re-paired leaves
+       duplicates behind — same set, two or three entities — and only the one
+       actually talking to the TV reports its apps; the others sit there
+       looking plausible and answer nothing. Say so, and name what was asked,
+       rather than showing a blank sheet that leaves you guessing from three
+       metres away. */
     if (!list.length) {
       return close +
         '<div class="np-label tva-head">' + esc(t.label) + '</div>' +
         '<div class="tva-none">' +
         '<p><b>No app list from this TV.</b></p>' +
         '<p class="muted2">The panel asked <span class="mono">' + esc(entity) + '</span>' +
-        (t.attrs && t.attrs.on ? ', which is on but reports no apps.'
-                               : ", which is off — a set that's off can't list its apps.") +
+        (a.on ? ', which is on but reports no apps.'
+              : ", which is off, and it has never reported any while it was on.") +
         '</p>' +
         '<p class="muted2">If this set has more than one entity in Home Assistant, ' +
         'only the one actually connected to it reports apps. Open ' +
@@ -2703,26 +2734,52 @@
         'which of them does, then point the tile at that one.</p>' +
         '</div>';
     }
-    var current = (t.attrs || {}).source;
+    var current = a.on ? a.source : null;
     var starting = tvStartingSource(t);
-    /* A re-paired set leaves duplicate entities behind and only one of them
-       carries the app list; the backend finds that one and lends it here.
-       The launch has to be aimed at the lender — the tile's own entity would
-       take select_source and silently do nothing, being the dead one. */
-    var launchAt = (t.attrs && t.attrs.apps_entity) || entity;
-    return '<button class="close-x np-close" data-act="close-sheet" aria-label="Close">' + ICON.close + '</button>' +
+    var q = (state.srcFilter || '').trim().toLowerCase();
+    var anyMatch = false;
+    var rows = list.map(function (name) {
+      var on = !starting && name === current;
+      var busy = starting === name;
+      var hide = q && name.toLowerCase().indexOf(q) === -1;
+      if (!hide) anyMatch = true;
+      /* Aimed at the tile, always. Which entity can actually take the call —
+         the tile's own, the sibling a re-pairing left behind, or the one
+         other television in the house — is the backend's to work out, and it
+         has to work it out again at launch time anyway now that the set may
+         be off when the tap lands. */
+      return '<button class="np-src' + (on ? ' is-on' : '') + (busy ? ' is-starting' : '') + '"' +
+        (hide ? ' hidden' : '') +
+        ' data-act="ha" data-entity="' + esc(entity) +
+        '" data-action="launch_app" data-value="' + esc(name) + '" data-vstr="1"' +
+        ' data-label="' + esc(name) + '">' +
+        '<span class="np-src-n">' + esc(name) + '</span>' +
+        (busy ? '<span class="np-src-tag">Starting…</span>'
+              : (on ? '<span class="np-src-tag is-on">Playing</span>' : '')) +
+        '</button>';
+    }).join('');
+    /* What a tap is about to do, said before it happens — from three metres
+       away "it's off" and "it's on and this will switch channel" are the
+       same picture otherwise. */
+    var note = a.on
+      ? (a.source ? 'On · ' + a.source : 'On')
+      : (a.can_turn_on
+          ? 'The TV is off — tapping an app switches it on and opens it.'
+          : 'The TV is off, and nothing here can switch it on. ' +
+            'Turn it on at the set, or give the tile its MAC address (tv_mac) ' +
+            'and add Home Assistant’s Wake on LAN integration.');
+    return close +
       '<div class="np-label tva-head">' + esc(t.label) + '</div>' +
-      '<div class="np-src-list">' + list.map(function (name) {
-        var on = !starting && name === current;
-        var busy = starting === name;
-        return '<button class="np-src' + (on ? ' is-on' : '') + (busy ? ' is-starting' : '') +
-          '" data-act="ha" data-entity="' + esc(launchAt) +
-          '" data-action="select_source" data-value="' + esc(name) + '" data-vstr="1" data-label="' + esc(name) + '">' +
-          '<span class="np-src-n">' + esc(name) + '</span>' +
-          (busy ? '<span class="np-src-tag">Starting…</span>'
-                : (on ? '<span class="np-src-tag is-on">Playing</span>' : '')) +
-          '</button>';
-      }).join('') + '</div>';
+      '<p class="tva-note' + (a.on ? ' is-on' : '') + '">' + esc(note) + '</p>' +
+      (a.apps_remembered && !a.on
+        ? '<p class="tva-note muted2">Last seen on this set — anything since uninstalled ' +
+          'simply won’t start.</p>'
+        : '') +
+      (list.length >= TVA_SEARCH_FROM ? srcSearchHtml('apps') : '') +
+      '<div class="np-src-list tva-list">' + rows +
+      '<p class="np-src-empty muted2"' + (q && !anyMatch ? '' : ' hidden') +
+      '>Nothing matches “' + esc(state.srcFilter) + '”.</p>' +
+      '</div>';
   }
 
   function openTvApps(entity) {
@@ -2736,7 +2793,14 @@
     if (!state.tvApps) return;
     var host = byId('tvAppsCard');
     if (!host) { state.tvApps = false; return; }
+    /* Same as the Sonos sheets: never rebuild under a reader who is mid-word
+       in the search box, and keep the list where they left it scrolled. */
+    if (document.activeElement && document.activeElement.classList.contains('np-src-search-in')) return;
+    var list = host.querySelector('.np-src-list');
+    var top = list ? list.scrollTop : 0;
     host.innerHTML = tvAppsHtml(state.tvAppsEntity);
+    list = host.querySelector('.np-src-list');
+    if (list && top) list.scrollTop = top;
   }
 
   function npArt(t) {
@@ -2785,18 +2849,20 @@
      (just hidden when it doesn't match) so a keystroke can hide/show them
      directly — see the 'input' handler — without rebuilding the sheet and
      losing focus and the keyboard along with it. */
-  function sonosSearchHtml() {
-    var q = state.sonosFilter || '';
+  function srcSearchHtml(what) {
+    var q = state.srcFilter || '';
+    what = what || 'favourites';
     /* The clear button is always in the markup (just hidden when there's no
-       query) rather than added/removed on the fly — patchSonosFilter only
+       query) rather than added/removed on the fly — patchSrcFilter only
        ever toggles what's already there so a keystroke never touches the
        input node itself and loses focus/the on-screen keyboard. */
     return '<div class="np-src-search">' +
       '<span class="np-src-search-ic">' + ICON.search + '</span>' +
       '<input class="inp np-src-search-in" type="text" inputmode="search" autocomplete="off" ' +
-      'enterkeyhint="search" placeholder="Search favourites" aria-label="Search favourites" ' +
-      'data-act="sonos-filter" value="' + esc(q) + '">' +
-      '<button class="np-src-search-x" data-act="sonos-filter-clear" aria-label="Clear search"' +
+      'enterkeyhint="search" placeholder="Search ' + esc(what) + '" ' +
+      'aria-label="Search ' + esc(what) + '" ' +
+      'data-act="src-filter" value="' + esc(q) + '">' +
+      '<button class="np-src-search-x" data-act="src-filter-clear" aria-label="Clear search"' +
       (q ? '' : ' hidden') + '>' + ICON.close + '</button>' +
       '</div>';
   }
@@ -2805,8 +2871,8 @@
      so the input never loses focus or the caret mid-word. Mirrors exactly
      what sourceRows() computes at render time, just applied to DOM already
      on screen instead of freshly generated markup. */
-  function patchSonosFilter(root) {
-    var q = (state.sonosFilter || '').trim().toLowerCase();
+  function patchSrcFilter(root) {
+    var q = (state.srcFilter || '').trim().toLowerCase();
     Array.prototype.forEach.call(root.querySelectorAll('.np-src-list'), function (list) {
       var any = false;
       Array.prototype.forEach.call(list.querySelectorAll('.np-src'), function (r) {
@@ -2818,7 +2884,7 @@
       var empty = list.querySelector('.np-src-empty');
       if (empty) {
         empty.hidden = !(q && !any);
-        empty.textContent = 'Nothing matches “' + (state.sonosFilter || '') + '”.';
+        empty.textContent = 'Nothing matches “' + (state.srcFilter || '') + '”.';
       }
     });
     Array.prototype.forEach.call(root.querySelectorAll('.np-src-search-x'), function (btn) {
@@ -2834,7 +2900,7 @@
       return '<p class="np-none muted2">Add favourites in the Sonos app and they’ll appear here.</p>';
     }
     var starting = startingSource(t);
-    var q = (state.sonosFilter || '').trim().toLowerCase();
+    var q = (state.srcFilter || '').trim().toLowerCase();
     var anyMatch = false;
     var rows = list.map(function (name) {
       var on = !starting && a.source === name;
@@ -2851,8 +2917,8 @@
               : (on ? '<span class="np-src-tag is-on">Playing</span>' : '')) +
         '</button>';
     }).join('');
-    return sonosSearchHtml() + '<div class="np-src-list">' + rows +
-      '<p class="np-src-empty muted2"' + (q && !anyMatch ? '' : ' hidden') + '>Nothing matches “' + esc(state.sonosFilter) + '”.</p>' +
+    return srcSearchHtml() + '<div class="np-src-list">' + rows +
+      '<p class="np-src-empty muted2"' + (q && !anyMatch ? '' : ' hidden') + '>Nothing matches “' + esc(state.srcFilter) + '”.</p>' +
       '</div>';
   }
 
@@ -2926,7 +2992,7 @@
     if (!host) { state.np = null; return; }
     /* A rebuild while the reader is mid-search would replace the input node
        under their finger — the caret and the on-screen keyboard would both
-       go. patchSonosFilter already keeps the visible list correct without
+       go. patchSrcFilter already keeps the visible list correct without
        one; a real rebuild picks back up as soon as they tap away (the
        document-wide focusout -> renderCatchUp already does that). */
     if (document.activeElement && document.activeElement.classList.contains('np-src-search-in')) return;
@@ -4084,7 +4150,7 @@
     stopLiveCameras();          // before innerHTML='', so the src is blanked
     state.camLive = null;
     state.sonosTarget = null;
-    state.sonosFilter = '';
+    state.srcFilter = '';
     host.innerHTML = '';
     state.np = null;
     state.climate = false;
@@ -4105,7 +4171,7 @@
     stopLiveCameras();          // one sheet replacing another must not leak
     state.camLive = null;
     state.sonosTarget = null;
-    state.sonosFilter = '';
+    state.srcFilter = '';
 
     state.np = null;
     state.climate = false;
@@ -5526,8 +5592,9 @@
   function haSend(btn, quiet) {
     var body = { entity: btn.dataset.entity, action: btn.dataset.action };
     if (btn.dataset.value !== undefined && btn.dataset.value !== '') {
-      /* select_source carries a favourite's name — the only string value in
-         the contract, so it must not go through Number(). */
+      /* select_source and launch_app carry a name — a Sonos favourite, or a
+         TV app — and are the only string values in the contract, so they
+         must not go through Number(). */
       body.value = btn.dataset.vstr === '1' ? btn.dataset.value : Number(btn.dataset.value);
     }
     act(POST('/api/ha/action', body), function () {
@@ -5564,7 +5631,7 @@
         if (attr === 'percentage' && t.attrs.percentage > 0) { t.attrs.on = true; t.state = 'on'; }
         render();
       }
-    } else if (action === 'select_source') {
+    } else if (action === 'select_source' || action === 'launch_app') {
       /* Shared by Sonos favourites and the TV app picker — both slots are set
          unconditionally and each consumer (startingSource/tvStartingSource)
          checks its own entity, so the one that doesn't apply here is just
@@ -5599,8 +5666,8 @@
       btn.disabled = true;
       btn.classList.add('is-busy');
     }
-    haSend(btn, !!attr || action === 'select_source' || playPause ||
-      action === 'join' || action === 'unjoin');
+    haSend(btn, !!attr || action === 'select_source' || action === 'launch_app' ||
+      playPause || action === 'join' || action === 'unjoin');
   }
 
   /* ------------------------------------------------------- event delegation */
@@ -5828,12 +5895,12 @@
         setSonosPin(el.dataset.entity);
         renderSoon();
         break;
-      case 'sonos-filter-clear': {
-        state.sonosFilter = '';
-        var root = el.closest('.np, .sn-sheet');
+      case 'src-filter-clear': {
+        state.srcFilter = '';
+        var root = el.closest('.np, .sn-sheet, .tva-sheet');
         var input = root && root.querySelector('.np-src-search-in');
         if (input) input.value = '';
-        if (root) patchSonosFilter(root);
+        if (root) patchSrcFilter(root);
         break;
       }
       case 'weather-open': openWeatherSheet(); break;
@@ -5877,9 +5944,9 @@
       if (h) h.textContent = e.target.value ? fmtDMY(e.target.value) : '';
     }
     if (e.target && e.target.classList && e.target.classList.contains('np-src-search-in')) {
-      state.sonosFilter = e.target.value;
-      var root = e.target.closest('.np, .sn-sheet');
-      if (root) patchSonosFilter(root);
+      state.srcFilter = e.target.value;
+      var root = e.target.closest('.np, .sn-sheet, .tva-sheet');
+      if (root) patchSrcFilter(root);
     }
   });
 
@@ -6986,11 +7053,14 @@
       },
       {
         entity: 'media_player.living_room_tv', label: 'TV', type: 'tv', allow_action: true,
-        state: 'on', attrs: { on: true, source: 'Netflix', muted: false, source_list: [
+        state: 'on', attrs: {
+          on: true, source: 'Netflix', muted: false, can_turn_on: true,
+          apps_remembered: false, source_list: [
           'Netflix', 'Disney+', 'Prime Video', 'Stan.', 'Apple Music', 'YouTube',
           'ABC iview', 'SBS on Demand', '7plus', '9Now', 'Kayo', 'Live TV',
           'HDMI 2', 'HDMI 3', 'PS5 Game Console', 'Web Browser'
-        ] }
+          ]
+        }
       },
       {
         entity: 'media_player.living_sonos', label: 'Lounge', type: 'media', allow_action: true,
@@ -7768,6 +7838,14 @@
       else if (body.action === 'oscillate_off') tile.attrs.oscillating = false;
       else if (body.action === 'mute') tile.attrs.muted = true;
       else if (body.action === 'unmute') tile.attrs.muted = false;
+      /* The TV app picker: one tap puts the app on, switching the set on
+         first when it's off — the real backend does the waiting in a thread
+         (tv_launch in ha.py), the demo just arrives. */
+      else if (body.action === 'launch_app') {
+        tile.attrs.on = true;
+        tile.state = 'on';
+        tile.attrs.source = String(body.value == null ? '' : body.value);
+      }
       /* the favourites list: picking one starts that station or playlist */
       else if (body.action === 'select_source') {
         var src = String(body.value == null ? '' : body.value);
