@@ -538,6 +538,24 @@ def tv_apps_entity(tile: dict) -> str:
     return helper.get("apps_entity") or tile["entity"]
 
 
+def _tv_watch(tile: dict, target: str) -> list[str]:
+    """Every entity of this set worth asking "are you up yet?".
+
+    Which of them answers first depends on which one the tile names, and the
+    household shouldn't have to pick the tile entity on that basis: the one
+    that carries the apps can be the slow one (an LG's own entity reads
+    `unavailable` until it has reconnected) and the one that can wake the set
+    is usually the quick one. So ask all three — the tile's, the app list's,
+    and whatever the wake was aimed at — and take the first sign of life.
+    """
+    helper = (db.get_json_setting("ha:tv_apps") or {}).get(tile.get("entity")) or {}
+    out = []
+    for e in (target, tile.get("entity"), helper.get("on_entity")):
+        if e and e not in out:
+            out.append(e)
+    return out
+
+
 def tv_launch(tile: dict, source) -> bool:
     """Put an app on the television, switching the set on first if it is off.
 
@@ -551,8 +569,7 @@ def tv_launch(tile: dict, source) -> bool:
     if not name:
         raise ValueError("No app was named")
     target = tv_apps_entity(tile)
-    # Both of the set's entities count as "is it up?" — see _tv_any_on.
-    watch = [target] if target == tile["entity"] else [target, tile["entity"]]
+    watch = _tv_watch(tile, target)
     if _tv_any_on(watch):
         call_action(target, "select_source", name)
         return True
