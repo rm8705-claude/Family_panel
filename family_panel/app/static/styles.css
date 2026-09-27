@@ -728,7 +728,13 @@ ul, ol { list-style: none; }
      edge unreachable. On any height where the column doesn't fit, this
      scrolls instead of silently clipping. */
   overflow-y: auto;
-  padding: 2rem 1.5rem 1.25rem;
+  /* The busy bar is pinned to the right edge, so the right padding has to
+     clear it or the tabs and Settings run underneath and get clipped. Its
+     width is fixed-ish, but allowed to grow on a 1920 panel where the root
+     font is 16 px rather than the 1280 tablet's floor of 11 px. */
+  --busy-w: clamp(13px, 1.15rem, 18px);
+  --busy-gutter: calc(4px + var(--busy-w) + 0.625rem);
+  padding: 2rem var(--busy-gutter) 1.25rem 1.5rem;
   border-right: 1px solid var(--hair);
   background: var(--rail-bg);
 }
@@ -738,8 +744,7 @@ ul, ol { list-style: none; }
    segment per person, its length proportional to how much that person has on
    today, their initial set into it. Discrete pills with gaps, never a
    continuous ramp, so it reads as four quantities rather than as a scale
-   belonging to the time spine beside it — and the spine's now-arrow is held
-   back short of it so the two are never visually joined.
+   belonging to the time spine beside it.
 
    A person with nothing on keeps a short faded stub: the family always reads
    as whole, the quiet ones just recede. */
@@ -748,9 +753,7 @@ ul, ol { list-style: none; }
   top: 1.5rem;
   bottom: 1.5rem;
   right: 4px;
-  /* fixed-ish, but allowed to grow on a 1920 panel where the root font is
-     16 px rather than the 1280 tablet's floor of 11 px */
-  width: clamp(13px, 1.15rem, 18px);
+  width: var(--busy-w);
   display: flex;
   flex-direction: column;
   gap: 5px;
@@ -904,9 +907,6 @@ ul, ol { list-style: none; }
 .spine-now {
   position: absolute;
   left: 3.25rem;
-  /* clear of the busy bar on the rail edge — the arrow points into the
-     schedule, not at the family's pills */
-  right: 1.75rem;
   height: 0;
   /* No transition and no will-change: renderSpine() throws this element away
      and builds a new one every tick, so there was never an old value to
@@ -923,27 +923,9 @@ ul, ol { list-style: none; }
   background: var(--ink);
 }
 
-.spine-now::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: -1px;
-  width: 100%;
-  height: 2px;
-  background: var(--ink);
-}
-
-/* the arrow head points into the schedule — "now ─▶" */
-.spine-now::after {
-  content: '';
-  position: absolute;
-  right: -1px;
-  top: -4px;
-  border: 5px solid transparent;
-  border-left: 6px solid var(--ink);
-  border-right: 0;
-}
-
+/* No line or arrow head off the knob any more: pointing sideways at nothing,
+   it landed on the busy bar and read as "now → whoever's pill is there". The
+   knob on the spine is the marker; the time sits beside it. */
 .spine-now-time {
   position: absolute;
   left: 0.625rem;
@@ -953,6 +935,7 @@ ul, ol { list-style: none; }
   font-size: 0.8125rem;
   font-weight: 600;
   letter-spacing: 0.02em;
+  white-space: nowrap;
   background: var(--rail-bg);
   padding: 0 0.4375rem;
 }
@@ -4486,7 +4469,7 @@ html[data-theme="night"] select.inp {
 
 @media (max-width: 1500px) {
   :root { --rail: 17.5rem; --side: 22rem; }
-  .rail { padding: 1.25rem 1rem 1rem; }
+  .rail { padding: 1.25rem var(--busy-gutter) 1rem 1rem; }
   .stage { padding: 1rem; }
   .rail-day { font-size: 8rem; }
   .imp-ev { grid-template-columns: var(--tap) minmax(0, 1fr) 10rem; }
