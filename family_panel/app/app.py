@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.20.0"
+APP_VERSION = "0.21.0"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -928,6 +928,20 @@ def api_ha_action():
             return jsonify({"error": "Unknown tile"}), 404
     elif not tile.get("allow_action"):
         return jsonify({"error": "Actions are not enabled for this tile"}), 403
+    # Joining pulls other speakers into this one's group, so each of them has
+    # to be a speaker on the panel that is allowed to be driven, not just the
+    # one the call is aimed at.
+    if body.get("action") == "join":
+        media = {t.get("entity"): t for t in CONFIG.get("ha_tiles", []) or []
+                 if t.get("type") == "media"}
+        members = ha.join_members(body.get("value"))
+        if not members:
+            return jsonify({"error": "No speaker to join"}), 400
+        for m in members:
+            if m not in media:
+                return jsonify({"error": f"Unknown speaker {m}"}), 404
+            if not media[m].get("allow_action"):
+                return jsonify({"error": f"{media[m].get('label') or m} is read-only"}), 403
     try:
         # A television's Turn on is not a plain service call — which entity
         # (or whether a magic packet) can actually do it varies by house.

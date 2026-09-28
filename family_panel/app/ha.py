@@ -399,9 +399,10 @@ ACTIONS = {
                           lambda v: {"source": str(v)}),
         # "join" is called ON the speaker whose audio should spread — HA's
         # own semantics, not the speaker being added — with v = the entity
-        # being brought into its group. "unjoin" is called on the speaker
+        # being brought into its group, or a list of them ("Everywhere" adds
+        # every other room in one call). "unjoin" is called on the speaker
         # leaving and takes no value.
-        "join": ("media_player", "join", lambda v: {"group_members": [str(v)]}),
+        "join": ("media_player", "join", lambda v: {"group_members": join_members(v)}),
         "unjoin": ("media_player", "unjoin", lambda v: {}),
         # tv tiles. turn_on only reaches a set that is listening while "off":
         # on webOS that means Wake-on-LAN turned on at the TV, otherwise HA
@@ -423,6 +424,12 @@ ACTIONS = {
         "oscillate_off": ("fan", "oscillate", lambda v: {"oscillating": False}),
     },
 }
+
+
+def join_members(value) -> list[str]:
+    """The rooms a join brings in: one entity id, or a list of them."""
+    members = value if isinstance(value, list) else [value]
+    return [str(m) for m in members if m]
 
 
 def call_action(entity: str, action: str, value=None) -> None:

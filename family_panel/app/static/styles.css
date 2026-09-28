@@ -3789,32 +3789,72 @@ html[data-theme="night"] select.inp {
 .sn-favs .np-sec b { color: var(--ink); }
 .sn-favs .np-src-list { max-height: 26rem; }
 
-/* Room pills on the left, the play-together key hard right on the same line. */
+/* Room pills on the left, the grouping keys hard right on the same line —
+   or on the next one when the room names are long. */
 .sn-target-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.75rem;
   margin-bottom: 0.75rem;
 }
 .sn-target-row .sn-target { margin-bottom: 0; flex: 1 1 auto; }
 
-.sn-share {
-  flex: 0 0 auto;
+/* Everywhere / Just <room> / Pick rooms: a segmented row, the one that is
+   true right now filled in. */
+.sn-where { flex: 0 0 auto; display: flex; gap: 0.375rem; }
+.sn-wbtn {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
   min-height: var(--tap);
   padding: 0 0.875rem;
-  border: 1px solid var(--fill);
+  border: 1px solid var(--hair);
   border-radius: var(--radius-s);
-  background: var(--fill);
-  color: var(--on-fill);
+  background: var(--card);
+  color: var(--ink);
   font-family: var(--sans);
   font-size: 0.9375rem;
   font-weight: 600;
 }
-.sn-share svg { width: 1.125rem; height: 1.125rem; display: block; }
-.sn-share.is-on { background: var(--hero); border-color: var(--hero); }
+.sn-wbtn svg { width: 1.125rem; height: 1.125rem; display: block; }
+.sn-wbtn.is-on { background: var(--hero); border-color: var(--hero); color: var(--on-fill); }
+.sn-wbtn.is-more { color: var(--ink-2); font-weight: 500; }
+
+/* A group card spans the grid, so its per-room rows have room for a bar. */
+.sn-group { grid-column: 1 / -1; }
+.sn-rooms {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--hair);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.sn-room { display: flex; align-items: center; gap: 0.75rem; }
+.sn-room-n {
+  flex: 0 0 7rem;
+  min-width: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sn-room .np-vol { flex: 1 1 auto; margin-top: 0; gap: 0.5rem; }
+.sn-room .np-vbtn { width: 2.5rem; height: 2.5rem; font-size: 1.25rem; }
+.sn-room .np-bar { height: 0.875rem; }
+.sn-room .np-pct { min-width: 2.75rem; font-size: 0.875rem; }
+.sn-leave {
+  flex: 0 0 auto;
+  min-height: 2.5rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius-s);
+  background: var(--card);
+  color: var(--ink-2);
+  font-size: 0.875rem;
+}
 
 .sn-target { display: flex; flex-wrap: wrap; gap: 0.375rem; margin-bottom: 0.75rem; }
 .sn-tgt {

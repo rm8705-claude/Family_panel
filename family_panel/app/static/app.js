@@ -2474,6 +2474,10 @@
         (off ? '' : tileActions(only)) + '</div>';
     }
     var playing = list.filter(function (t) { return t.attrs && t.attrs.playing; });
+    /* two rooms playing one song together is one thing playing, not two */
+    var playingGroups = sonosGroups(list).filter(function (g) {
+      return g.some(function (t) { return t.attrs && t.attrs.playing; });
+    }).length;
     var pinned = list.filter(function (t) { return t.entity === state.sonosPin; })[0];
     var primary = pinned || playing[0] ||
       list.filter(function (t) { return t.attrs && t.attrs.title; })[0] || list[0];
@@ -2486,9 +2490,9 @@
         '" aria-label="Show ' + esc(next.label) + ' instead">' + ICON.swap + '</button>') +
       '</div>' +
       '<div class="t-value mono" style="font-size:1rem">' +
-      esc(playing.length > 1 ? playing.length + ' playing' : (playing.length ? 'Playing' : 'Paused')) +
+      esc(playingGroups > 1 ? playingGroups + ' playing' : (playing.length ? 'Playing' : 'Paused')) +
       '</div>' +
-      '<div class="t-sub">' + esc(primary.label) + ' · ' + esc(a.title || 'Nothing playing') +
+      '<div class="t-sub">' + esc(groupName(sonosGroupOf(primary, list))) + ' · ' + esc(a.title || 'Nothing playing') +
       (a.artist ? ' · ' + esc(a.artist) : '') + '</div>' +
       '</div>';
   }
@@ -2512,10 +2516,13 @@
   function sonosFavouritesHtml(list) {
     var target = sonosTarget(list);
     if (!target) return '';
-    /* Room pills and the play-together key share one row, directly under the
+    /* Room pills and the grouping keys share one row, directly under the
        "Play something on X" heading. Grouping used to be a button at the foot
        of each speaker card, where the card list's own scroll hid it — the one
-       control you go looking for was the one you had to find first. */
+       control you go looking for was the one you had to find first. Then it
+       was one key to a second sheet with a switch per room; "put it on
+       everywhere" and "just in here" are the two things actually wanted, so
+       they are one tap each, and Pick rooms is the second sheet for the rest. */
     var row = list.length < 2 ? '' :
       '<div class="sn-target-row">' +
       '<div class="sn-target">' + list.map(function (t) {
@@ -2523,18 +2530,12 @@
           '" data-act="sonos-target" data-entity="' + esc(t.entity) + '">' +
           esc(t.label) + '</button>';
       }).join('') + '</div>' +
-      sonosShareBtnHtml(list) +
+      sonosWhereHtml(list) +
       '</div>';
     return '<div class="np-sources sn-favs">' +
       '<div class="np-sec">Play something' +
       (list.length > 1 ? ' on <b>' + esc(target.label) + '</b>' : '') + '</div>' +
       row + sourceRows(target) + '</div>';
-  }
-
-  function sonosShareBtnHtml(list) {
-    var together = list.some(function (t) { return groupedWith(t, list).length; });
-    return '<button class="sn-share' + (together ? ' is-on' : '') + '" data-act="sonos-share">' +
-      ICON.together + '<span>' + (together ? 'Playing together' : 'Play together') + '</span></button>';
   }
 
   function sonosSheetHtml() {
@@ -2552,8 +2553,162 @@
       'S.browser_fallback_url=https%3A%2F%2Fplay.google.com%2Fstore%2Fapps%2Fdetails%3Fid%3Dcom.sonos.acr2;end">' +
       'Open Sonos app</a>' +
       '</div>' +
-      '<div class="sn-list">' + list.map(function (t) { return sonosSpeakerCard(t, list); }).join('') + '</div>' +
+      '<div class="sn-list">' + sonosGroups(list).map(function (g) {
+        return g.length > 1 ? sonosGroupCard(g, list) : sonosSpeakerCard(g[0], list);
+      }).join('') + '</div>' +
       sonosFavouritesHtml(list);
+  }
+
+  /* The speakers as Sonos has them grouped: one list per group, the group's
+     coordinator first (HA lists it first in group_members), a speaker on its
+     own as a group of one. Otherwise panel order, so cards don't reshuffle
+     as things start and stop. */
+  function sonosGroups(list) {
+    var seen = {};
+    var out = [];
+    list.forEach(function (t) {
+      if (seen[t.entity]) return;
+      var order = (t.attrs || {}).group_members || [];
+      var rank = function (x) { var i = order.indexOf(x.entity); return i === -1 ? 999 : i; };
+      var g = [t].concat(groupedWith(t, list)).filter(function (x) { return !seen[x.entity]; });
+      g.sort(function (x, y) { return rank(x) - rank(y); });
+      g.forEach(function (x) { seen[x.entity] = true; });
+      out.push(g);
+    });
+    return out;
+  }
+
+  /* The group a speaker is in, coordinator first — itself alone if none. */
+  function sonosGroupOf(t, list) {
+    return sonosGroups(list).filter(function (g) { return g.indexOf(t) !== -1; })[0] || [t];
+  }
+
+  function groupName(g) {
+    return g.map(function (t) { return t.label; }).join(' + ');
+  }
+
+  /* Rooms playing together are one card: what's playing, one set of
+     transport keys aimed at the coordinator, one volume for the whole group,
+     and a slim row per room to balance it or take it out of the group. The
+     old layout drew a full card per room with its own Play/Pause, which made
+     two rooms playing one song look like two things playing. */
+  function sonosGroupCard(g, list) {
+    var lead = g[0];
+    var a = lead.attrs || {};
+    var playing = !!a.playing;
+    var starting = startingSource(lead);
+    var can = g.every(function (t) { return t.allow_action; });
+    var key = 'group:' + g.map(function (t) { return t.entity; }).join(',');
+    var gvol = volOf(key);
+    var btn = function (action, label, cls) {
+      return '<button class="' + cls + '" data-act="ha" data-entity="' + esc(lead.entity) +
+        '" data-action="' + action + '" data-label="' + esc(label) + '" aria-label="' + esc(label) + '">';
+    };
+    var out = '<div class="sn-speaker sn-group' + (playing ? ' is-playing' : '') + '">' +
+      '<div class="sn-sp-head"><div class="sn-sp-art">' + npArt(lead) + '</div>' +
+      '<div class="sn-sp-info">' +
+      '<div class="sn-sp-name">' + esc(groupName(g)) + ' · ' +
+      (starting ? 'Starting' : (playing ? 'Now playing' : 'Paused')) + '</div>' +
+      '<div class="sn-sp-title">' + esc(starting ? starting : (a.title || 'Nothing playing')) + '</div>' +
+      '<div class="sn-sp-artist">' + esc(starting ? 'Starting…' : (a.artist || (a.source || '—'))) + '</div>' +
+      '</div></div>';
+    if (!can) {
+      return out + '<p class="muted2 np-ro">One of these speakers is read-only on the panel.</p></div>';
+    }
+    out += '<div class="np-transport">' +
+      btn('previous', 'Previous track', 'np-skip') + ICON.prev + '</button>' +
+      btn(playing ? 'pause' : 'play', playing ? 'Pause' : 'Play', 'np-play') +
+      (playing ? ICON.pause : ICON.play) + '<span>' + (playing ? 'Pause' : 'Play') + '</span></button>' +
+      btn('next', 'Next track', 'np-skip') + ICON.next + '</button>' +
+      '</div>';
+    if (gvol != null) out += volRowHtml(key, gvol, 'Group volume');
+    out += '<div class="sn-rooms">' + g.map(function (t) {
+      var v = (t.attrs || {}).volume;
+      return '<div class="sn-room">' +
+        '<span class="sn-room-n">' + esc(t.label) + '</span>' +
+        (typeof v === 'number' ? volRowHtml(t.entity, Math.max(0, Math.min(1, v)), t.label + ' volume') : '') +
+        '<button class="sn-leave" data-act="ha" data-entity="' + esc(t.entity) + '" data-action="unjoin"' +
+        ' data-label="' + esc(t.label) + '" aria-label="Take ' + esc(t.label) + ' out of the group">Leave</button>' +
+        '</div>';
+    }).join('') + '</div>';
+    return out + '</div>';
+  }
+
+  /* − bar + % for one speaker or a whole group. The keys go through
+     vol-step rather than a baked-in volume_set, so a group steps every
+     speaker in it by the same amount. */
+  function volRowHtml(key, vol, label) {
+    var pct = Math.round(vol * 100);
+    return '<div class="np-vol">' +
+      '<button class="np-vbtn" data-act="vol-step" data-entity="' + esc(key) + '" data-dir="-1" aria-label="' + esc(label) + ' down">−</button>' +
+      '<div class="np-bar" data-act="np-seek" data-entity="' + esc(key) + '" role="slider" tabindex="0" ' +
+      'aria-label="' + esc(label) + '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '">' +
+      '<i style="width:' + pct + '%"></i></div>' +
+      '<button class="np-vbtn" data-act="vol-step" data-entity="' + esc(key) + '" data-dir="1" aria-label="' + esc(label) + ' up">+</button>' +
+      '<span class="np-pct mono">' + pct + '%</span></div>';
+  }
+
+  /* Where the playing starts from when rooms are pulled together: the group
+     of the room picked in the pills if that's playing, else whatever is,
+     else the picked room. Always that group's coordinator, since join is
+     called on the speaker whose audio spreads. */
+  function sonosLeader(list) {
+    var target = sonosTarget(list);
+    if (!target) return null;
+    var from = (target.attrs || {}).playing ? target :
+      (list.filter(function (t) { return (t.attrs || {}).playing; })[0] || target);
+    return sonosGroupOf(from, list)[0];
+  }
+
+  /* "Everywhere": every other room into the leader's group, one call. */
+  function sonosEverywhere() {
+    var list = mediaTiles();
+    var lead = sonosLeader(list);
+    if (!lead) return;
+    var inGroup = sonosGroupOf(lead, list);
+    var add = list.filter(function (t) { return inGroup.indexOf(t) === -1 && t.allow_action; })
+      .map(function (t) { return t.entity; });
+    if (!add.length) return;
+    regroup(function (all) { applyGroupLocally(all, 'join', lead.entity, add); });
+    render();
+    groupSend([{ entity: lead.entity, action: 'join', value: add }]);
+  }
+
+  /* "Just <room>": the picked room keeps playing, every other room in its
+     group is taken out. */
+  function sonosJustHere() {
+    var list = mediaTiles();
+    var target = sonosTarget(list);
+    if (!target) return;
+    var others = groupedWith(target, list);
+    if (!others.length) return;
+    regroup(function (all) {
+      others.forEach(function (o) { applyGroupLocally(all, 'unjoin', o.entity); });
+    });
+    render();
+    groupSend(others.map(function (o) { return { entity: o.entity, action: 'unjoin' }; }));
+  }
+
+  function groupSend(calls) {
+    Promise.all(calls.map(function (c) { return act(POST('/api/ha/action', c)); })).then(function (res) {
+      if (res.every(Boolean)) { reloadHaAfterTap(); return; }
+      holds = holds.filter(function (h) { return h.attr !== 'group_members'; });
+      loadHa().then(renderSoon);
+    });
+  }
+
+  function sonosWhereHtml(list) {
+    var target = sonosTarget(list);
+    var groups = sonosGroups(list);
+    var all = groups.length === 1;
+    var alone = !groupedWith(target, list).length;
+    return '<div class="sn-where">' +
+      '<button class="sn-wbtn' + (all ? ' is-on' : '') + '" data-act="sonos-all" aria-pressed="' + all + '">' +
+      ICON.together + '<span>Everywhere</span></button>' +
+      '<button class="sn-wbtn' + (alone ? ' is-on' : '') + '" data-act="sonos-only" aria-pressed="' + alone + '">' +
+      '<span>Just ' + esc(target.label) + '</span></button>' +
+      '<button class="sn-wbtn is-more" data-act="sonos-share">Pick rooms</button>' +
+      '</div>';
   }
 
   /* Which other configured speakers this one is currently synced with —
@@ -2566,8 +2721,8 @@
   }
 
   /* The play-together sheet: what is playing, where it is playing from, and a
-     switch per room. Reached from the key beside the room pills — see
-     sonosShareBtnHtml. join is called ON the speaker whose audio spreads (the
+     switch per room. Reached from Pick rooms beside the room pills — see
+     sonosWhereHtml. join is called ON the speaker whose audio spreads (the
      leader), with the room being added as the value; unjoin is called on the
      room leaving. Getting those two round the wrong way is the easy mistake,
      so the row builds each direction explicitly. */
@@ -2631,23 +2786,33 @@
     var lead = find(entity);
     if (!lead || !lead.attrs) return;
     if (action === 'join') {
-      var follower = find(value);
-      if (!follower || !follower.attrs) return;
-      /* Added to whatever group the leader already has: a third room joining
+      /* value is one room or a list of them ("Everywhere"). They are added
+         to whatever group the leader already has: a third room joining
          mustn't drop the second from the picture. */
-      var members = (lead.attrs.group_members || []).filter(function (e) {
-        return e !== lead.entity && e !== follower.entity;
+      [].concat(value).forEach(function (fe) {
+        var follower = find(fe);
+        if (!follower || !follower.attrs || follower === lead) return;
+        /* leaving whatever group it was in on the way */
+        (follower.attrs.group_members || []).forEach(function (e) {
+          var m = find(e);
+          if (m && m.attrs && m !== follower) {
+            m.attrs.group_members = (m.attrs.group_members || []).filter(function (x) { return x !== follower.entity; });
+          }
+        });
+        var members = (lead.attrs.group_members || []).filter(function (e) {
+          return e !== lead.entity && e !== follower.entity;
+        });
+        members = [lead.entity].concat(members, [follower.entity]);
+        members.forEach(function (e) {
+          var m = find(e);
+          if (m && m.attrs) m.attrs.group_members = members.slice();
+        });
+        follower.attrs.title = lead.attrs.title;
+        follower.attrs.artist = lead.attrs.artist;
+        follower.attrs.source = lead.attrs.source;
+        follower.attrs.playing = lead.attrs.playing;
+        follower.state = lead.state;
       });
-      members = [lead.entity].concat(members, [follower.entity]);
-      members.forEach(function (e) {
-        var m = find(e);
-        if (m && m.attrs) m.attrs.group_members = members.slice();
-      });
-      follower.attrs.title = lead.attrs.title;
-      follower.attrs.artist = lead.attrs.artist;
-      follower.attrs.source = lead.attrs.source;
-      follower.attrs.playing = lead.attrs.playing;
-      follower.state = lead.state;
       return;
     }
     (lead.attrs.group_members || []).forEach(function (e) {
@@ -2657,6 +2822,23 @@
       }
     });
     lead.attrs.group_members = [];
+  }
+
+  /* Apply a grouping change to the local copy and hold every speaker whose
+     group it changed, not just the one a call is aimed at: joining the
+     kitchen changes the lounge's list too. */
+  function regroup(fn) {
+    var tiles = (D.ha && D.ha.tiles) || [];
+    var before = {};
+    tiles.forEach(function (x) {
+      if (x.type === 'media' && x.attrs) before[x.entity] = (x.attrs.group_members || []).join('|');
+    });
+    fn(tiles);
+    tiles.forEach(function (x) {
+      if (x.type !== 'media' || !x.attrs) return;
+      var now = x.attrs.group_members || [];
+      if (now.join('|') !== before[x.entity]) holdValue(x.entity, 'group_members', now.slice());
+    });
   }
 
   function sonosSpeakerCard(t, list) {
@@ -3123,18 +3305,40 @@
     if (label) label.textContent = pct + '%';
   }
 
-  function volCommit(entity, v) {
-    var t = mediaTile(entity);
-    if (t && t.attrs) {
-      t.attrs.volume = v;
-      holdValue(entity, 'volume', v);
-    }
-    render();
-    act(POST('/api/ha/action', { entity: entity, action: 'volume_set', value: v }), function () {
-      reloadHaAfterTap();
-    }).then(function (ok) {
-      if (!ok) { dropHolds(entity); loadHa().then(renderSoon); }
+  /* A bar's key is a speaker's entity, or "group:a,b" for a group card's
+     volume, which is the average of its speakers'. */
+  function volSpeakers(key) {
+    var ents = key.indexOf('group:') === 0 ? key.slice(6).split(',') : [key];
+    return ents.map(mediaTile).filter(function (t) {
+      return t && t.attrs && typeof t.attrs.volume === 'number';
     });
+  }
+
+  function volOf(key) {
+    var sp = volSpeakers(key);
+    if (!sp.length) return null;
+    var sum = sp.reduce(function (n, t) { return n + Math.max(0, Math.min(1, t.attrs.volume)); }, 0);
+    return Math.round(sum / sp.length * 100) / 100;
+  }
+
+  /* Setting a group's volume moves every speaker in it by the same amount,
+     so a room that was set quieter than the others stays quieter. */
+  function volCommit(key, v) {
+    var sp = volSpeakers(key);
+    var from = volOf(key);
+    if (from == null) return;
+    var delta = v - from;
+    sp.forEach(function (t) {
+      var next = sp.length > 1 ? Math.round(Math.max(0, Math.min(1, t.attrs.volume + delta)) * 100) / 100 : v;
+      t.attrs.volume = next;
+      holdValue(t.entity, 'volume', next);
+      act(POST('/api/ha/action', { entity: t.entity, action: 'volume_set', value: next }), function () {
+        reloadHaAfterTap();
+      }).then(function (ok) {
+        if (!ok) { dropHolds(t.entity); loadHa().then(renderSoon); }
+      });
+    });
+    render();
   }
 
   document.addEventListener('pointerdown', function (e) {
@@ -3175,8 +3379,7 @@
   document.addEventListener('keydown', function (e) {
     var bar = e.target && e.target.classList && e.target.classList.contains('np-bar') ? e.target : null;
     if (!bar || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
-    var t = mediaTile(bar.dataset.entity);
-    var vol = t && t.attrs && typeof t.attrs.volume === 'number' ? t.attrs.volume : null;
+    var vol = volOf(bar.dataset.entity);
     if (vol == null) return;
     e.preventDefault();
     volCommit(bar.dataset.entity, volStep(vol, e.key === 'ArrowRight' ? 1 : -1));
@@ -5828,18 +6031,7 @@
         render();
       }
     } else if (action === 'join' || action === 'unjoin') {
-      /* Hold every speaker whose group this changed, not just the one the
-         call is aimed at — joining the kitchen changes the lounge's list too. */
-      var before = {};
-      tiles.forEach(function (x) {
-        if (x.type === 'media' && x.attrs) before[x.entity] = (x.attrs.group_members || []).join('|');
-      });
-      applyGroupLocally(tiles, action, btn.dataset.entity, btn.dataset.value);
-      tiles.forEach(function (x) {
-        if (x.type !== 'media' || !x.attrs) return;
-        var now = x.attrs.group_members || [];
-        if (now.join('|') !== before[x.entity]) holdValue(x.entity, 'group_members', now.slice());
-      });
+      regroup(function (all) { applyGroupLocally(all, action, btn.dataset.entity, btn.dataset.value); });
       render();
     } else if (action === 'oscillate_on' || action === 'oscillate_off') {
       if (t && t.attrs) { t.attrs.oscillating = action === 'oscillate_on'; render(); }
@@ -6082,6 +6274,13 @@
       case 'sports-open': openSportsSheet(); break;
       case 'tv-apps-open': openTvApps(el.dataset.entity); break;
       case 'sonos-share': openSonosShare(); break;
+      case 'sonos-all': sonosEverywhere(); break;
+      case 'sonos-only': sonosJustHere(); break;
+      case 'vol-step': {
+        var volFrom = volOf(el.dataset.entity);
+        if (volFrom != null) volCommit(el.dataset.entity, volStep(volFrom, Number(el.dataset.dir)));
+        break;
+      }
       case 'sonos-swap':
         setSonosPin(el.dataset.entity);
         renderSoon();
