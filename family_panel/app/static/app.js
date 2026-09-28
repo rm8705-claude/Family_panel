@@ -1155,6 +1155,11 @@
   }
 
   function renderSpine() {
+    /* The big clock is set here, beside the spine's own time, so the two can
+       never disagree: renderRail() repaints the spine whenever a load lands,
+       and when only the spine moved the clock sat a minute behind it until
+       the next 30 s tick. */
+    byId('railClock').textContent = clockNow();
     var el = byId('spine');
     var now = nowMins();
     var pct = spinePct(now);
@@ -6326,8 +6331,7 @@
   function tick() {
     var t = todayStr();
     if (t !== state.today) rollOver(t);      // midnight rollover
-    byId('railClock').textContent = clockNow();
-    renderSpine();
+    renderSpine();          // and the rail clock with it
     renderWeekNow();
     // refresh the now rule + past-event dimming
     if (!panelDark() && (state.view === 'today' || state.view === 'day')) {
