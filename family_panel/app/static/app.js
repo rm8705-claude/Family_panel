@@ -3869,7 +3869,8 @@
         (own ? ' data-long="list" data-id="' + esc(l.id) + '" data-name="' + esc(l.name) + '"' : '') +
         '>' + esc(l.name) + (own ? '<span class="hold-hint">hold to delete</span>' : '') + '</h2>' +
         '<span class="spacer"></span><span class="muted2" style="font-size:.75rem">' +
-        items.filter(function (i) { return !i.done; }).length + ' left</span></div>' +
+        items.filter(function (i) { return !i.done; }).length + ' left</span>' +
+        (l.kind === 'grocery' ? woolworthsLinkHtml() : '') + '</div>' +
         '<form class="list-add" data-act="add-item" data-list="' + esc(l.id) + '">' +
         '<input class="inp" type="text" placeholder="Add to ' + esc(l.name.toLowerCase()) + '" ' +
         'data-keep="list-' + esc(l.id) + '" autocomplete="off" enterkeyhint="done">' +
@@ -3952,6 +3953,15 @@
       groceryStrip() + '</div>';
   }
 
+  /* The panel keeps the list; the shopping itself happens in Woolworths. Same
+     intent URL trick as the Sonos key: opens the Woolworths app directly on
+     Android, and falls back to the website (not the Play Store) when the app
+     isn't installed — either one gets the order placed. */
+  function woolworthsLinkHtml() {
+    return '<a class="btn sm ww-app" href="intent://#Intent;package=com.woolworths;' +
+      'S.browser_fallback_url=https%3A%2F%2Fwww.woolworths.com.au%2F;end">Woolworths</a>';
+  }
+
   /* Compact grocery list under the meal grid — planning and shopping in one place. */
   function groceryStrip() {
     var ls = (D.lists && D.lists.lists) || [];
@@ -3960,7 +3970,8 @@
     var open = (g.items || []).filter(function (i) { return !i.done; });
     return '<section class="card" style="flex:0 0 auto;max-height:16rem"><div class="card-head">' +
       '<h2 class="lbl">' + esc(g.name) + '</h2><span class="spacer"></span>' +
-      '<span class="muted2" style="font-size:.75rem">' + plural(open.length, 'thing', 'things') + ' to get</span></div>' +
+      '<span class="muted2" style="font-size:.75rem">' + plural(open.length, 'thing', 'things') + ' to get</span>' +
+      woolworthsLinkHtml() + '</div>' +
       (open.length
         ? '<div class="scroll item-grid">' + open.map(function (it) {
             return '<div class="item" data-act="item" data-id="' + esc(it.id) +
