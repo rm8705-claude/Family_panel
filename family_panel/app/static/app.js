@@ -703,8 +703,65 @@
      backs off against this rather than hammering a house that is off. */
   var haFail = 0;
 
+  /* What a tap just asked for, held on screen until HA agrees. Sonos takes a
+     second or two to report a new volume or group, and a poll that lands in
+     between used to paint the old value back: the bar went up, dropped back,
+     then went up again, and a Play-together switch flipped itself off so it
+     read as a failed tap. A hold goes as soon as HA reports the same value,
+     and after HOLD_MS regardless, so a speaker that ignored the command still
+     shows the truth. */
+  var HOLD_MS = 8000;
+  var holds = [];
+
+  function holdValue(entity, attr, value) {
+    holds = holds.filter(function (h) { return !(h.entity === entity && h.attr === attr); });
+    holds.push({ entity: entity, attr: attr, value: value, until: Date.now() + HOLD_MS });
+  }
+
+  function dropHolds(entity) {
+    holds = holds.filter(function (h) { return h.entity !== entity; });
+  }
+
+  /* group_members lists the speaker itself when HA reports it and not when
+     the panel predicts it, so the speaker's own name is left out of both. */
+  function heldMatches(a, b, self) {
+    if (Array.isArray(a) || Array.isArray(b)) {
+      var norm = function (v) { return (v || []).filter(function (x) { return x !== self; }).sort(); };
+      a = norm(a); b = norm(b);
+      return a.length === b.length && a.every(function (x, i) { return x === b[i]; });
+    }
+    if (typeof a === 'number' && typeof b === 'number') return Math.abs(a - b) < 0.011;
+    return a === b;
+  }
+
+  function applyHolds(d) {
+    if (!holds.length || !d || !d.tiles) return;
+    var now = Date.now();
+    holds = holds.filter(function (h) {
+      if (now > h.until) return false;
+      var t = d.tiles.filter(function (x) { return x.entity === h.entity; })[0];
+      if (!t || !t.attrs) return false;
+      if (heldMatches(t.attrs[h.attr], h.value, h.entity)) return false;
+      t.attrs[h.attr] = Array.isArray(h.value) ? h.value.slice() : h.value;
+      return true;
+    });
+  }
+
+  /* Re-read the tiles after a tap: once when the backend's own post-action
+     refresh (1 s, see ha.refresh_after_action) should have landed, and once
+     after its second. A burst of taps restarts the clock. */
+  var haReloadTimers = [];
+
+  function reloadHaAfterTap() {
+    haReloadTimers.forEach(clearTimeout);
+    haReloadTimers = [1500, 3800].map(function (ms) {
+      return setTimeout(function () { loadHa().then(renderSoon); }, ms);
+    });
+  }
+
   function loadHa() {
     return GET('/api/ha/tiles').then(function (d) {
+      applyHolds(d);
       markOnline(); D.ha = d; haFail = 0; renderSyncNote();
       return d;
     }, function (err) {
@@ -2576,9 +2633,16 @@
     if (action === 'join') {
       var follower = find(value);
       if (!follower || !follower.attrs) return;
-      var members = [lead.entity, follower.entity];
-      lead.attrs.group_members = members.slice();
-      follower.attrs.group_members = members.slice();
+      /* Added to whatever group the leader already has: a third room joining
+         mustn't drop the second from the picture. */
+      var members = (lead.attrs.group_members || []).filter(function (e) {
+        return e !== lead.entity && e !== follower.entity;
+      });
+      members = [lead.entity].concat(members, [follower.entity]);
+      members.forEach(function (e) {
+        var m = find(e);
+        if (m && m.attrs) m.attrs.group_members = members.slice();
+      });
       follower.attrs.title = lead.attrs.title;
       follower.attrs.artist = lead.attrs.artist;
       follower.attrs.source = lead.attrs.source;
@@ -2656,6 +2720,7 @@
     if (!state.sonos) return;
     var host = byId('sonosCard');
     if (!host) { state.sonos = false; return; }
+    if (volDrag) return;                   // a finger is on a volume bar
     /* Same reasoning as updateNowPlaying(): don't yank the search box out
        from under a reader who is mid-word. */
     if (document.activeElement && document.activeElement.classList.contains('np-src-search-in')) return;
@@ -3010,6 +3075,7 @@
     if (!state.np) return;
     var host = byId('npCard');
     if (!host) { state.np = null; return; }
+    if (volDrag) return;                   // a finger is on a volume bar
     /* A rebuild while the reader is mid-search would replace the input node
        under their finger — the caret and the on-screen keyboard would both
        go. patchSrcFilter already keeps the visible list correct without
@@ -3027,16 +3093,96 @@
     if (list && top) list.scrollTop = top;
   }
 
-  function npSeek(el, clientX) {
-    var r = el.getBoundingClientRect();
-    if (!r.width) return;
-    var v = Math.round(Math.max(0, Math.min(1, (clientX - r.left) / r.width)) * 20) / 20;
-    var t = mediaTile(el.dataset.entity);
-    if (t && t.attrs) { t.attrs.volume = v; render(); }
-    act(POST('/api/ha/action', { entity: el.dataset.entity, action: 'volume_set', value: v }), function () {
-      setTimeout(function () { loadHa().then(renderSoon); }, 700);
+  /* The volume bar follows a finger: press anywhere on it and slide. Only
+     the bar itself is repainted while the finger is down, and one volume_set
+     goes when it lifts. A tap is just a drag that didn't move. The move and
+     lift are listened for on the document, and the bar is looked up again by
+     entity each time, so a poll that rebuilds the sheet mid-drag (it holds
+     off while one is running, see updateNowPlaying/updateSonosSheet) can't
+     strand the gesture. */
+  var volDrag = null;
+
+  function volBar(entity) {
+    return document.querySelector('.np-bar[data-entity="' + entity + '"]');
+  }
+
+  function volAt(bar, clientX) {
+    var r = bar.getBoundingClientRect();
+    if (!r.width) return null;
+    return Math.round(Math.max(0, Math.min(1, (clientX - r.left) / r.width)) * 100) / 100;
+  }
+
+  function volPaint(entity, v) {
+    var bar = volBar(entity);
+    if (!bar) return;
+    var pct = Math.round(v * 100);
+    var fill = bar.querySelector('i');
+    if (fill) fill.style.width = pct + '%';
+    bar.setAttribute('aria-valuenow', pct);
+    var label = bar.parentNode && bar.parentNode.querySelector('.np-pct');
+    if (label) label.textContent = pct + '%';
+  }
+
+  function volCommit(entity, v) {
+    var t = mediaTile(entity);
+    if (t && t.attrs) {
+      t.attrs.volume = v;
+      holdValue(entity, 'volume', v);
+    }
+    render();
+    act(POST('/api/ha/action', { entity: entity, action: 'volume_set', value: v }), function () {
+      reloadHaAfterTap();
+    }).then(function (ok) {
+      if (!ok) { dropHolds(entity); loadHa().then(renderSoon); }
     });
   }
+
+  document.addEventListener('pointerdown', function (e) {
+    var bar = e.target.closest ? e.target.closest('.np-bar[data-act="np-seek"]') : null;
+    if (!bar || volDrag) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    var v = volAt(bar, e.clientX);
+    if (v == null) return;
+    e.preventDefault();
+    volDrag = { entity: bar.dataset.entity, id: e.pointerId, v: v };
+    bar.classList.add('is-drag');
+    volPaint(volDrag.entity, v);
+  });
+
+  document.addEventListener('pointermove', function (e) {
+    if (!volDrag || e.pointerId !== volDrag.id) return;
+    var bar = volBar(volDrag.entity);
+    var v = bar && volAt(bar, e.clientX);
+    if (v == null) return;
+    volDrag.v = v;
+    volPaint(volDrag.entity, v);
+  });
+
+  function volEnd(e, commit) {
+    if (!volDrag || e.pointerId !== volDrag.id) return;
+    var d = volDrag;
+    volDrag = null;
+    var bar = volBar(d.entity);
+    if (bar) bar.classList.remove('is-drag');
+    if (commit) volCommit(d.entity, d.v);
+    else { updateNowPlaying(); updateSonosSheet(); }
+  }
+
+  document.addEventListener('pointerup', function (e) { volEnd(e, true); });
+  document.addEventListener('pointercancel', function (e) { volEnd(e, false); });
+
+  /* Left/right arrows on the focused bar, same 5 % step as the − and + keys. */
+  document.addEventListener('keydown', function (e) {
+    var bar = e.target && e.target.classList && e.target.classList.contains('np-bar') ? e.target : null;
+    if (!bar || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
+    var t = mediaTile(bar.dataset.entity);
+    var vol = t && t.attrs && typeof t.attrs.volume === 'number' ? t.attrs.volume : null;
+    if (vol == null) return;
+    e.preventDefault();
+    volCommit(bar.dataset.entity, volStep(vol, e.key === 'ArrowRight' ? 1 : -1));
+    var again = volBar(bar.dataset.entity);
+    if (again) again.focus();
+  });
 
   /* ----------------------------------------------------- whole-house aircon */
   /* The house has three Sensibos, so "the aircon panel" is not one tile — it
@@ -5619,8 +5765,17 @@
     }
     act(POST('/api/ha/action', body), function () {
       if (!quiet) toast('Sent.');
-      setTimeout(function () { loadHa().then(renderSoon); }, 700);
-    }).then(function () {
+      reloadHaAfterTap();
+    }).then(function (ok) {
+      /* It didn't go through, so stop holding what it would have done. */
+      if (!ok) {
+        if (body.action === 'join' || body.action === 'unjoin') {
+          holds = holds.filter(function (h) { return h.attr !== 'group_members'; });
+        } else {
+          dropHolds(body.entity);
+        }
+        loadHa().then(renderSoon);
+      }
       /* No-op if render() already replaced this node (the optimistic
          branches above, or a poll landing mid-flight) — only next/previous
          actually still needs the flag lifted. */
@@ -5648,6 +5803,7 @@
     if (attr) {                           // optimistic, so repeat taps step
       if (t && t.attrs) {
         t.attrs[attr] = Number(btn.dataset.value);
+        holdValue(t.entity, attr, t.attrs[attr]);
         if (attr === 'percentage' && t.attrs.percentage > 0) { t.attrs.on = true; t.state = 'on'; }
         render();
       }
@@ -5666,9 +5822,24 @@
       /* Optimistic, same reason as volume above: Sonos itself can take a
          couple of seconds to react, and with nothing changing on screen
          in the meantime a tap reads as dead rather than just slow. */
-      if (t && t.attrs) { t.attrs.playing = action === 'play'; render(); }
+      if (t && t.attrs) {
+        t.attrs.playing = action === 'play';
+        holdValue(t.entity, 'playing', t.attrs.playing);
+        render();
+      }
     } else if (action === 'join' || action === 'unjoin') {
+      /* Hold every speaker whose group this changed, not just the one the
+         call is aimed at — joining the kitchen changes the lounge's list too. */
+      var before = {};
+      tiles.forEach(function (x) {
+        if (x.type === 'media' && x.attrs) before[x.entity] = (x.attrs.group_members || []).join('|');
+      });
       applyGroupLocally(tiles, action, btn.dataset.entity, btn.dataset.value);
+      tiles.forEach(function (x) {
+        if (x.type !== 'media' || !x.attrs) return;
+        var now = x.attrs.group_members || [];
+        if (now.join('|') !== before[x.entity]) holdValue(x.entity, 'group_members', now.slice());
+      });
       render();
     } else if (action === 'oscillate_on' || action === 'oscillate_off') {
       if (t && t.attrs) { t.attrs.oscillating = action === 'oscillate_on'; render(); }
@@ -5926,10 +6097,6 @@
       case 'weather-open': openWeatherSheet(); break;
       case 'climate-open': openClimateSheet(); break;
       case 'solar-open': openSolarSheet(); break;
-      case 'np-seek':
-        if (e.detail) npSeek(el, e.clientX);   // detail 0 = keyboard, no point on the bar
-        break;
-
       case 'close-sheet': closeSheet(); break;
       case 'scrim': if (e.target === el) closeSheet(); break;
       default: break;

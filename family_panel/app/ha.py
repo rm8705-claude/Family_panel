@@ -438,6 +438,35 @@ def call_action(entity: str, action: str, value=None) -> None:
     r.raise_for_status()
 
 
+# /api/ha/tiles serves the poll cache, which is up to 15 s old. The panel
+# re-reads it just after a tap, so without this it got the state from before
+# the tap and the volume bar dropped back, then jumped up again on the next
+# poll; a Play-together switch flipped itself back off the same way. Sonos
+# takes a second or two to report a change, hence two reads. A burst of taps
+# (four clicks of +) restarts the clock rather than stacking up reads.
+_after_lock = threading.Lock()
+_after_timers: list[threading.Timer] = []
+AFTER_ACTION_DELAYS = (1.0, 3.0)
+
+
+def refresh_after_action(tiles: list[dict]) -> None:
+    def run():
+        try:
+            refresh(tiles)
+        except Exception as e:
+            log.debug("post-action refresh failed: %s", e)
+
+    with _after_lock:
+        for t in _after_timers:
+            t.cancel()
+        _after_timers.clear()
+        for delay in AFTER_ACTION_DELAYS:
+            t = threading.Timer(delay, run)
+            t.daemon = True
+            t.start()
+            _after_timers.append(t)
+
+
 def tv_turn_on(tile: dict) -> None:
     """Switch a television on by whatever route the house actually has.
 

@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.19.3"
+APP_VERSION = "0.20.0"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -942,6 +942,7 @@ def api_ha_action():
                             "waking": not ha.tv_launch(tile, body.get("value"))})
         else:
             ha.call_action(entity, body.get("action", ""), body.get("value"))
+        ha.refresh_after_action(CONFIG.get("ha_tiles", []) or [])
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except ha.NotConfigured:

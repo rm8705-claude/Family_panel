@@ -3572,7 +3572,11 @@ html[data-theme="night"] select.inp {
   overflow: hidden;
   min-width: 4rem;
 }
+/* Dragged, not just tapped (see volDrag in app.js): the page mustn't scroll
+   under the finger, and the fill tracks it with no easing to lag behind. */
+.np-bar { touch-action: none; cursor: pointer; }
 .np-bar i { display: block; height: 100%; background: var(--hero); }
+.np-bar.is-drag { border-color: var(--hero); }
 .np-pct { flex: 0 0 auto; font-size: 1rem; color: var(--ink-2); min-width: 3.25rem; text-align: right; }
 
 /* --- "Play something": the speaker's own favourites as big touch rows --- */
