@@ -14,6 +14,7 @@ import re
 import threading
 import time
 from datetime import datetime
+from urllib.parse import quote
 
 import requests
 
@@ -441,6 +442,85 @@ def call_action(entity: str, action: str, value=None) -> None:
     base, token = _api_base()
     body = {"entity_id": entity, **payload(value)}
     r = requests.post(f"{base}/services/{service_domain}/{service}",
+                      headers=_headers(token), json=body, timeout=TIMEOUT)
+    r.raise_for_status()
+
+
+# ------------------------------------------------------------ sonos extras
+# Flat, optional options (the Supervisor treats a nested schema block as
+# mandatory), with the defaults here so an install that never saved them
+# still gets them. sonos_night_cap: 0 turns the night limit off; an empty
+# sonos_tts turns announcements off.
+SONOS_DEFAULTS = {
+    "sonos_night_cap": 30,
+    "sonos_night_from": "20:00",
+    "sonos_night_to": "07:00",
+    "sonos_tts": "tts.google_translate_en_com",
+    "sonos_announce_volume": 40,
+}
+_HHMM = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
+
+
+def _opt(config: dict, key: str):
+    v = config.get(key)
+    return SONOS_DEFAULTS[key] if v is None else v
+
+
+def _minutes(hhmm: str, fallback: str) -> int:
+    m = _HHMM.match(str(hhmm or "").strip()) or _HHMM.match(fallback)
+    return int(m.group(1)) * 60 + int(m.group(2))
+
+
+def night_cap(config: dict, now: datetime | None = None) -> float | None:
+    """The Sonos volume limit (0-1) if the night window is on right now."""
+    try:
+        cap = int(_opt(config, "sonos_night_cap"))
+    except (TypeError, ValueError):
+        cap = SONOS_DEFAULTS["sonos_night_cap"]
+    if cap <= 0 or cap >= 100:
+        return None
+    start = _minutes(_opt(config, "sonos_night_from"), SONOS_DEFAULTS["sonos_night_from"])
+    end = _minutes(_opt(config, "sonos_night_to"), SONOS_DEFAULTS["sonos_night_to"])
+    now = now or datetime.now(db.LOCAL_TZ)
+    t = now.hour * 60 + now.minute
+    # 20:00 -> 07:00 runs over midnight; 13:00 -> 15:00 (a nap) doesn't.
+    inside = (start <= t < end) if start < end else (t >= start or t < end)
+    return cap / 100 if inside else None
+
+
+def sonos_info(config: dict) -> dict:
+    """What the panel needs to know about the night limit and announcements."""
+    cap = night_cap(config)
+    return {
+        "night_cap": cap,
+        "night_until": _opt(config, "sonos_night_to") if cap is not None else None,
+        "announce": bool(str(_opt(config, "sonos_tts") or "").strip()),
+    }
+
+
+def announce(config: dict, entities: list[str], message: str) -> None:
+    """Say `message` on the speakers over whatever is playing. Sonos lowers
+    the music for it and puts it back afterwards (announce: true)."""
+    tts = str(_opt(config, "sonos_tts") or "").strip()
+    if not tts:
+        raise ValueError("Announcements are turned off (sonos_tts is empty)")
+    try:
+        vol = int(_opt(config, "sonos_announce_volume"))
+    except (TypeError, ValueError):
+        vol = SONOS_DEFAULTS["sonos_announce_volume"]
+    vol = max(1, min(100, vol)) / 100
+    cap = night_cap(config)
+    if cap is not None:
+        vol = min(vol, cap)
+    base, token = _api_base()
+    body = {
+        "entity_id": entities,
+        "media_content_id": f"media-source://tts/{tts}?message={quote(message)}",
+        "media_content_type": "music",
+        "announce": True,
+        "extra": {"volume": vol},
+    }
+    r = requests.post(f"{base}/services/media_player/play_media",
                       headers=_headers(token), json=body, timeout=TIMEOUT)
     r.raise_for_status()
 

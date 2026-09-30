@@ -40,6 +40,12 @@ cfg = {
          "interval_s": 45, "idle_minutes": 3},
     ),
 }
+# Flat optional keys: copied only when set, so ha.py's defaults cover an
+# install that never saved them.
+for key in ("sonos_night_cap", "sonos_night_from", "sonos_night_to",
+            "sonos_tts", "sonos_announce_volume"):
+    if key in opts:
+        cfg[key] = opts[key]
 
 with open("/data/config.yaml", "w", encoding="utf-8") as f:
     f.write("# Generated on every start from the add-on Configuration tab. Do not edit by\n")

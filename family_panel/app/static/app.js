@@ -2486,6 +2486,10 @@
     return '<div class="tile is-sonos' + (off ? ' is-off' : '') + '"' +
       (off ? '' : ' data-act="sonos-open" role="button" tabindex="0"') + '>' +
       '<div class="t-label">Sonos<span class="t-count">' + list.length + '</span>' +
+      /* Pause every room without opening the sheet — "turn it all off,
+         we're heading out" is one tap from the Home screen. */
+      (off || !playingGroups ? '' : '<button class="t-swap t-pause" data-act="sonos-pause-all"' +
+        ' aria-label="Pause every room">' + ICON.pause + '</button>') +
       (off ? '' : '<button class="t-swap" data-act="sonos-swap" data-entity="' + esc(next.entity) +
         '" aria-label="Show ' + esc(next.label) + ' instead">' + ICON.swap + '</button>') +
       '</div>' +
@@ -2516,6 +2520,9 @@
   function sonosFavouritesHtml(list) {
     var target = sonosTarget(list);
     if (!target) return '';
+    /* A room in a group plays whatever its group plays, so a favourite goes
+       to the group's coordinator and the heading names the whole group. */
+    var group = sonosGroupOf(target, list);
     /* Room pills and the grouping keys share one row, directly under the
        "Play something on X" heading. Grouping used to be a button at the foot
        of each speaker card, where the card list's own scroll hid it — the one
@@ -2526,7 +2533,8 @@
     var row = list.length < 2 ? '' :
       '<div class="sn-target-row">' +
       '<div class="sn-target">' + list.map(function (t) {
-        return '<button class="sn-tgt' + (t.entity === target.entity ? ' is-on' : '') +
+        return '<button class="sn-tgt' + (t.entity === target.entity ? ' is-on' :
+          (group.indexOf(t) !== -1 ? ' is-with' : '')) +
           '" data-act="sonos-target" data-entity="' + esc(t.entity) + '">' +
           esc(t.label) + '</button>';
       }).join('') + '</div>' +
@@ -2534,8 +2542,8 @@
       '</div>';
     return '<div class="np-sources sn-favs">' +
       '<div class="np-sec">Play something' +
-      (list.length > 1 ? ' on <b>' + esc(target.label) + '</b>' : '') + '</div>' +
-      row + sourceRows(target) + '</div>';
+      (list.length > 1 ? ' on <b>' + esc(groupName(group)) + '</b>' : '') + '</div>' +
+      row + sourceRows(group[0]) + '</div>';
   }
 
   function sonosSheetHtml() {
@@ -2545,6 +2553,10 @@
       '<div class="sn-head">' +
       '<div class="np-label">Sonos · ' + list.length + ' speaker' + (list.length === 1 ? '' : 's') + '</div>' +
       '<span class="spacer"></span>' +
+      (D.ha && D.ha.sonos && D.ha.sonos.announce ?
+        '<button class="btn ghost sn-hbtn" data-act="announce-open">' + ICON.mic + '<span>Announce</span></button>' : '') +
+      (sonosPlayingGroups(list).length ?
+        '<button class="btn ghost sn-hbtn" data-act="sonos-pause-all">' + ICON.pause + '<span>Pause all</span></button>' : '') +
       /* Everything the panel deliberately doesn't do — grouping, alarms,
          search, EQ — lives in the Sonos app. The intent URL opens it
          directly on Android and falls back to the Play Store listing if it
@@ -2643,7 +2655,7 @@
       '<button class="np-vbtn" data-act="vol-step" data-entity="' + esc(key) + '" data-dir="-1" aria-label="' + esc(label) + ' down">−</button>' +
       '<div class="np-bar" data-act="np-seek" data-entity="' + esc(key) + '" role="slider" tabindex="0" ' +
       'aria-label="' + esc(label) + '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '">' +
-      '<i style="width:' + pct + '%"></i></div>' +
+      '<i style="width:' + pct + '%"></i>' + capMarkHtml() + '</div>' +
       '<button class="np-vbtn" data-act="vol-step" data-entity="' + esc(key) + '" data-dir="1" aria-label="' + esc(label) + ' up">+</button>' +
       '<span class="np-pct mono">' + pct + '%</span></div>';
   }
@@ -2689,11 +2701,94 @@
     groupSend(others.map(function (o) { return { entity: o.entity, action: 'unjoin' }; }));
   }
 
-  function groupSend(calls) {
+  /* Several calls from one tap. If any fails, the holds they made are let
+     go so the next read shows what really happened. */
+  function groupSend(calls, attrs) {
+    attrs = attrs || ['group_members', 'playing'];
     Promise.all(calls.map(function (c) { return act(POST('/api/ha/action', c)); })).then(function (res) {
       if (res.every(Boolean)) { reloadHaAfterTap(); return; }
-      holds = holds.filter(function (h) { return h.attr !== 'group_members'; });
+      holds = holds.filter(function (h) { return attrs.indexOf(h.attr) === -1; });
       loadHa().then(renderSoon);
+    });
+  }
+
+  function sonosPlayingGroups(list) {
+    return sonosGroups(list).filter(function (g) {
+      return g.some(function (t) { return (t.attrs || {}).playing; });
+    });
+  }
+
+  /* Pause every room: one pause per group, aimed at its coordinator. */
+  function sonosPauseAll() {
+    var groups = sonosPlayingGroups(mediaTiles()).filter(function (g) { return g[0].allow_action; });
+    if (!groups.length) return;
+    groups.forEach(function (g) {
+      g.forEach(function (t) {
+        t.attrs.playing = false;
+        holdValue(t.entity, 'playing', false);
+      });
+    });
+    render();
+    groupSend(groups.map(function (g) { return { entity: g[0].entity, action: 'pause' }; }), ['playing']);
+  }
+
+  /* ------------------------------------------------------------ announce */
+  /* A line read out over the music on the rooms picked — Sonos lowers what's
+     playing for it and brings it back after (see ha.announce). The presets
+     go in one tap; typing is for anything else. */
+  var ANNOUNCE_PRESETS = ['Dinner’s ready', 'Time to go', 'Shoes on, we’re leaving',
+    'Bedtime', 'Come here please'];
+
+  function announceHtml() {
+    var list = mediaTiles().filter(function (t) { return t.allow_action; });
+    var rooms = state.announceRooms || [];
+    return '<button class="close-x np-close" data-act="close-sheet" aria-label="Close">' + ICON.close + '</button>' +
+      '<button class="sh-back" data-act="sonos-open" aria-label="Back to the speakers">' + ICON.left + '</button>' +
+      '<div class="np-label sh-head">Announce</div>' +
+      '<p class="an-note muted2">Said over the music in the rooms picked, then the music carries on.</p>' +
+      '<div class="an-presets">' + ANNOUNCE_PRESETS.map(function (m) {
+        return '<button class="an-pre" data-act="announce-send" data-msg="' + esc(m) + '">' + esc(m) + '</button>';
+      }).join('') + '</div>' +
+      '<form class="an-form" data-act="announce-form">' +
+      '<input class="inp an-in" id="anText" type="text" maxlength="200" autocomplete="off" ' +
+      'enterkeyhint="send" placeholder="Or type what to say" aria-label="What to say">' +
+      '<button class="btn primary an-say" type="submit">Say it</button></form>' +
+      (list.length > 1 ?
+        '<div class="np-sec an-sec">Rooms</div><div class="sn-target an-rooms">' + list.map(function (t) {
+          var on = rooms.indexOf(t.entity) !== -1;
+          return '<button class="sn-tgt' + (on ? ' is-on' : '') + '" data-act="announce-room" data-entity="' +
+            esc(t.entity) + '" aria-pressed="' + on + '">' + esc(t.label) + '</button>';
+        }).join('') + '</div>' : '');
+  }
+
+  function openAnnounce() {
+    openSheet('<div class="sh-sheet an-sheet" id="announceCard" role="dialog" aria-modal="true" ' +
+      'aria-label="Announce">' + announceHtml() + '</div>', { raw: true, centre: true });
+    /* after openSheet, which clears the per-sheet state */
+    state.announceRooms = mediaTiles().filter(function (t) { return t.allow_action; })
+      .map(function (t) { return t.entity; });
+    var host = byId('announceCard');
+    if (host) host.innerHTML = announceHtml();
+  }
+
+  /* Toggled in place rather than rebuilt, so a half-typed message stays. */
+  function toggleAnnounceRoom(el) {
+    var rooms = state.announceRooms || [];
+    var i = rooms.indexOf(el.dataset.entity);
+    if (i === -1) rooms.push(el.dataset.entity); else rooms.splice(i, 1);
+    state.announceRooms = rooms;
+    el.classList.toggle('is-on', i === -1);
+    el.setAttribute('aria-pressed', String(i === -1));
+  }
+
+  function sendAnnounce(message) {
+    message = String(message || '').trim();
+    if (!message) { toast('Type something to say first.'); return; }
+    var rooms = state.announceRooms || [];
+    if (!rooms.length) { toast('Pick at least one room.'); return; }
+    act(POST('/api/ha/announce', { message: message, entities: rooms }), function () {
+      toast('Announced: “' + message + '”');
+      closeSheet();
     });
   }
 
@@ -2746,7 +2841,7 @@
       list.map(function (t) { return sonosShareRoomHtml(t, leader, list); }).join('') +
       '</div>' +
       '<p class="sh-note muted2">Rooms switched on play the same thing, in sync. ' +
-      'Switch one off and it keeps playing on its own.</p>';
+      'Switch one off and it stops playing there.</p>';
   }
 
   function sonosShareRoomHtml(t, leader, list) {
@@ -2822,6 +2917,9 @@
       }
     });
     lead.attrs.group_members = [];
+    /* Sonos stops a room that is taken out of a group; the rest carry on. */
+    lead.attrs.playing = false;
+    lead.state = 'paused';
   }
 
   /* Apply a grouping change to the local copy and hold every speaker whose
@@ -2831,13 +2929,16 @@
     var tiles = (D.ha && D.ha.tiles) || [];
     var before = {};
     tiles.forEach(function (x) {
-      if (x.type === 'media' && x.attrs) before[x.entity] = (x.attrs.group_members || []).join('|');
+      if (x.type === 'media' && x.attrs) {
+        before[x.entity] = { g: (x.attrs.group_members || []).join('|'), p: !!x.attrs.playing };
+      }
     });
     fn(tiles);
     tiles.forEach(function (x) {
-      if (x.type !== 'media' || !x.attrs) return;
+      if (x.type !== 'media' || !x.attrs || !before[x.entity]) return;
       var now = x.attrs.group_members || [];
-      if (now.join('|') !== before[x.entity]) holdValue(x.entity, 'group_members', now.slice());
+      if (now.join('|') !== before[x.entity].g) holdValue(x.entity, 'group_members', now.slice());
+      if (!!x.attrs.playing !== before[x.entity].p) holdValue(x.entity, 'playing', !!x.attrs.playing);
     });
   }
 
@@ -2873,15 +2974,7 @@
         (playing ? ICON.pause : ICON.play) + '<span>' + (playing ? 'Pause' : 'Play') + '</span></button>' +
         btn('next', 'Next track', null, 'np-skip') + ICON.next + '</button>' +
         '</div>';
-      if (vol != null) {
-        out += '<div class="np-vol">' +
-          btn('volume_set', 'Quieter', volStep(vol, -1), 'np-vbtn') + '−</button>' +
-          '<div class="np-bar" data-act="np-seek" data-entity="' + esc(t.entity) + '" role="slider" tabindex="0" ' +
-          'aria-label="Volume" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '">' +
-          '<i style="width:' + pct + '%"></i></div>' +
-          btn('volume_set', 'Louder', volStep(vol, +1), 'np-vbtn') + '+</button>' +
-          '<span class="np-pct mono">' + pct + '%</span></div>';
-      }
+      if (vol != null) out += volRowHtml(t.entity, vol, 'Volume');
     }
     return out + '</div>';
   }
@@ -3219,15 +3312,7 @@
         (playing ? ICON.pause : ICON.play) + '<span>' + (playing ? 'Pause' : 'Play') + '</span></button>' +
         btn('next', 'Next track', null, 'np-skip') + ICON.next + '</button>' +
         '</div>';
-      if (vol != null) {
-        out += '<div class="np-vol">' +
-          btn('volume_set', 'Quieter', volStep(vol, -1), 'np-vbtn') + '−</button>' +
-          '<div class="np-bar" data-act="np-seek" data-entity="' + esc(t.entity) + '" role="slider" tabindex="0" ' +
-          'aria-label="Volume" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '">' +
-          '<i style="width:' + pct + '%"></i></div>' +
-          btn('volume_set', 'Louder', volStep(vol, +1), 'np-vbtn') + '+</button>' +
-          '<span class="np-pct mono">' + pct + '%</span></div>';
-      }
+      if (vol != null) out += volRowHtml(t.entity, vol, 'Volume');
       /* The owner's ask: pick what to play without leaving the panel. The
          favourites are whatever is saved in the Sonos app. */
       out += '<div class="np-sources"><div class="np-sec">Play something</div>' + sourceRows(t) + '</div>';
@@ -3305,6 +3390,39 @@
     if (label) label.textContent = pct + '%';
   }
 
+  /* The night volume limit (0-1) while it's on, from the backend (see
+     ha.night_cap). The backend enforces it as well; this keeps the bar from
+     promising what the speaker won't do, and says why. */
+  function volCap() {
+    var s = D.ha && D.ha.sonos;
+    return s && typeof s.night_cap === 'number' ? s.night_cap : null;
+  }
+
+  var capToldAt = 0;
+  function capNote() {
+    if (Date.now() - capToldAt < 4000) return;
+    capToldAt = Date.now();
+    var s = D.ha.sonos;
+    toast('Night volume limit: ' + Math.round(s.night_cap * 100) + '%' +
+      (s.night_until ? ' until ' + s.night_until : '') + '.');
+  }
+
+  /* Where a change to v lands under the limit. Raising a speaker that is
+     already above it (set before the limit started) leaves it where it is
+     rather than pulling it down on a press of +; lowering one lands on the
+     limit, which is what the backend would do with it anyway. */
+  function capVol(v, cur) {
+    var cap = volCap();
+    if (cap == null || v <= cap) return v;
+    capNote();
+    return typeof cur === 'number' && cur > cap && v > cur ? cur : cap;
+  }
+
+  function capMarkHtml() {
+    var cap = volCap();
+    return cap == null ? '' : '<b class="np-cap" style="left:' + Math.round(cap * 100) + '%" aria-hidden="true"></b>';
+  }
+
   /* A bar's key is a speaker's entity, or "group:a,b" for a group card's
      volume, which is the average of its speakers'. */
   function volSpeakers(key) {
@@ -3330,6 +3448,8 @@
     var delta = v - from;
     sp.forEach(function (t) {
       var next = sp.length > 1 ? Math.round(Math.max(0, Math.min(1, t.attrs.volume + delta)) * 100) / 100 : v;
+      next = capVol(next, t.attrs.volume);
+      if (next === t.attrs.volume) return;
       t.attrs.volume = next;
       holdValue(t.entity, 'volume', next);
       act(POST('/api/ha/action', { entity: t.entity, action: 'volume_set', value: next }), function () {
@@ -3350,7 +3470,7 @@
     e.preventDefault();
     volDrag = { entity: bar.dataset.entity, id: e.pointerId, v: v };
     bar.classList.add('is-drag');
-    volPaint(volDrag.entity, v);
+    volPaint(volDrag.entity, Math.min(v, volCap() == null ? 1 : volCap()));
   });
 
   document.addEventListener('pointermove', function (e) {
@@ -3359,7 +3479,7 @@
     var v = bar && volAt(bar, e.clientX);
     if (v == null) return;
     volDrag.v = v;
-    volPaint(volDrag.entity, v);
+    volPaint(volDrag.entity, Math.min(v, volCap() == null ? 1 : volCap()));
   });
 
   function volEnd(e, commit) {
@@ -6003,6 +6123,10 @@
     var tiles = (D.ha && D.ha.tiles) || [];
     var t = tiles.filter(function (x) { return x.entity === btn.dataset.entity; })[0];
     var playPause = action === 'play' || action === 'pause';
+    if (action === 'volume_set' && t && t.type === 'media') {
+      var capped = capVol(Number(btn.dataset.value), t.attrs && t.attrs.volume);
+      btn.dataset.value = String(capped);
+    }
     if (attr) {                           // optimistic, so repeat taps step
       if (t && t.attrs) {
         t.attrs[attr] = Number(btn.dataset.value);
@@ -6275,6 +6399,10 @@
       case 'tv-apps-open': openTvApps(el.dataset.entity); break;
       case 'sonos-share': openSonosShare(); break;
       case 'sonos-all': sonosEverywhere(); break;
+      case 'sonos-pause-all': sonosPauseAll(); break;
+      case 'announce-open': openAnnounce(); break;
+      case 'announce-room': toggleAnnounceRoom(el); break;
+      case 'announce-send': sendAnnounce(el.dataset.msg); break;
       case 'sonos-only': sonosJustHere(); break;
       case 'vol-step': {
         var volFrom = volOf(el.dataset.entity);
@@ -6308,6 +6436,10 @@
     if (form.dataset.act === 'add-item') {
       e.preventDefault();
       addItem(form.dataset.list, form.querySelector('input'));
+    } else if (form.dataset.act === 'announce-form') {
+      e.preventDefault();
+      var said = byId('anText');
+      if (said) sendAnnounce(said.value);
     } else if (form.dataset.act === 'assist-send') {
       e.preventDefault();
       var box = byId('asText');
@@ -8184,8 +8316,12 @@
         temp.state = String(temp.attrs.value);
       }
       mockSolarDrift();
-      return { available: true, updated_at: new Date().toISOString(), tiles: M.tiles };
+      return { available: true, updated_at: new Date().toISOString(), tiles: M.tiles,
+        sonos: M.sonos || { night_cap: null, night_until: null, announce: true } };
     }
+
+    /* the demo has nothing to say it on, so it just agrees */
+    if (path === '/api/ha/announce') return { ok: true };
 
     if (path === '/api/ha/action') {
       var tile = M.tiles.filter(function (t) { return t.entity === body.entity; })[0];

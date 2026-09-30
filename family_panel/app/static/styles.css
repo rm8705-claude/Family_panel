@@ -1845,6 +1845,9 @@ ul, ol { list-style: none; }
 }
 .t-swap svg { width: 1.0625rem; height: 1.0625rem; display: block; }
 .t-swap:active { background: var(--card-2); color: var(--ink); }
+/* Pause-all sits just left of the swap key; the first one takes the push. */
+.t-pause + .t-swap { margin-left: 0.25rem; }
+.t-pause svg { width: 0.875rem; height: 0.875rem; }
 /* a read-out with no keys needs no width at all */
 .tile.is-climate { min-width: 8rem; }
 
@@ -3574,7 +3577,17 @@ html[data-theme="night"] select.inp {
 }
 /* Dragged, not just tapped (see volDrag in app.js): the page mustn't scroll
    under the finger, and the fill tracks it with no easing to lag behind. */
-.np-bar { touch-action: none; cursor: pointer; }
+.np-bar { touch-action: none; cursor: pointer; position: relative; }
+/* Where the night volume limit sits — the bar won't fill past it. */
+.np-cap {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--ink-2);
+  opacity: 0.55;
+}
 .np-bar i { display: block; height: 100%; background: var(--hero); }
 .np-bar.is-drag { border-color: var(--hero); }
 .np-pct { flex: 0 0 auto; font-size: 1rem; color: var(--ink-2); min-width: 3.25rem; text-align: right; }
@@ -3775,6 +3788,8 @@ html[data-theme="night"] select.inp {
 
 .sn-head { display: flex; align-items: center; gap: 1rem; padding-right: 3rem; }
 .sn-app { flex: 0 0 auto; text-decoration: none; }
+.sn-hbtn { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 0.5rem; }
+.sn-hbtn svg { width: 1rem; height: 1rem; display: block; }
 
 /* One favourites list for the household, pinned below the speakers — and
    the part that gives way when the sheet runs out of room, not the
@@ -3866,6 +3881,8 @@ html[data-theme="night"] select.inp {
   color: var(--ink-2);
   font-size: 0.875rem;
 }
+/* in the picked room's group: a favourite tapped now plays here too */
+.sn-tgt.is-with { border-color: var(--hero); color: var(--ink); }
 .sn-tgt.is-on {
   border-color: var(--hero);
   background: var(--chore-star-bg);
@@ -3917,14 +3934,21 @@ html[data-theme="night"] select.inp {
 
 /* Reused overlay parts, sized down to fit stacked several-to-a-sheet rather
    than filling the whole card as they do in the single-speaker view. */
-.sn-speaker .np-transport { padding-top: 1rem; }
+.sn-speaker .np-transport { padding-top: 1rem; gap: 0.5rem; }
+/* Three speakers side by side leave a card about 16rem wide: Play gives up
+   its fixed minimum and takes the room between the skip keys instead of
+   running out of the card. */
+.sn-speaker .np-play { min-width: 0; flex: 1 1 auto; padding: 0 1rem; justify-content: center; }
+.sn-speaker .np-skip { width: 3.5rem; }
+.sn-speaker .np-play svg { flex: 0 0 auto; }
 /* Slightly tighter than the single-speaker overlay's: these sit in a grid
    column, and at full size the − bar + % row wrapped onto two lines on a
    narrow one, which put the bar back below the fold it was just rescued
    from. */
-.sn-speaker .np-vol { margin-top: 0.875rem; gap: 0.5rem; }
-.sn-speaker .np-vbtn { width: var(--tap); height: var(--tap); font-size: 1.5rem; }
-.sn-speaker .np-pct { min-width: 2.75rem; font-size: 0.9375rem; }
+.sn-speaker .np-vol { margin-top: 0.875rem; gap: 0.375rem; }
+.sn-speaker .np-vbtn { width: 2.75rem; height: 2.75rem; font-size: 1.5rem; }
+.sn-speaker .np-pct { min-width: 2.5rem; font-size: 0.875rem; }
+.sn-speaker .np-bar { min-width: 2.5rem; }
 .sn-speaker .np-sources { margin-top: 1rem; }
 .sn-speaker .np-src-list { max-height: 9rem; }
 
@@ -4020,6 +4044,29 @@ html[data-theme="night"] select.inp {
 .sh-room.is-on .sh-sw i { transform: translateX(1.25rem); }
 
 .sh-note { margin-top: 1.25rem; font-size: 0.875rem; text-align: center; }
+
+/* ------------------------------------------------------------ announce --- */
+/* Same frame as the play-together sheet: presets that go in one tap, a box
+   for anything else, and which rooms hear it (all of them to start with). */
+.an-sheet { width: min(34rem, 92vw); }
+.an-note { text-align: center; margin: 1.75rem 0 1.25rem; font-size: 0.9375rem; }
+.an-presets { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center; }
+.an-pre {
+  min-height: var(--tap);
+  padding: 0 1rem;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius-s);
+  background: var(--card);
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 600;
+}
+.an-pre:active { background: var(--chore-star-bg); border-color: var(--hero); }
+.an-form { display: flex; gap: 0.5rem; margin-top: 1.25rem; }
+.an-in { flex: 1 1 auto; min-width: 0; }
+.an-say { flex: 0 0 auto; }
+.an-sec { margin-top: 1.25rem; }
+.an-rooms { margin-bottom: 0; }
 
 /* ------------------------------------------------------- power flow ------ */
 /* The solar overlay: a diamond of four nodes with the live arms carrying

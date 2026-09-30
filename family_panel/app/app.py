@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.21.0"
+APP_VERSION = "0.22.0"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -900,6 +900,7 @@ def api_ha_tiles():
         "available": available,
         "updated_at": cached.get("at"),
         "tiles": [shape(t) for t in tiles_cfg],
+        "sonos": ha.sonos_info(CONFIG),
     })
 
 
@@ -942,6 +943,19 @@ def api_ha_action():
                 return jsonify({"error": f"Unknown speaker {m}"}), 404
             if not media[m].get("allow_action"):
                 return jsonify({"error": f"{media[m].get('label') or m} is read-only"}), 403
+    # The night volume limit is enforced here, not only on the panel, so a
+    # stale page or a quick double-tap can't get past it.
+    capped = None
+    if (tile is not None and tile.get("type") == "media"
+            and body.get("action") == "volume_set"):
+        cap = ha.night_cap(CONFIG)
+        try:
+            asked = float(body.get("value"))
+        except (TypeError, ValueError):
+            return jsonify({"error": "Volume must be a number"}), 400
+        if cap is not None and asked > cap:
+            body["value"] = cap
+            capped = cap
     try:
         # A television's Turn on is not a plain service call — which entity
         # (or whether a magic packet) can actually do it varies by house.
@@ -957,6 +971,35 @@ def api_ha_action():
         else:
             ha.call_action(entity, body.get("action", ""), body.get("value"))
         ha.refresh_after_action(CONFIG.get("ha_tiles", []) or [])
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except ha.NotConfigured:
+        return jsonify({"error": "Home Assistant is not configured"}), 503
+    except Exception as e:
+        return jsonify({"error": f"Home Assistant did not respond ({e})"}), 502
+    return jsonify({"ok": True, "capped": capped})
+
+
+@app.post("/api/ha/announce")
+def api_ha_announce():
+    """Say a line on some or all of the speakers, over whatever is playing."""
+    import ha
+    body = request.get_json(force=True, silent=True) or {}
+    message = " ".join(str(body.get("message") or "").split())
+    if not message:
+        return jsonify({"error": "Nothing to say"}), 400
+    if len(message) > 200:
+        return jsonify({"error": "That's too long to announce (200 characters at most)"}), 400
+    speakers = {t.get("entity"): t for t in CONFIG.get("ha_tiles", []) or []
+                if t.get("type") == "media" and t.get("allow_action")}
+    wanted = body.get("entities") or list(speakers)
+    if not isinstance(wanted, list) or not wanted:
+        return jsonify({"error": "No speakers to announce on"}), 400
+    for e in wanted:
+        if e not in speakers:
+            return jsonify({"error": f"{e} is not a speaker the panel can use"}), 403
+    try:
+        ha.announce(CONFIG, [str(e) for e in wanted], message)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     except ha.NotConfigured:
