@@ -3790,6 +3790,7 @@ html[data-theme="night"] select.inp {
 .sn-app { flex: 0 0 auto; text-decoration: none; }
 .sn-hbtn { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 0.5rem; }
 .sn-hbtn svg { width: 1rem; height: 1rem; display: block; }
+.ww-app { flex: 0 0 auto; text-decoration: none; }
 
 /* One favourites list for the household, pinned below the speakers — and
    the part that gives way when the sheet runs out of room, not the
