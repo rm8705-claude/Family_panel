@@ -1,0 +1,9 @@
+Subject: Your order has shipped!
+From: noreply@bigstore.example.com
+
+Hi Rohan,
+
+Great news - your order #38112 (LEGO City Fire Station) has shipped and is on
+its way. Track your parcel using the link below.
+
+Thanks for shopping with us!

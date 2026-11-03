@@ -13,3 +13,6 @@ family_panel/app/data/
 # that already filled in. It is disposable, and a forgotten one would be
 # served as a real page under the immutable cache header.
 family_panel/app/static/index.test.html
+
+# pytest
+.pytest_cache/

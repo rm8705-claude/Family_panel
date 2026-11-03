@@ -1,0 +1,6 @@
+# Test-only. The shipped add-on installs requirements.txt alone — a wall
+# panel container has no use for pytest, and every dependency here still
+# had to be downloaded and (for pdfplumber/Pillow/anthropic) sometimes
+# compiled on the Pi's ARM chip on every single install.
+-r family_panel/app/requirements.txt
+pytest==9.1.1

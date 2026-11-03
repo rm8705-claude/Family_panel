@@ -1075,15 +1075,23 @@ ul, ol { list-style: none; }
 .today {
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--side);
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  /* The home tiles sit under the schedule only, not across both columns, so
+     the side column runs the full height and chores keeps every row it had.
+     The tile card is a fixed share of the screen (--ha-h): it takes the slack
+     the schedule always had under its last event. The last two rows are both
+     auto, so the dinner card stays at its own height and the tile card's
+     spare height lands beside chores, never as blank space in dinner. */
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto auto;
   grid-template-areas:
     "sched weather"
     "sched binday"
     "sched chores"
-    "tomorrow dinner"
-    "ha ha";
+    "tomorrow chores"
+    "ha chores"
+    "ha dinner";
   gap: 1rem;
   height: 100%;
+  --ha-h: 34vh;
 }
 
 .a-sched    { grid-area: sched; }
@@ -1111,7 +1119,7 @@ ul, ol { list-style: none; }
 }
 .a-tomorrow { grid-area: tomorrow; justify-content: center; padding-top: 0.875rem; padding-bottom: 0.875rem; }
 .a-dinner   { grid-area: dinner; }
-.a-ha       { grid-area: ha; padding: 0.875rem 1rem; }
+.a-ha       { grid-area: ha; padding: 0.875rem 1rem; height: var(--ha-h); position: relative; }
 
 /* countdown chips */
 
@@ -1725,39 +1733,71 @@ ul, ol { list-style: none; }
 
 /* -------------------------------------------------------------- HA row --- */
 
+/* Two rows of tiles, every one on screen — no sideways shelf. haCard() sets
+   --ha-cols to half the tile count (rounded up, wide tiles counting double)
+   so the tiles split evenly across both rows whatever config.yaml holds. */
 .ha-row {
-  display: flex;
-  gap: 0.75rem;
-  align-items: stretch;
-  overflow-x: auto;
+  display: grid;
+  grid-template-columns: repeat(var(--ha-cols, 5), minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 0.625rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
   scrollbar-width: none;
-  /* keep a sideways drag from turning into a browser back-swipe on the
-     tablet, and stop it rubber-banding the page */
-  overscroll-behavior-x: contain;
 }
 .ha-row::-webkit-scrollbar { display: none; }
+.ha-row > .tile { min-width: 0; min-height: 0; }
+/* the empty-state line has no tiles to share a grid with */
+.ha-row.is-empty { display: flex; align-items: center; }
+/* seven or more columns (a full house: TV, fan, sports and the rest) leaves
+   ~105 px a tile on a 1280 wall — the read-outs come down a size so the
+   aircon's "2 ON" and the room list still fit */
+.ha-row.is-dense { gap: 0.5rem; }
+.ha-row.is-dense > .tile { padding: 0.5rem 0.625rem; }
+.ha-row.is-dense .t-label { font-size: 0.75rem; letter-spacing: 0.06em; }
+.ha-row.is-dense .t-value { font-size: 1.5rem; }
+.ha-row.is-dense .t-sub { font-size: 0.8125rem; }
+.ha-row.is-dense .t-btn { padding: 0 0.25rem; font-size: 0.875rem; }
 
-/* The shelf fades on whichever side still has tiles in it — the same idiom
-   the chores list uses down its bottom edge. Classes come from paintShelf(). */
-.ha-row.can-x {
-  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 1.75rem,
-    #000 calc(100% - 1.75rem), transparent 100%);
-  mask-image: linear-gradient(90deg, transparent 0, #000 1.75rem,
-    #000 calc(100% - 1.75rem), transparent 100%);
+/* ---- arrange mode (Settings -> Arrange home tiles; app.js arrangeTap) ----
+   Tiles go dashed and inert — every tap is caught before any tile key sees
+   it, and their insides take no pointer at all. The picked tile lifts in
+   the fill colour. */
+.a-ha.is-arranging { outline: 2px dashed var(--fill); outline-offset: 3px; }
+.arr-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.625rem;
+  flex: 0 0 auto;
 }
-.ha-row.can-x.at-start {
-  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 1.75rem), transparent 100%);
-  mask-image: linear-gradient(90deg, #000 calc(100% - 1.75rem), transparent 100%);
+.arr-hint { flex: 1 1 auto; font-size: 0.9375rem; font-weight: 600; color: var(--ink-2); }
+.arr-bar .btn { min-height: var(--tap); }
+.a-ha.is-arranging .ha-row > [data-key] {
+  cursor: grab;
+  border-style: dashed;
+  border-color: var(--ink-3);
+  animation: arr-wiggle 1.6s ease-in-out infinite;
 }
-.ha-row.can-x.at-end {
-  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 1.75rem, #000 100%);
-  mask-image: linear-gradient(90deg, transparent 0, #000 1.75rem, #000 100%);
+.a-ha.is-arranging .ha-row > [data-key] * { pointer-events: none; }
+.a-ha.is-arranging .ha-row > [data-pick='1'] {
+  border: 2px solid var(--fill);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--fill) 35%, transparent), var(--lift);
+  animation: none;
+  transform: scale(0.97);
 }
-.ha-row.can-x.at-start.at-end { -webkit-mask-image: none; mask-image: none; }
+@keyframes arr-wiggle {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-0.6deg); }
+  75% { transform: rotate(0.6deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .a-ha.is-arranging .ha-row > [data-key] { animation: none; }
+}
 
 .tile {
-  flex: 1 1 0;
-  min-width: 9.5rem;
+  min-width: 0;
   border: 1px solid var(--card-edge);
   border-radius: var(--radius);
   background: var(--card);
@@ -1765,23 +1805,25 @@ ul, ol { list-style: none; }
   padding: 0.75rem 0.875rem;
   display: flex;
   flex-direction: column;
-  gap: 0.125rem;
-  min-height: 5.5rem;
+  gap: 0.25rem;
+  min-height: 0;
+  overflow: hidden;
 }
 
+/* sized to be read from across the room now the tiles have the height */
 .tile .t-label {
-  font-size: 0.75rem;
+  font-size: 0.875rem;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-2);
 }
-.tile .t-value { font-family: var(--mono); font-size: 1.375rem; font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; }
-.tile .t-sub { font-size: 0.8125rem; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile .t-value { font-family: var(--mono); font-size: 2rem; font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; }
+.tile .t-sub { font-size: 0.9375rem; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* wrap rather than squeeze: a narrow tile puts its second row of keys
    underneath (the fan's four, the media tile's three on a 1280 panel) */
-.tile-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 0.5rem; }
+.tile-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 0.25rem; }
 /* Why a tile has no keys, on the one tile where that reads as a fault —
    see tileActions() in app.js. */
 .t-ro { font-size: 0.8125rem; line-height: 1.4; color: var(--ink-3); }
@@ -1802,6 +1844,38 @@ ul, ol { list-style: none; }
   text-align: center;
 }
 
+/* on a tile the keys share the width evenly and are a size up from the
+   sheets' — the wall is read and tapped from further away */
+.tile .t-btn { flex-basis: 0; min-height: max(var(--tap), 3rem); font-size: 0.9375rem; }
+
+/* press feedback (app.js paintPresses): the key answers the tap at once —
+   filled while it is on its way, green when Home Assistant took it — so
+   nobody presses it again wondering whether it registered */
+[data-act='ha'][data-press] { transition: background-color 0.15s, border-color 0.15s, color 0.15s; }
+[data-act='ha'][data-press='sending'],
+[data-act='ha'][data-press='flash'] {
+  background: var(--fill);
+  border-color: var(--fill);
+  color: var(--on-fill);
+  opacity: 1;
+}
+[data-act='ha'][data-press='sending'] { animation: press-pulse 0.9s ease-in-out infinite alternate; }
+[data-act='ha'][data-press='done'] {
+  background: var(--ok);
+  border-color: var(--ok);
+  color: #fff;
+  opacity: 1;
+}
+[data-act='ha'][data-press='fail'] {
+  background: var(--card-2);
+  border-color: var(--warn);
+  color: var(--warn);
+}
+@keyframes press-pulse { from { opacity: 1; } to { opacity: 0.72; } }
+@media (prefers-reduced-motion: reduce) {
+  [data-act='ha'][data-press='sending'] { animation: none; }
+}
+
 /* a key waiting on something slow — the TV coming up, a track changing */
 .t-btn.is-busy { opacity: 0.5; }
 
@@ -1819,15 +1893,10 @@ ul, ol { list-style: none; }
 .vol-bar i { display: block; height: 100%; background: var(--hero); border-radius: 3px; }
 .vol-pct { font-family: var(--mono); font-size: 0.75rem; color: var(--ink-2); min-width: 2.5rem; text-align: right; }
 
-/* the two tiles carrying a row of keys ask for a bigger share of the row,
-   so a full house of tiles doesn't push their controls onto a second line */
-.tile.is-fan { min-width: 11.5rem; flex-grow: 1.3; }
-/* same reasoning once the TV is on: Turn off + Mute + Apps is three keys */
-.tile.is-tv { min-width: 12rem; flex-grow: 1.3; }
-/* the media tile is tap-anywhere-to-open, so it has to keep a strip that is
-   not a button — with three Sensibos in the row it was squeezed to the point
-   where its own keys covered the whole tile */
-.tile.is-media, .tile.is-sonos { min-width: 13rem; flex-grow: 1.4; }
+/* the fan (four keys) and the TV (three) take two columns, so their keys sit
+   in one row instead of a block a half-height tile has no room for */
+.tile.is-fan, .tile.is-tv { grid-column: span 2; }
+.tile.is-fan .tile-acts, .tile.is-tv .tile-acts { flex-wrap: nowrap; }
 
 /* Which speaker the grouped tile leads with, pinnable — see sonosTile() in
    app.js. Scoped to .is-sonos rather than the shared .t-label so every other
@@ -1848,11 +1917,9 @@ ul, ol { list-style: none; }
 /* Pause-all sits just left of the swap key; the first one takes the push. */
 .t-pause + .t-swap { margin-left: 0.25rem; }
 .t-pause svg { width: 0.875rem; height: 0.875rem; }
-/* a read-out with no keys needs no width at all */
-.tile.is-climate { min-width: 8rem; }
 
 /* ---- solar: read at 3 m, tap anywhere for the power-flow overlay ---- */
-.tile.is-solar { min-width: 12.5rem; flex-grow: 1.25; cursor: pointer; }
+.tile.is-solar { cursor: pointer; }
 .sol-main { display: flex; align-items: baseline; gap: 0.5rem; margin-top: 0.125rem; }
 .sol-sun { color: var(--ink-3); align-self: center; display: grid; place-items: center; }
 .sol-sun svg { width: 1.5rem; height: 1.5rem; display: block; }
@@ -1887,7 +1954,7 @@ ul, ol { list-style: none; }
    tap. Flags are emoji (see sports.py) — Android renders them, which is what
    the wall and the phones are. */
 
-.tile.is-sports { min-width: 13rem; flex-grow: 1.2; cursor: pointer; }
+.tile.is-sports { cursor: pointer; }
 .sp-line {
   display: flex;
   align-items: baseline;
@@ -2023,7 +2090,7 @@ ul, ol { list-style: none; }
    the tap target for the all-rooms sheet, which is where the controls live.
    Same card, same hairline, same quiet label as every other tile. */
 
-.tile.is-aircon { min-width: 11.5rem; flex-grow: 1.15; cursor: pointer; }
+.tile.is-aircon { cursor: pointer; }
 
 /* the channel/room count beside the tile's label — a hairline pill, not a
    notification badge; nothing here is asking to be answered */
@@ -2086,7 +2153,7 @@ ul, ol { list-style: none; }
 /* One tile, stepping through the channels on the same 10 s beat the snapshots
    refresh on, with the channel count in the corner. Tapping opens the wall. */
 
-.tile.is-cams { padding: 0; overflow: hidden; flex: 0 0 auto; width: 13rem; }
+.tile.is-cams { padding: 0; overflow: hidden; }
 .tile.is-cams img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .tile.is-cams .cam-wrap { position: relative; width: 100%; height: 100%; background: var(--cam-bg); }
 
@@ -2133,6 +2200,17 @@ ul, ol { list-style: none; }
   color: var(--warn);
   white-space: nowrap;
   padding-left: 0.25rem;
+}
+/* on the wall the tiles fill both grid rows, so the note rides on the card's
+   top edge as a badge rather than taking a third row of its own */
+.a-ha .ha-offline {
+  position: absolute;
+  top: -0.625rem;
+  right: 1rem;
+  padding: 0.125rem 0.625rem;
+  border: 1px solid var(--card-edge);
+  border-radius: 999px;
+  background: var(--card);
 }
 
 .presence-dot { width: 0.75rem; height: 0.75rem; border-radius: 50%; display: inline-block; }
@@ -4572,7 +4650,6 @@ html[data-theme="night"] select.inp {
   .spine { margin: 1rem 0 0.875rem; }
   .today { gap: 0.75rem; }
   .card { padding: 0.875rem 1rem; }
-  .tile { min-height: 5rem; }
 
   /* the weather card gives its height back to the chores list */
   .card.wx { padding: 0; }
@@ -4651,7 +4728,7 @@ html[data-theme="night"] select.inp {
   .dinner-name { font-size: 1.375rem; }
   .dinner-sub { font-size: 0.8125rem; }
   .a-ha { padding: 0.5rem 0.875rem; }
-  .tile { min-height: 4.5rem; padding: 0.5rem 0.75rem; }
+  .tile { padding: 0.625rem 0.875rem; }
   /* volume lives in the now-playing overlay on a short screen — the read-out
      and, now the row carries more tiles, the two steppers with it */
   .tile .vol-wrap { display: none; }
@@ -4693,6 +4770,29 @@ html[data-theme="night"] select.inp {
    past the rail's bottom edge with no way to reach them. Anything this short
    gets the same top-bar-and-bottom-tabs treatment portrait uses. The wall
    tablet is 800px tall in landscape, so it keeps the proper rail. */
+/* 1024x600: two rows of tiles in a third of 600 px is ~90 px a tile, so the
+   tiles drop a size and the aircon room list folds away (the tile still
+   opens the full climate sheet). Placed after the 820 block so it wins. */
+@media (max-height: 640px) {
+  .tile { padding: 0.4375rem 0.625rem; gap: 0.0625rem; }
+  .tile .t-label { font-size: 0.6875rem; }
+  .tile .t-value { font-size: 1.375rem; }
+  .tile .t-sub { font-size: 0.8125rem; }
+  .tile .t-btn { min-height: var(--tap); font-size: 0.8125rem; }
+  .tile.is-aircon .ac-rows { display: none; }
+}
+
+/* A narrow landscape screen (1024 wide) with a full house of tiles can't fit
+   seven columns: the tiles keep their two rows at a readable width and the
+   shelf scrolls sideways instead — only here, never on the 1280 wall. */
+@media (max-width: 1150px) and (orientation: landscape) and (min-width: 701px) and (min-height: 561px) {
+  .ha-row.is-dense {
+    grid-template-columns: repeat(var(--ha-cols, 7), 8.5rem);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+}
+
 @media (orientation: portrait), (max-width: 700px), (max-height: 560px) {
 
   /* the vw/vh clamp shrinks type to nothing on a phone: fix the base */
@@ -4901,12 +5001,15 @@ html[data-theme="night"] select.inp {
     gap: 0.625rem;
     overflow: visible;
   }
-  .tile { min-width: 0; }
+  .a-ha { height: auto; }
+  .ha-row { grid-auto-rows: auto; }
+  .ha-row > .tile { min-width: 0; min-height: 5rem; }
   /* the two tiles that carry a whole control panel get the full width */
   .tile.is-fan, .tile.is-media, .tile.is-sonos, .tile.is-solar, .tile.is-tv { min-width: 0; grid-column: span 2; }
   .tile.is-aircon { min-width: 0; }
   .tile.is-cams { grid-column: span 2; width: auto; height: 9rem; }
   .ha-offline { grid-column: span 2; }
+  .a-ha .ha-offline { position: static; border: 0; background: none; padding: 0 0 0 0.25rem; }
 
   /* ---- Week: one day per row ---- */
 

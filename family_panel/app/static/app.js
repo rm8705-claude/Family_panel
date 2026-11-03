@@ -383,6 +383,8 @@
   /* ------------------------------------------------------------ api layer - */
 
   var state = {
+    afterPin: '',               // what to open once a PIN is entered ('arrange')
+    arrange: null,              // arrange-tiles mode: {order:[key], pick, saving}
     view: 'today',
     cursor: todayStr(),         // day/week/month/meals navigation anchor
     today: todayStr(),
@@ -2248,13 +2250,105 @@
     openSheet(cameraGridHtml(), { raw: true, centre: true });
   }
 
+  /* ---------------------------------------------------- arrange home tiles -- */
+  /* Settings -> "Arrange home tiles" puts the Home card into arrange mode:
+     tile keys stop working (a tap must never switch something on by
+     accident), tap one tile then another and the two swap. Done saves the
+     order on the server (PUT /api/ha/order, admin PIN), so it survives a
+     browser reset and is the same on every screen. Grouped tiles (aircon,
+     cameras, Sonos) move as one — their key is the group's. */
+
+  function arrangeItems(items, order) {
+    if (!order || !order.length) return items;
+    var pos = {};
+    order.forEach(function (k, i) { pos[k] = i; });
+    return items.map(function (it, i) { return { it: it, i: i }; })
+      .sort(function (a, b) {
+        var pa = a.it.key in pos ? pos[a.it.key] : 1e6 + a.i;
+        var pb = b.it.key in pos ? pos[b.it.key] : 1e6 + b.i;
+        return pa - pb;
+      }).map(function (x) { return x.it; });
+  }
+
+  function arrangeBarHtml(arr) {
+    return '<div class="arr-bar">' +
+      '<span class="arr-hint">' + (arr.pick
+        ? 'Now tap the tile to swap it with.'
+        : 'Tap a tile, then tap where it should go.') + '</span>' +
+      '<button class="btn ghost" data-arr="reset">Reset</button>' +
+      '<button class="btn ghost" data-arr="cancel">Cancel</button>' +
+      '<button class="btn primary" data-arr="done"' + (arr.saving ? ' disabled' : '') + '>' +
+      (arr.saving ? 'Saving…' : 'Done') + '</button></div>';
+  }
+
+  function startArrange() {
+    var row = document.querySelector('.a-ha .ha-row');
+    var keys = row ? Array.prototype.map.call(row.querySelectorAll('[data-key]'),
+      function (e) { return e.dataset.key; }) : [];
+    state.arrange = { order: keys, pick: null, saving: false };
+    closeSheet();
+    if (state.view !== 'today') switchView('today'); else render();
+  }
+
+  function arrangeTap(target) {
+    var arr = state.arrange;
+    var b = target.closest('[data-arr]');
+    if (b) {
+      var what = b.dataset.arr;
+      if (what === 'cancel') { state.arrange = null; render(); return; }
+      if (what === 'reset') {
+        act(DEL('/api/ha/order'), function () {
+          state.arrange = null;
+          if (D.ha) D.ha.order = [];
+          toast('Back to the config.yaml order.');
+          loadHa().then(renderSoon);
+        });
+        return;
+      }
+      if (what === 'done' && !arr.saving) {
+        arr.saving = true; render();
+        act(PUT('/api/ha/order', { order: arr.order }), function (d) {
+          state.arrange = null;
+          if (D.ha) D.ha.order = (d && d.order) || arr.order;
+          toast('Tile order saved.');
+          loadHa().then(renderSoon);
+        }).then(function () {
+          if (state.arrange) { state.arrange.saving = false; render(); }
+        });
+      }
+      return;
+    }
+    var tile = target.closest('.ha-row [data-key]');
+    if (!tile) return;
+    var k = tile.dataset.key;
+    if (!arr.pick) arr.pick = k;
+    else if (arr.pick === k) arr.pick = null;
+    else {
+      var a = arr.order.indexOf(arr.pick), c = arr.order.indexOf(k);
+      if (a >= 0 && c >= 0) { arr.order[a] = k; arr.order[c] = arr.pick; }
+      arr.pick = null;
+    }
+    render();
+  }
+
+  /* arrange mode owns every tap inside the Home card: caught on the way down
+     so no tile key, sheet opener or camera ever sees it */
+  document.addEventListener('click', function (e) {
+    if (!state.arrange) return;
+    var card = e.target.closest && e.target.closest('.a-ha');
+    if (!card) return;
+    e.preventDefault();
+    e.stopPropagation();
+    arrangeTap(e.target);
+  }, true);
+
   function haCard() {
     var ha = D.ha;
     var tiles = (ha && ha.tiles) || [];
     var off = ha && ha.available === false;
     if (!tiles.length) {
       return '<section class="card a-ha">' +
-        '<div class="ha-row"><span class="lbl">Home</span>' +
+        '<div class="ha-row is-empty"><span class="lbl">Home</span>' +
         '<span class="muted2" style="font-size:.875rem;align-self:center;padding-left:1rem">' +
         (ha ? 'No tiles configured yet — add them to config.yaml.' : waitingCopy('Home tiles')) +
         '</span></div></section>';
@@ -2268,7 +2362,38 @@
     var meds = mediaTiles();
     var drawnClim = false, drawnCam = false, drawnMedia = false;
 
-    var body = tiles.map(function (t) {
+    var items = [];
+    tiles.forEach(function (t) {
+      var html = tileHtml(t);
+      if (html) items.push({ key: t.key || t.entity || t.label, html: html });
+    });
+    /* The sports tile is the panel's own, not Home Assistant's, so it is
+       unaffected by HA being down — but it can be arranged like the rest. */
+    var sp = sportsTile();
+    if (sp) items.push({ key: 'sports', html: sp });
+    /* the saved order (Settings -> Arrange home tiles) — the server already
+       sorts the HA tiles by it; this places the sports tile too, and in
+       arrange mode the order being edited wins */
+    var arr = state.arrange;
+    items = arrangeItems(items, arr ? arr.order : ((ha && ha.order) || []));
+    var body = items.map(function (it) {
+      /* every tile carries its order key; in arrange mode the picked one is
+         marked so it can be told apart from across the room */
+      return it.html.replace(/^<(\w+)/, '<$1 data-key="' + esc(it.key) + '"' +
+        (arr && arr.pick === it.key ? ' data-pick="1"' : ''));
+    }).join('');
+    /* two rows, never a sideways scroll: as many columns as it takes to fit
+       every tile in two rows, the fan and the TV counting double */
+    var slots = (body.match(/class="tile[ "]/g) || []).length +
+      (body.match(/class="tile[^"]* is-(fan|tv)[ "]/g) || []).length;
+    return '<section class="card a-ha' + (arr ? ' is-arranging' : '') + '">' +
+      (arr ? arrangeBarHtml(arr) : '') +
+      '<div class="ha-row' + (Math.ceil(slots / 2) >= 7 ? ' is-dense' : '') +
+      '" style="--ha-cols:' + Math.max(1, Math.ceil(slots / 2)) + '">' + body +
+      (off ? '<span class="ha-offline">HA offline — showing last known</span>' : '') +
+      '</div></section>';
+
+    function tileHtml(t) {
       if (t.type === 'climate') {
         if (drawnClim) return '';
         drawnClim = true;
@@ -2297,13 +2422,7 @@
         (sol ? ' data-act="solar-open" role="button" tabindex="0"' : '') + '>' +
         '<div class="t-label">' + esc(t.label) + '</div>' + tileBody(t) +
         (off ? '' : tileActions(t)) + '</div>';
-    }).join('');
-    /* The sports tile is the panel's own, not Home Assistant's, so it rides
-       after the HA tiles and is unaffected by HA being down. */
-    return '<section class="card a-ha">' +
-      '<div class="ha-row">' + body + sportsTile() +
-      (off ? '<span class="ha-offline">HA offline — showing last known</span>' : '') +
-      '</div></section>';
+    }
   }
 
   /* ------------------------------------------------------------- sports --- */
@@ -4554,12 +4673,6 @@
     });
     var sels = '.scroll,.wk-body,.wg-body';
     var scrolls = Array.prototype.map.call(v.querySelectorAll(sels), function (e) { return e.scrollTop; });
-    /* The device shelf scrolls sideways, and the tile poll re-renders this
-       whole view every 15 s — without carrying its scrollLeft across, a
-       swipe silently snapped back to the first tile a few seconds later,
-       which reads as "it doesn't scroll at all". */
-    var shelf = v.querySelector('.ha-row');
-    var shelfX = shelf ? shelf.scrollLeft : 0;
 
     v.innerHTML = viewHtml();
 
@@ -4582,9 +4695,6 @@
     /* the chores list only wears its fade-out when there is more below it */
     var cs = v.querySelector('.a-chores .scroll');
     if (cs) cs.classList.toggle('can-scroll', cs.scrollHeight - cs.clientHeight > 2);
-    var shelf2 = v.querySelector('.ha-row');
-    if (shelf2 && shelfX) shelf2.scrollLeft = shelfX;
-    paintShelf();
     renderRail();
     updateNowPlaying();
     updateSonosSheet();
@@ -4595,38 +4705,6 @@
     updateClimateSheet();
     paintSolar();
   }
-
-  /* Which way the shelf still has tiles in. Drives the edge fades: on a
-     narrower panel three of nine tiles sit past the right edge, and with no
-     fade the wall just looks like it owns fewer controls than it does. */
-  function paintShelf() {
-    var row = document.querySelector('.ha-row');
-    if (!row) return;
-    var more = row.scrollWidth - row.clientWidth;
-    row.classList.toggle('can-x', more > 2);
-    row.classList.toggle('at-start', row.scrollLeft <= 2);
-    row.classList.toggle('at-end', row.scrollLeft >= more - 2);
-  }
-
-  /* scroll doesn't bubble, so listen in the capture phase */
-  document.addEventListener('scroll', function (e) {
-    var t = e.target;
-    if (t && t.classList && t.classList.contains('ha-row')) paintShelf();
-  }, true);
-
-  /* A mouse or a trackpad only ever sends vertical deltas over a shelf like
-     this one, so turn them sideways — otherwise every tile past the edge is
-     unreachable without a touchscreen. */
-  document.addEventListener('wheel', function (e) {
-    var row = e.target && e.target.closest ? e.target.closest('.ha-row') : null;
-    if (!row) return;
-    if (row.scrollWidth - row.clientWidth < 2) return;
-    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;   // already sideways
-    row.scrollLeft += e.deltaY;
-    e.preventDefault();
-  }, { passive: false });
-
-  window.addEventListener('resize', paintShelf);
 
   function refreshCameras() {
     camStamp++;
@@ -5090,6 +5168,7 @@
   }
 
   function openSettings() {
+    state.afterPin = '';
     var s = D.status || {};
     var screen = (s.config && s.config.screen) || {};
     var body =
@@ -5132,6 +5211,8 @@
     openSheet(body, {
       title: 'Settings',
       foot: '<button class="btn" data-act="manage-chores">Manage chores</button>' +
+        (((D.ha && D.ha.tiles) || []).length
+          ? '<button class="btn" data-act="arrange-tiles">Arrange home tiles</button>' : '') +
         '<button class="btn" data-act="recipes">Recipes</button>' +
         '<span style="flex:1 1 auto"></span>' +
         '<button class="btn ghost" data-act="close-sheet">Close</button>',
@@ -6089,6 +6170,61 @@
 
   /* ------------------------------------------------------------ HA actions - */
 
+  /* ---- press feedback: a tapped key changes colour so nobody taps twice ----
+     Sending (filled) -> Done (green, with a tick) or Didn't go (warn), then
+     back to normal. The view is rebuilt by every poll and every optimistic
+     update, so the state lives here keyed by entity + action + label, and
+     paintPresses() puts it back on whichever button now carries that key.
+     A key that is sending or showing Done ignores further taps — that is the
+     double press this exists to stop. Steppers (− / +, volume) only flash:
+     tapping them repeatedly is the point. */
+  var PRESS = {};
+  var PRESS_HOLD = { sending: 15000, done: 2000, fail: 3000, flash: 450 };
+  var PRESS_TEXT = { sending: 'Sending…', done: '✓ Done', fail: 'Didn’t go' };
+  /* a toggle's key swaps itself when it lands (Turn on -> Turn off, Osc off
+     -> Osc on, Play -> Pause, Mute -> Unmute): both halves share one key so
+     the tick stays on the button that took its place */
+  var PRESS_PAIR = { turn_on: 'power', turn_off: 'power', oscillate_on: 'osc',
+    oscillate_off: 'osc', play: 'playpause', pause: 'playpause',
+    mute: 'mute', unmute: 'mute' };
+
+  function pressKey(btn) {
+    var a = btn.dataset.action || '';
+    return (btn.dataset.entity || '') + '|' +
+      (PRESS_PAIR[a] || (a + '|' + (btn.dataset.label || '')));
+  }
+
+  function setPress(key, phase) {
+    var p = PRESS[key];
+    if (p) clearTimeout(p.timer);
+    if (!phase) { delete PRESS[key]; paintPresses(); return; }
+    PRESS[key] = {
+      phase: phase,
+      timer: setTimeout(function () { delete PRESS[key]; paintPresses(); }, PRESS_HOLD[phase])
+    };
+    paintPresses();
+  }
+
+  function paintPresses() {
+    Array.prototype.forEach.call(document.querySelectorAll('[data-act="ha"]'), function (b) {
+      var p = PRESS[pressKey(b)];
+      var phase = p ? p.phase : '';
+      if ((b.dataset.press || '') === phase) return;
+      if (phase) b.dataset.press = phase; else delete b.dataset.press;
+      /* swap the words only on a plain text key whose words are its label —
+         icon keys (Sonos transport, the pause on the card) keep their icon */
+      var lbl = b.dataset.label;
+      var plain = lbl && b.children.length === 0 && !b.classList.contains('vol') &&
+        !b.classList.contains('cl-step');
+      if (plain) b.textContent = PRESS_TEXT[phase] || lbl;
+    });
+  }
+
+  /* a poll or optimistic render rebuilds the buttons — repaint after it */
+  new MutationObserver(function () {
+    if (Object.keys(PRESS).length) paintPresses();
+  }).observe(document.body, { childList: true, subtree: true });
+
   function haSend(btn, quiet) {
     var body = { entity: btn.dataset.entity, action: btn.dataset.action };
     if (btn.dataset.value !== undefined && btn.dataset.value !== '') {
@@ -6097,10 +6233,17 @@
          must not go through Number(). */
       body.value = btn.dataset.vstr === '1' ? btn.dataset.value : Number(btn.dataset.value);
     }
+    var key = pressKey(btn);
+    var step = !!STEP_ATTR[body.action];
+    setPress(key, step ? 'flash' : 'sending');
     act(POST('/api/ha/action', body), function () {
-      if (!quiet) toast('Sent.');
+      if (!step) setPress(key, 'done');
+      /* the key itself says Done now; the toast is only for keys that can't
+         carry the words (icon-only keys) */
+      if (!quiet && !step && btn.children.length) toast('Sent.');
       reloadHaAfterTap();
     }).then(function (ok) {
+      if (!ok && !step) setPress(key, 'fail');
       /* It didn't go through, so stop holding what it would have done. */
       if (!ok) {
         if (body.action === 'join' || body.action === 'unjoin') {
@@ -6129,6 +6272,10 @@
      read as the button being broken: the owner's call is that a finger on a
      panel in your own hallway means what it says. */
   function haTap(btn) {
+    /* on its way, or just landed: a second tap here is the "did it work?"
+       press, not a new request — let the colour answer it instead */
+    var held = PRESS[pressKey(btn)];
+    if (held && (held.phase === 'sending' || held.phase === 'done')) return;
     var action = btn.dataset.action;
     var attr = STEP_ATTR[action];
     var tiles = (D.ha && D.ha.tiles) || [];
@@ -6364,7 +6511,12 @@
       case 'pin-save':
         state.pin = readForm('pin-val').trim();
         closeSheet();
+        if (state.afterPin === 'arrange' && state.pin) { state.afterPin = ''; startArrange(); break; }
         toast(state.pin ? 'PIN saved for this session.' : 'PIN cleared.');
+        break;
+      case 'arrange-tiles':
+        if (state.pin) startArrange();
+        else { state.afterPin = 'arrange'; openPin('Enter the admin PIN to arrange the home tiles.'); }
         break;
       case 'pin-clear': state.pin = ''; closeSheet(); toast('Locked again.'); break;
 
@@ -6613,6 +6765,7 @@
     /* .innerHTML !== '' serialised an open sheet's whole subtree to a string
        thirty times a minute — asking whether it has a child is free. */
     return byId('sheetHost').firstChild !== null ||
+      !!state.arrange ||
       !byId('sleep').hidden;
   }
 
@@ -7959,6 +8112,12 @@
       '“what’s on today” or “turn on the porch light”.';
   }
 
+  function mockTileKey(t) {
+    if (t.type === 'climate' || t.type === 'camera_snapshot' || t.type === 'media') return 'group:' + t.type;
+    if (t.type === 'solar') return 'solar:' + (t.label || 'Solar');
+    return t.entity || ('tile:' + (t.label || ''));
+  }
+
   function mockRequest(method, url, body) {
     // fetching and parsing a real recipe page takes a beat — mimic it, so the
     // "Importing…" state is actually exercised in the demo.
@@ -8327,8 +8486,26 @@
         temp.state = String(temp.attrs.value);
       }
       mockSolarDrift();
-      return { available: true, updated_at: new Date().toISOString(), tiles: M.tiles,
+      /* keyed and ordered exactly as app.py ordered_tiles() does */
+      var ord = M.haOrder || [];
+      var opos = {};
+      ord.forEach(function (k, i) { opos[k] = i; });
+      M.tiles.forEach(function (t) { t.key = mockTileKey(t); });
+      var sorted = M.tiles.map(function (t, i) { return { t: t, i: i }; }).sort(function (a, b) {
+        var pa = a.t.key in opos ? opos[a.t.key] : ord.length, pb = b.t.key in opos ? opos[b.t.key] : ord.length;
+        return pa - pb || a.i - b.i;
+      }).map(function (x) { return x.t; });
+      return { available: true, updated_at: new Date().toISOString(), tiles: sorted, order: ord,
         sonos: M.sonos || { night_cap: null, night_until: null, announce: true } };
+    }
+
+    if (path === '/api/ha/order') {
+      if (method === 'PUT') {
+        M.haOrder = (body.order || []).filter(function (k, i, a) { return a.indexOf(k) === i; });
+        return { ok: true, order: M.haOrder };
+      }
+      if (method === 'DELETE') { M.haOrder = []; return { ok: true, order: [] }; }
+      return { order: M.haOrder || [] };
     }
 
     /* the demo has nothing to say it on, so it just agrees */

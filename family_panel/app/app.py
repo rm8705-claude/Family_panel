@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.22.0"
+APP_VERSION = "0.23.0"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -883,23 +883,82 @@ def api_ha_tv_candidates():
         return jsonify({"error": f"Home Assistant did not respond ({e})"}), 502
 
 
+# ---- tile order (Settings -> Arrange home tiles) -------------------------
+# The wall draws climate, camera and media tiles as ONE grouped tile per type,
+# so those move as a group; solar has no single entity, so it keys on its
+# label. Everything else keys on its entity. The panel's own sports tile is
+# not an HA tile: it keys as "sports" and the frontend places it.
+GROUPED_TILE_TYPES = ("climate", "camera_snapshot", "media")
+HA_ORDER_KEY = "ha:order"
+
+
+def tile_key(t: dict) -> str:
+    ttype = t.get("type", "sensor")
+    if ttype in GROUPED_TILE_TYPES:
+        return f"group:{ttype}"
+    if ttype == "solar":
+        return f"solar:{t.get('label', 'Solar')}"
+    return t.get("entity") or f"tile:{t.get('label', '')}"
+
+
+def ordered_tiles(tiles_cfg: list) -> list:
+    """config.yaml's tiles in the saved order. Tiles the saved order doesn't
+    know (added to config.yaml since) go on the end in config order; keys
+    for tiles since removed are simply never matched."""
+    saved = db.get_json_setting(HA_ORDER_KEY) or []
+    pos = {k: i for i, k in enumerate(saved) if isinstance(k, str)}
+    return [t for _, t in sorted(
+        enumerate(tiles_cfg),
+        key=lambda it: (pos.get(tile_key(it[1]), len(pos)), it[0]))]
+
+
+@app.get("/api/ha/order")
+def api_ha_order_get():
+    return jsonify({"order": db.get_json_setting(HA_ORDER_KEY) or []})
+
+
+@app.put("/api/ha/order")
+def api_ha_order_put():
+    if (resp := require_pin()) is not None:
+        return resp
+    body = request.get_json(force=True, silent=True) or {}
+    order = body.get("order")
+    if (not isinstance(order, list) or len(order) > 200
+            or not all(isinstance(k, str) and 0 < len(k) <= 200 for k in order)):
+        return jsonify({"error": "order must be a list of tile keys"}), 400
+    order = list(dict.fromkeys(order))          # drop repeats, keep first
+    db.set_json_setting(HA_ORDER_KEY, order)
+    return jsonify({"ok": True, "order": order})
+
+
+@app.delete("/api/ha/order")
+def api_ha_order_reset():
+    if (resp := require_pin()) is not None:
+        return resp
+    db.set_json_setting(HA_ORDER_KEY, [])
+    return jsonify({"ok": True, "order": []})
+
+
 @app.get("/api/ha/tiles")
 def api_ha_tiles():
     import ha
-    tiles_cfg = CONFIG.get("ha_tiles", []) or []
+    tiles_cfg = ordered_tiles(CONFIG.get("ha_tiles", []) or [])
     cached = ha.cached_states() or {}
     states = cached.get("states", {})
     sync = db.get_json_setting("sync:ha") or {}
     available = bool(sync.get("ok")) and bool(states)
     def shape(t):
         if t.get("type") == "solar":
-            return ha.solar_shape(t, states)
-        return ha.tile_shape(t, states.get(t.get("entity")))
+            out = ha.solar_shape(t, states)
+        else:
+            out = ha.tile_shape(t, states.get(t.get("entity")))
+        return {**out, "key": tile_key(t)}
 
     return jsonify({
         "available": available,
         "updated_at": cached.get("at"),
         "tiles": [shape(t) for t in tiles_cfg],
+        "order": db.get_json_setting(HA_ORDER_KEY) or [],
         "sonos": ha.sonos_info(CONFIG),
     })
 

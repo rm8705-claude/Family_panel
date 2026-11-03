@@ -1,0 +1,23 @@
+<!--
+Trimmed stand-in for a Google Photos shared-album page. Real pages ship a
+much bigger AF_initDataCallback blob (album metadata, i18n strings, other
+ds: keys); only the photo-entry shape the regex depends on is reproduced
+here — a ["<lh3 url>", width, height sub-array nested inside the outer
+data array, once per photo.
+-->
+<!doctype html>
+<html>
+<head><title>Family photos - Google Photos</title></head>
+<body>
+<script nonce="abc123">
+AF_initDataCallback({key: 'ds:0', hash: '1', data: [], sideChannel: {}});
+</script>
+<script nonce="abc123">
+AF_initDataCallback({key: 'ds:1', hash: '2', data:
+[[["fake-media-key-one",["https://lh3.googleusercontent.com/pw/fake-album-photo-one",1600,1200],null,null,1755000001],
+["fake-media-key-two",["https://lh3.googleusercontent.com/pw/fake-album-photo-two",1200,1600],null,null,1755000002],
+["fake-media-key-three",["https://lh3.googleusercontent.com/pw/fake-album-photo-three",2000,1500],null,null,1755000003]],
+"Family photos", null], sideChannel: {}});
+</script>
+</body>
+</html>
