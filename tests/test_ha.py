@@ -369,3 +369,52 @@ def test_tile_order_saved_on_server(client, monkeypatch):
     assert client.delete("/api/ha/order",
                          headers={"X-Admin-Pin": "4321"}).status_code == 200
     assert _keys(client)[0] == "person.rohan"
+
+
+# ---- bin day: the mark1foley integration's TWO sensors ---------------------
+
+BIN_TILE = {"entity": "binary_sensor.brisbane_bin_day", "label": "Bin Day",
+            "type": "bin_day"}
+
+
+def _bin_state(when, extra, on=False):
+    return {"state": "on" if on else "off", "attributes": {
+        "collection_day": "Tuesday", "next_collection_date": when,
+        "extra_bin": extra}}
+
+
+def test_bin_day_recycle_week_shows_yellow():
+    # Monday night before a recycle-week Tuesday: the main sensor has been
+    # pushed to NEXT week's green collection, the recycle sensor is tomorrow.
+    states = {
+        "binary_sensor.brisbane_bin_day":
+            _bin_state("2026-11-17T05:00:00+10:00", "Green/Garden"),
+        "binary_sensor.brisbane_bin_day_recycle":
+            _bin_state("2026-11-10T05:00:00+10:00", "Yellow/Recycling", on=True),
+    }
+    out = ha.bin_day_shape(BIN_TILE, states)
+    assert out["attrs"]["bins"] == ["Red", "Yellow"]
+    assert out["attrs"]["due"] is True
+    assert out["entity"] == "binary_sensor.brisbane_bin_day"   # tile keeps its id
+
+
+def test_bin_day_green_week_shows_green():
+    states = {
+        "binary_sensor.brisbane_bin_day":
+            _bin_state("2026-11-17T05:00:00+10:00", "Green/Garden", on=True),
+        "binary_sensor.brisbane_bin_day_recycle":
+            _bin_state("2026-11-24T05:00:00+10:00", "Yellow/Recycling"),
+    }
+    out = ha.bin_day_shape(BIN_TILE, states)
+    assert out["attrs"]["bins"] == ["Red", "Green"]
+    assert out["attrs"]["due"] is True
+
+
+def test_bin_day_without_recycle_sensor_falls_back():
+    states = {"binary_sensor.brisbane_bin_day":
+              _bin_state("2026-11-17T05:00:00+10:00", "Green/Garden")}
+    assert ha.bin_day_shape(BIN_TILE, states)["attrs"]["bins"] == ["Red", "Green"]
+    # and the poll asks Home Assistant for the recycle twin too
+    assert "binary_sensor.brisbane_bin_day_recycle" in ha.wanted_entities([BIN_TILE])
+    renamed = {**BIN_TILE, "recycle_entity": "binary_sensor.yellow_bin"}
+    assert "binary_sensor.yellow_bin" in ha.wanted_entities([renamed])

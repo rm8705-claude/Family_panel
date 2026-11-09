@@ -68,6 +68,8 @@ def wanted_entities(tiles: list[dict]) -> set[str]:
     for t in tiles:
         if t.get("entity"):
             out.add(t["entity"])
+        if t.get("type") == "bin_day" and t.get("entity"):
+            out.add(bin_recycle_entity(t))
         for v in solar_entities(t).values():
             if v:
                 out.add(v)
@@ -253,6 +255,41 @@ def _bin_day_fields(attrs: dict) -> dict:
             pass
 
     return {"bins": bins, "day": attrs.get("collection_day"), "approx_time": approx_time}
+
+
+def bin_recycle_entity(tile: dict) -> str:
+    """The recycle-week twin of a bin_day tile's sensor. The mark1foley
+    integration makes it with the same name plus " (Recycle)", so by default
+    its entity id is the tile's entity + "_recycle"; `recycle_entity` in the
+    tile config overrides that if it was renamed."""
+    return tile.get("recycle_entity") or f"{tile['entity']}_recycle"
+
+
+def _collection_at(cached: dict | None):
+    raw = ((cached or {}).get("attributes") or {}).get("next_collection_date")
+    try:
+        return datetime.fromisoformat(str(raw)) if raw else None
+    except ValueError:
+        return None
+
+
+def bin_day_shape(tile: dict, states: dict) -> dict:
+    """The bin_day tile from BOTH of the integration's sensors.
+
+    The mark1foley Brisbane Bin Day integration does not have one sensor
+    that says which bin goes out next. It has two: the main sensor always
+    describes the next red + GREEN collection (extra_bin is fixed at
+    Green/Garden, and on a recycle week its date is pushed a week on), and
+    the "(Recycle)" sensor always describes the next red + YELLOW one.
+    Reading only the main sensor showed green every week — wrong on every
+    recycle week. The next collection is whichever of the two comes first.
+    """
+    general = states.get(tile["entity"])
+    recycle = states.get(bin_recycle_entity(tile))
+    g_at, r_at = _collection_at(general), _collection_at(recycle)
+    if recycle and r_at and (not g_at or r_at < g_at):
+        return tile_shape(tile, recycle)
+    return tile_shape(tile, general)
 
 
 def tile_shape(tile: dict, cached: dict | None) -> dict:

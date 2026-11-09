@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.23.0"
+APP_VERSION = "0.23.1"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -950,6 +950,8 @@ def api_ha_tiles():
     def shape(t):
         if t.get("type") == "solar":
             out = ha.solar_shape(t, states)
+        elif t.get("type") == "bin_day" and t.get("entity"):
+            out = ha.bin_day_shape(t, states)
         else:
             out = ha.tile_shape(t, states.get(t.get("entity")))
         return {**out, "key": tile_key(t)}

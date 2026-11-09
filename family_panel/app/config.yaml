@@ -70,11 +70,11 @@ ha_tiles:
 #      # Brisbane City Council has no ICS bin-day feed — this is the HACS
 #      # "Brisbane Bin Day Sensor" (mark1foley) instead: GUI-configured in HA
 #      # (Settings -> Devices & Services -> Brisbane Bin Day), no YAML/secrets.
-#      # Its own card sits between Weather and Chores. `next_collection_date`
-#      # and `extra_bin` (which colour bin also goes out that week) come
-#      # straight off this entity's attributes, so the separate _recycle
-#      # sensor isn't needed here — it's still in HA if you want it for an
-#      # automation later.
+#      # Its own card sits between Weather and Chores. The integration makes
+#      # TWO sensors: this one always describes the next red + GREEN week, and
+#      # binary_sensor.brisbane_bin_day_recycle the next red + YELLOW week. The
+#      # panel reads both and shows whichever collection comes first — no need
+#      # to list the _recycle one (add `recycle_entity:` only if it's renamed).
 
 screen: {sleep: "21:00", wake: "05:45"}   # frontend sleep overlay; hardware DPMS in deploy notes
 sync_minutes: {ics: 5, imap: 5, weather: 30, ha: 0.25}
