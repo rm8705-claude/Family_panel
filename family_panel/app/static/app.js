@@ -2385,10 +2385,10 @@
         (arr && arr.pick === it.key ? ' data-pick="1"' : ''));
     }).join('');
     /* two rows, never a sideways scroll: as many columns as it takes to fit
-       every tile in two rows, the fan, the TV and the speakers counting
-       double */
+       every tile in two rows, the fan, the TV, the speakers and the cameras
+       counting double */
     var slots = (body.match(/class="tile[ "]/g) || []).length +
-      (body.match(/class="tile[^"]* is-(fan|tv|sonos|media)[ "]/g) || []).length;
+      (body.match(/class="tile[^"]* is-(fan|tv|sonos|media|cams)[ "]/g) || []).length;
     return '<section class="card a-ha' + (arr ? ' is-arranging' : '') + '">' +
       (arr ? arrangeBarHtml(arr) : '') +
       '<div class="ha-row' + (Math.ceil(slots / 2) >= 7 ? ' is-dense' : '') +

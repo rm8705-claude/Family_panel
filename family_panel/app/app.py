@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.25.0"
+APP_VERSION = "0.25.1"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -1104,6 +1104,13 @@ def api_ha_music():
     except Exception as e:
         app.logger.info("music discover: %s", e)
         return jsonify({"available": False, "items": []})
+
+
+@app.get("/api/ha/music/status")
+def api_ha_music_status():
+    """Open in a browser to see why the Discover row isn't showing."""
+    import music
+    return jsonify({"version": APP_VERSION, **music.status(CONFIG)})
 
 
 @app.post("/api/ha/music/play")

@@ -119,6 +119,38 @@ def info(config: dict) -> dict:
     return {"available": bool(players and entry), "players": players}
 
 
+def status(config: dict) -> dict:
+    """Step-by-step diagnosis for /api/ha/music/status: which part of the
+    chain (find MA players -> match speakers -> read the library) fails."""
+    out = {"ma_players": None, "config_entry": None, "speaker_map": None,
+           "unmatched_speakers": None, "library_counts": {}, "error": None}
+    try:
+        _cache.update(at=0.0, data=None)
+        out["ma_players"] = _players()
+        if not out["ma_players"]:
+            out["error"] = ("Home Assistant reports no Music Assistant players. Is the "
+                            "Music Assistant integration added (Settings > Devices & "
+                            "services), not just the add-on?")
+            return out
+        players, entry = player_map(config)
+        out["config_entry"], out["speaker_map"] = entry, players
+        out["unmatched_speakers"] = [t["entity"] for t in config.get("ha_tiles", []) or []
+                                     if t.get("type") == "media" and t.get("entity")
+                                     and t["entity"] not in players]
+        if not players:
+            out["error"] = ("No Sonos tile matched a Music Assistant player by name; "
+                            "set music_assistant_players in the add-on options.")
+            return out
+        for kind in KINDS:
+            try:
+                out["library_counts"][kind] = len(_library(entry, kind, 10))
+            except Exception as e:          # noqa: BLE001
+                out["library_counts"][kind] = f"error: {e}"
+    except Exception as e:                  # noqa: BLE001
+        out["error"] = f"{type(e).__name__}: {e}"
+    return out
+
+
 def _service(service: str, body: dict, want_response: bool = False):
     base, token = ha._api_base()
     url = f"{base}/services/music_assistant/{service}"

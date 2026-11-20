@@ -1895,7 +1895,7 @@ ul, ol { list-style: none; }
 
 /* the fan (four keys) and the TV (three) take two columns, so their keys sit
    in one row instead of a block a half-height tile has no room for */
-.tile.is-fan, .tile.is-tv, .tile.is-sonos, .tile.is-media { grid-column: span 2; }
+.tile.is-fan, .tile.is-tv, .tile.is-sonos, .tile.is-media, .tile.is-cams { grid-column: span 2; }
 .tile.is-fan .tile-acts, .tile.is-tv .tile-acts { flex-wrap: nowrap; }
 
 /* Which speaker the grouped tile leads with, pinnable — see sonosTile() in
