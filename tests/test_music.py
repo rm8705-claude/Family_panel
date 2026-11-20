@@ -3,6 +3,8 @@ import music
 
 
 class Resp:
+    status_code = 200
+
     def __init__(self, data=None, text=None):
         self._data = data
         self.text = text if text is not None else ""
@@ -58,13 +60,11 @@ def test_players_match_by_name_and_override(monkeypatch):
                        "media_player.roam": "media_player.roam_ma"}
 
 
-def test_discover_mixes_kinds_and_labels_providers(monkeypatch):
-    fake_ha(monkeypatch, [])
-    d = music.discover(CONFIG)
-    assert d["available"] is True
-    by = {i["name"]: i for i in d["items"]}
+def test_items_are_labelled_with_their_service():
+    by = {i["name"]: i for i in (music._shape(x) for k in LIB.values() for x in k)}
     assert by["Khruangbin"]["provider"] == "Spotify"
     assert by["Arvo"]["provider"] == "YouTube Music"
+    assert by["Currents"]["provider"] == "YouTube Music"    # from the image proxy link
     assert by["Currents"]["sub"] == "Tame Impala"
 
 
@@ -105,8 +105,41 @@ def test_music_routes_need_a_driveable_speaker(client, monkeypatch):
 
 def test_discover_from_one_service_only(monkeypatch):
     fake_ha(monkeypatch, [])
+    music._ma.update(base=None, providers=None, at=0.0)
+    monkeypatch.setattr(music, "MA_CANDIDATES", ())   # MA API out of reach
     names = {i["name"] for i in music.discover(CONFIG, source="spotify")["items"]}
     assert names == {"Khruangbin", "Rumours"}
     names = {i["name"] for i in music.discover(CONFIG, source="ytmusic")["items"]}
     assert names == {"Arvo", "Currents"}
-    assert len(music.discover(CONFIG, source="bogus")["items"]) == 4   # ignored -> both
+    assert music.discover(CONFIG, source="bogus")["source"] == "favs"
+
+
+def test_two_spotify_logins_are_two_named_buttons(monkeypatch):
+    calls = []
+    fake_ha(monkeypatch, calls)
+    music._ma.update(base=None, providers=None, at=0.0)
+    ha_post = music.requests.post
+
+    def post(url, headers=None, json=None, timeout=None):
+        if not url.endswith("/api"):
+            return ha_post(url, headers=headers, json=json, timeout=timeout)
+        cmd = json["command"]
+        if cmd == "providers":
+            return Resp([{"domain": "spotify", "instance_id": "spotify--r", "name": "Spotify"},
+                         {"domain": "spotify", "instance_id": "spotify--m", "name": "Spotify"},
+                         {"domain": "ytmusic", "instance_id": "ytmusic--y", "name": "YouTube Music"},
+                         {"domain": "filesystem_local", "instance_id": "fs", "name": "Files"}])
+        if cmd == "music/playlists/library_items":
+            return Resp([{"media_type": "playlist", "uri": "library://playlist/1", "name": "Mel's Mix",
+                          "provider_mappings": [{"provider_instance": "spotify--m",
+                                                 "provider_domain": "spotify"}]},
+                         {"media_type": "playlist", "uri": "library://playlist/2", "name": "Rohan Rock",
+                          "provider_mappings": [{"provider_instance": "spotify--r",
+                                                 "provider_domain": "spotify"}]}])
+        return Resp([])
+    monkeypatch.setattr(music.requests, "post", post)
+    cfg = {**CONFIG, "music_source_names": "Spotify=Rohan, Spotify 2=Mel"}
+    d = music.discover(cfg, source="spotify--m")
+    assert [s["label"] for s in d["sources"]] == ["Rohan", "Mel", "YouTube Music"]
+    assert [i["name"] for i in d["items"]] == ["Mel's Mix"]
+    assert music.discover(cfg)["items"] == []          # favourites: buttons only

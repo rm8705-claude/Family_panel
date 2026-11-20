@@ -123,7 +123,14 @@ def status(config: dict) -> dict:
     """Step-by-step diagnosis for /api/ha/music/status: which part of the
     chain (find MA players -> match speakers -> read the library) fails."""
     out = {"ma_players": None, "config_entry": None, "speaker_map": None,
-           "unmatched_speakers": None, "library_counts": {}, "error": None}
+           "unmatched_speakers": None, "library_counts": {}, "error": None,
+           "ma_api": None, "accounts": None}
+    try:
+        _ma.update(providers=None)
+        out["accounts"] = sources(config)
+        out["ma_api"] = f"ok at {_ma['base']}"
+    except Exception as e:                  # noqa: BLE001
+        out["ma_api"] = f"{type(e).__name__}: {e}"
     try:
         _cache.update(at=0.0, data=None)
         out["ma_players"] = _players()
@@ -154,6 +161,111 @@ def status(config: dict) -> dict:
     except Exception as e:                  # noqa: BLE001
         out["error"] = f"{type(e).__name__}: {e}"
     return out
+
+
+# ------------------------------------------------- Music Assistant, directly
+# Home Assistant's music_assistant services can't say WHICH account an item
+# belongs to, and a household with two Spotify logins needs exactly that. So
+# the panel also asks Music Assistant itself (its JSON API on port 8095): the
+# provider list gives one entry per connected account, and library items
+# carry provider_mappings naming the account(s) they came from.
+# MA runs on the host network, so from another add-on it's the Supervisor
+# gateway; music_assistant_url overrides, music_assistant_token is only for
+# an MA that has login turned on.
+MA_CANDIDATES = ("http://172.30.32.1:8095", "http://d5369777-music-assistant:8095",
+                 "http://homeassistant.local:8095")
+STREAMING = {"spotify": "Spotify", "ytmusic": "YouTube Music", "apple_music": "Apple Music",
+             "tidal": "Tidal", "deezer": "Deezer", "qobuz": "Qobuz", "soundcloud": "SoundCloud"}
+_ma = {"base": None, "at": 0.0, "providers": None}
+
+
+class MAUnavailable(Exception):
+    pass
+
+
+def _ma_post(base: str, config: dict, command: str, args: dict | None):
+    headers = {"Content-Type": "application/json"}
+    tok = str(config.get("music_assistant_token") or "").strip()
+    if tok:
+        headers["Authorization"] = f"Bearer {tok}"
+    r = requests.post(f"{base}/api", headers=headers, timeout=TIMEOUT,
+                      json={"message_id": "panel", "command": command, "args": args or {}})
+    if r.status_code in (401, 403):
+        raise MAUnavailable(f"Music Assistant at {base} wants a login token "
+                            "(add-on option music_assistant_token)")
+    r.raise_for_status()
+    data = r.json()
+    if isinstance(data, dict) and "message_id" in data and ("result" in data or "error_code" in data):
+        if "error_code" in data:
+            raise ValueError(data.get("details") or data.get("error_code"))
+        return data.get("result")
+    return data
+
+
+def ma_api(config: dict, command: str, args: dict | None = None):
+    """One Music Assistant API command, on whichever address answers."""
+    own = str(config.get("music_assistant_url") or "").strip().rstrip("/")
+    bases = [own] if own else ([_ma["base"]] if _ma["base"] else []) + \
+        [b for b in MA_CANDIDATES if b != _ma["base"]]
+    last = None
+    for base in bases:
+        try:
+            out = _ma_post(base, config, command, args)
+            _ma["base"] = base
+            return out
+        except (requests.ConnectionError, requests.Timeout) as e:
+            last = e
+            continue
+    raise MAUnavailable(f"Music Assistant not reachable ({last})")
+
+
+def _names(config: dict) -> dict:
+    """music_source_names: "Spotify=Rohan, Spotify 2=Mel" — relabel buttons."""
+    out = {}
+    for pair in str(config.get("music_source_names") or "").split(","):
+        if "=" in pair:
+            a, b = (x.strip() for x in pair.split("=", 1))
+            if a and b:
+                out[a.lower()] = b
+    return out
+
+
+def sources(config: dict) -> list[dict]:
+    """[{id, label, domain}] — one per streaming account connected in Music
+    Assistant. Two Spotify logins are two entries. Cached a few minutes."""
+    now = time.time()
+    if _ma["providers"] is None or now - _ma["at"] > _CACHE_S:
+        provs = ma_api(config, "providers") or []
+        _ma.update(providers=provs, at=now)
+    provs = [p for p in _ma["providers"] if isinstance(p, dict)
+             and p.get("domain") in STREAMING and p.get("available", True) is not False]
+    seen, out, names = {}, [], _names(config)
+    for p in provs:
+        base = str(p.get("name") or STREAMING[p["domain"]])
+        seen[base] = seen.get(base, 0) + 1
+        label = base if seen[base] == 1 else f"{base} {seen[base]}"
+        out.append({"id": p.get("instance_id") or p["domain"],
+                    "label": names.get(label.lower(), label), "domain": p["domain"]})
+    return out
+
+
+def _from_account(item: dict, instance: str) -> bool:
+    return any(isinstance(m, dict) and instance in (m.get("provider_instance"), m.get("provider_domain"))
+               for m in item.get("provider_mappings") or [])
+
+
+def _ma_library(config: dict, kind: str, n: int, instance: str) -> list[dict]:
+    """n random library items of one kind from one account."""
+    cmd = f"music/{kind}s/library_items"
+    try:
+        items = ma_api(config, cmd, {"limit": n * 3, "order_by": "random", "provider": instance}) or []
+    except (ValueError, requests.HTTPError):
+        items = ma_api(config, cmd, {"limit": 300, "order_by": "random"}) or []
+    if isinstance(items, dict):
+        items = items.get("items") or []
+    items = [i for i in items if isinstance(i, dict) and _from_account(i, instance)]
+    random.shuffle(items)
+    return items[:n]
 
 
 def _service(service: str, body: dict, want_response: bool = False):
@@ -225,6 +337,10 @@ def _shape(item: dict) -> dict | None:
     if kind == "album" and artists:
         sub = artists
     key = _provider_key(item)
+    if not key:
+        doms = {m.get("provider_domain") for m in item.get("provider_mappings") or []
+                if isinstance(m, dict)}
+        key = next((d for d in ("spotify", "ytmusic") if d in doms), None)
     return {"uri": uri, "name": name, "media_type": kind, "sub": sub,
             "source": key, "provider": PROVIDERS.get(key)}
 
@@ -244,17 +360,38 @@ def _source(source) -> str | None:
     return source if source in PROVIDERS else None
 
 
+def _account_picks(config: dict, kind: str, n: int, account: str) -> list[dict]:
+    return [s for s in map(_shape, _ma_library(config, kind, n, account)) if s]
+
+
+def _list_sources(config: dict) -> list[dict]:
+    """Accounts from Music Assistant itself; if its API can't be reached,
+    the per-service split read off Home Assistant (no per-person split)."""
+    try:
+        return sources(config)
+    except Exception as e:                  # noqa: BLE001
+        log.info("music assistant api: %s", e)
+        return [{"id": k, "label": v, "domain": k} for k, v in PROVIDERS.items()]
+
+
 def discover(config: dict, n: int = 6, source: str | None = None) -> dict:
-    """A fresh random handful from the library, mixed across kinds — from
-    one service only when `source` is "spotify" or "ytmusic"."""
-    source = _source(source)
+    """The play-from buttons, and a fresh random handful from one of them.
+    `source` is an account id from sources() (or "spotify"/"ytmusic" when the
+    MA API is out of reach); "favs" or nothing = just the buttons."""
     players, entry = player_map(config)
     if not (players and entry):
-        return {"available": False, "items": [], "source": source}
+        return {"available": False, "items": [], "sources": [], "source": source}
+    srcs = _list_sources(config)
+    ids = {s["id"] for s in srcs}
+    if not source or source == "favs" or source not in ids:
+        return {"available": True, "items": [], "sources": srcs,
+                "source": "favs" if source not in ids else source}
+    direct = source not in PROVIDERS
     items = []
     for kind in KINDS:
         try:
-            items += _picks(entry, kind, n, source)
+            items += (_account_picks(config, kind, n, source) if direct
+                      else _picks(entry, kind, n, source))
         except Exception as e:              # noqa: BLE001 - one kind failing is fine
             log.info("get_library %s: %s", kind, e)
     random.shuffle(items)
@@ -266,7 +403,7 @@ def discover(config: dict, n: int = 6, source: str | None = None) -> dict:
             seen[it["media_type"]] = seen.get(it["media_type"], 0) + 1
         if len(picked) >= n:
             break
-    return {"available": True, "items": picked, "source": source}
+    return {"available": True, "items": picked, "sources": srcs, "source": source}
 
 
 def play(config: dict, entity: str, uri: str, media_type: str) -> None:
@@ -303,14 +440,18 @@ def surprise(config: dict, entity: str, source: str | None = None) -> dict:
     players, entry = player_map(config)
     if not (players.get(entity) and entry):
         raise ValueError("Music Assistant has no player for that speaker")
-    source = _source(source)
+    direct = bool(source) and source not in PROVIDERS and source != "favs"
+    source = source if direct else _source(source)
+
+    def grab(kind):
+        return _account_picks(config, kind, 10, source) if direct else _picks(entry, kind, 10, source)
     kind = random.choice(("artist", "artist", "playlist"))
-    items = _picks(entry, kind, 10, source)
+    items = grab(kind)
     if not items:
         kind = "playlist" if kind == "artist" else "artist"
-        items = _picks(entry, kind, 10, source)
+        items = grab(kind)
     if not items:
-        raise ValueError("Nothing from " + PROVIDERS[source] + " in the library yet"
+        raise ValueError("Nothing from that account in the library yet"
                          if source else "Nothing in the Music Assistant library yet")
     pick = random.choice(items)
     _service("play_media", {"entity_id": players[entity], "media_id": pick["uri"],

@@ -2606,40 +2606,66 @@
      No Music Assistant -> {available:false} and none of this draws. */
   function musicOn() { return !!(state.music && state.music.available); }
 
-  /* Which service Discover and Surprise me draw from: both, or just one —
-     the household keeps different curations on each. Remembered per panel. */
+  /* Where "Play something" plays from: each streaming account connected in
+     Music Assistant (two Spotify logins are two buttons, named by the
+     music_source_names option), or the Sonos favourites. Remembered per
+     panel; anything not on offer any more falls back to the favourites. */
   var MUSIC_SRC_KEY = 'panel-music-src';
-  var MUSIC_SRCS = [['', 'Both'], ['spotify', 'Spotify'], ['ytmusic', 'YouTube Music']];
 
-  function musicSrc() {
-    var v = '';
-    try { v = localStorage.getItem(MUSIC_SRC_KEY) || ''; } catch (e) { /* default */ }
-    return v === 'spotify' || v === 'ytmusic' ? v : '';
+  function storedMusicSrc() {
+    try { return localStorage.getItem(MUSIC_SRC_KEY) || 'favs'; } catch (e) { return 'favs'; }
   }
 
   function setMusicSrc(v) {
     try { localStorage.setItem(MUSIC_SRC_KEY, v); } catch (e) { /* nothing to do */ }
   }
 
-  function musicSrcHtml() {
-    var cur = musicSrc();
-    return '<div class="mu-src" role="group" aria-label="Play from">' + MUSIC_SRCS.map(function (o) {
+  function musicSources() { return (state.music && state.music.sources) || []; }
+
+  function curSrc() {
+    if (!musicOn()) return 'favs';
+    var v = storedMusicSrc();
+    return musicSources().some(function (x) { return x.id === v; }) ? v : 'favs';
+  }
+
+  function curSrcLabel() {
+    var v = curSrc();
+    var hit = musicSources().filter(function (x) { return x.id === v; })[0];
+    return hit ? hit.label : 'Sonos favourites';
+  }
+
+  function musicTabsHtml() {
+    if (!musicOn()) return '';
+    var cur = curSrc();
+    var opts = musicSources().map(function (x) { return [x.id, x.label, x.domain]; })
+      .concat([['favs', 'Sonos favourites', 'favs']]);
+    return '<div class="mu-src" role="group" aria-label="Play from">' + opts.map(function (o) {
       var on = o[0] === cur;
-      return '<button class="sn-tgt mu-src-b' + (on ? ' is-on' : '') + '" data-act="music-src" data-src="' +
-        o[0] + '" aria-pressed="' + on + '">' + esc(o[1]) + '</button>';
+      return '<button class="sn-wbtn mu-src-b is-' + esc(o[2]) + (on ? ' is-on' : '') +
+        '" data-act="music-src" data-src="' + esc(o[0]) + '" aria-pressed="' + on + '">' +
+        (o[2] === 'favs' ? ICON.star : ICON.playlist) + '<span>' + esc(o[1]) + '</span></button>';
     }).join('') + '</div>';
+  }
+
+  /* The tabs, then whatever the picked one offers: fresh picks from an
+     account, or the favourites list with its search and shuffle switch. */
+  function playChoiceHtml(t) {
+    return musicTabsHtml() + (curSrc() === 'favs' ? sourceRows(t) : discoverHtml(t));
   }
 
   function loadMusic() {
     if (state.music && state.music.loading) return;
-    state.music = { available: musicOn(), items: (state.music && state.music.items) || [], loading: true };
+    var prev = state.music || {};
+    state.music = { available: !!prev.available, sources: prev.sources || [],
+                    items: prev.items || [], loading: true };
     refreshMusicViews();
-    var src = musicSrc();
-    GET('/api/ha/music' + (src ? '?source=' + src : '')).then(function (d) {
-      state.music = { available: !!(d && d.available), items: (d && d.items) || [], loading: false };
+    var src = storedMusicSrc();
+    GET('/api/ha/music?source=' + encodeURIComponent(src)).then(function (d) {
+      state.music = { available: !!(d && d.available), sources: (d && d.sources) || [],
+                      items: (d && d.items) || [], loading: false };
       refreshMusicViews();
     }, function () {
-      state.music = { available: false, items: [], loading: false };
+      state.music = { available: false, sources: [], items: [], loading: false };
       refreshMusicViews();
     });
   }
@@ -2657,18 +2683,19 @@
         '" data-name="' + esc(it.name) + '">' +
         '<span class="mu-ic">' + (ICON[MUSIC_KIND_ICON[it.media_type]] || ICON.playlist) + '</span>' +
         '<span class="mu-n">' + esc(it.name) + '</span>' +
-        '<span class="mu-s">' + esc(it.sub || '') +
-        (it.provider ? ' · ' + esc(it.provider) : '') + '</span>' +
+        '<span class="mu-s">' + esc(it.sub || '') + '</span>' +
         '</button>';
     }).join('');
     return '<div class="mu-discover">' +
-      '<div class="np-sec mu-head">Discover' + musicSrcHtml() +
+      '<div class="np-src-tools mu-tools">' +
+      '<button class="sn-wbtn np-surprise" data-act="sonos-surprise" data-entity="' + esc(t.entity) +
+      '" data-label="Surprise me">' + ICON.playlist + '<span>Surprise me</span></button>' +
+      '<span class="muted2 mu-hint">Fresh picks from ' + esc(curSrcLabel()) + '</span>' +
       '<button class="mu-refresh" data-act="music-refresh" aria-label="Deal new picks"' +
       (m.loading ? ' disabled' : '') + '>' + ICON.swap + '</button></div>' +
       (cards ? '<div class="mu-cards' + (m.loading ? ' is-loading' : '') + '">' + cards + '</div>'
              : '<p class="muted2 mu-empty">' + (m.loading ? 'Finding something new…'
-               : (musicSrc() ? 'Nothing from ' + (musicSrc() === 'spotify' ? 'Spotify' : 'YouTube Music') +
-                 ' in the Music Assistant library yet.' : 'Nothing in the Music Assistant library yet.')) + '</p>') +
+               : 'Nothing from ' + esc(curSrcLabel()) + ' in the Music Assistant library yet.') + '</p>') +
       '</div>';
   }
 
@@ -2686,16 +2713,16 @@
   function musicSurprise(el) {
     if (el.disabled) return;
     el.disabled = true;
-    act(POST('/api/ha/music/surprise', { entity: el.dataset.entity, source: musicSrc() }), function (d) {
+    act(POST('/api/ha/music/surprise', { entity: el.dataset.entity, source: curSrc() }), function (d) {
       var p = d && d.pick;
       if (p) toast('Surprise: ' + p.name + (p.media_type === 'artist' ? ' radio' : '') +
-        (p.provider ? ' (' + p.provider + ')' : '') + '.', 4500);
+        ' (' + curSrcLabel() + ').', 4500);
       reloadHaAfterTap();
     }).then(function () { el.disabled = false; });
   }
 
   function sourceToolsHtml(t) {
-    if (!musicOn() && !(t.attrs && (t.attrs.source_list || []).length)) return '';
+    if (!(t.attrs && (t.attrs.source_list || []).length)) return '';
     var on = sonosShuffle();
     return '<div class="np-src-tools">' +
       '<button class="sn-wbtn np-surprise" data-act="sonos-surprise" data-entity="' + esc(t.entity) +
@@ -2799,7 +2826,7 @@
     return '<div class="np-sources sn-favs">' +
       '<div class="np-sec">Play something' +
       (list.length > 1 ? ' on <b>' + esc(groupName(group)) + '</b>' : '') + '</div>' +
-      row + discoverHtml(group[0]) + sourceRows(group[0]) + '</div>';
+      row + playChoiceHtml(group[0]) + '</div>';
   }
 
   function sonosSheetHtml() {
@@ -2821,10 +2848,12 @@
       'S.browser_fallback_url=https%3A%2F%2Fplay.google.com%2Fstore%2Fapps%2Fdetails%3Fid%3Dcom.sonos.acr2;end">' +
       'Open Sonos app</a>' +
       '</div>' +
+      /* What to play sits first — the household's ask — and the speakers'
+         own controls (now playing, volume) follow underneath. */
+      sonosFavouritesHtml(list) +
       '<div class="sn-list">' + sonosGroups(list).map(function (g) {
         return g.length > 1 ? sonosGroupCard(g, list) : sonosSpeakerCard(g[0], list);
-      }).join('') + '</div>' +
-      sonosFavouritesHtml(list);
+      }).join('') + '</div>';
   }
 
   /* The speakers as Sonos has them grouped: one list per group, the group's
@@ -3574,7 +3603,7 @@
       /* The owner's ask: pick what to play without leaving the panel. The
          favourites are whatever is saved in the Sonos app. */
       out += '<div class="np-sources"><div class="np-sec">Play something</div>' +
-        discoverHtml(t) + sourceRows(t) + '</div>';
+        playChoiceHtml(t) + '</div>';
     }
     return out + '</div>';
   }
@@ -6702,13 +6731,14 @@
         break;
       case 'music-play': musicPlay(el); break;
       case 'music-src':
-        setMusicSrc(el.dataset.src || '');
+        setMusicSrc(el.dataset.src || 'favs');
+        if (el.dataset.src === 'favs') { refreshMusicViews(); break; }
         if (state.music) { state.music.items = []; state.music.loading = false; }
         loadMusic();
         break;
       case 'music-refresh': state.music && (state.music.loading = false); loadMusic(); break;
       case 'sonos-surprise': {
-        if (musicOn()) { musicSurprise(el); break; }
+        if (curSrc() !== 'favs') { musicSurprise(el); break; }
         var st = mediaTile(el.dataset.entity);
         var pick = st && surprisePick(st);
         if (!pick) { toast('No favourites to pick from yet.'); break; }
@@ -8720,9 +8750,14 @@
         { uri: 'spotify://artist/7', name: 'Lime Cordiale', media_type: 'artist', sub: 'Artist radio', provider: 'Spotify' },
         { uri: 'ytmusic://playlist/8', name: 'Aussie Summer', media_type: 'playlist', sub: 'Playlist', provider: 'YouTube Music' }
       ].sort(function () { return Math.random() - 0.5; });
-      var want = q.get('source');
-      if (want) lib = lib.filter(function (i) { return i.uri.indexOf(want) === 0; });
-      return { available: true, items: lib.slice(0, 6), source: want || null };
+      var srcs = [{ id: 'spotify--r', label: 'Rohan', domain: 'spotify' },
+                  { id: 'spotify--m', label: 'Mel', domain: 'spotify' },
+                  { id: 'ytmusic--y', label: 'YouTube Music', domain: 'ytmusic' }];
+      var want = q.get('source') || 'favs';
+      var hit = srcs.filter(function (x) { return x.id === want; })[0];
+      if (!hit) return { available: true, items: [], sources: srcs, source: 'favs' };
+      lib = lib.filter(function (i) { return i.uri.indexOf(hit.domain) === 0; });
+      return { available: true, items: lib.slice(0, 6), sources: srcs, source: want };
     }
     if (path === '/api/ha/music/play') return { ok: true };
     if (path === '/api/ha/music/surprise') {
