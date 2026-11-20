@@ -2606,11 +2606,36 @@
      No Music Assistant -> {available:false} and none of this draws. */
   function musicOn() { return !!(state.music && state.music.available); }
 
+  /* Which service Discover and Surprise me draw from: both, or just one —
+     the household keeps different curations on each. Remembered per panel. */
+  var MUSIC_SRC_KEY = 'panel-music-src';
+  var MUSIC_SRCS = [['', 'Both'], ['spotify', 'Spotify'], ['ytmusic', 'YouTube Music']];
+
+  function musicSrc() {
+    var v = '';
+    try { v = localStorage.getItem(MUSIC_SRC_KEY) || ''; } catch (e) { /* default */ }
+    return v === 'spotify' || v === 'ytmusic' ? v : '';
+  }
+
+  function setMusicSrc(v) {
+    try { localStorage.setItem(MUSIC_SRC_KEY, v); } catch (e) { /* nothing to do */ }
+  }
+
+  function musicSrcHtml() {
+    var cur = musicSrc();
+    return '<div class="mu-src" role="group" aria-label="Play from">' + MUSIC_SRCS.map(function (o) {
+      var on = o[0] === cur;
+      return '<button class="sn-tgt mu-src-b' + (on ? ' is-on' : '') + '" data-act="music-src" data-src="' +
+        o[0] + '" aria-pressed="' + on + '">' + esc(o[1]) + '</button>';
+    }).join('') + '</div>';
+  }
+
   function loadMusic() {
     if (state.music && state.music.loading) return;
     state.music = { available: musicOn(), items: (state.music && state.music.items) || [], loading: true };
     refreshMusicViews();
-    GET('/api/ha/music').then(function (d) {
+    var src = musicSrc();
+    GET('/api/ha/music' + (src ? '?source=' + src : '')).then(function (d) {
       state.music = { available: !!(d && d.available), items: (d && d.items) || [], loading: false };
       refreshMusicViews();
     }, function () {
@@ -2637,12 +2662,13 @@
         '</button>';
     }).join('');
     return '<div class="mu-discover">' +
-      '<div class="np-sec mu-head">Discover' +
+      '<div class="np-sec mu-head">Discover' + musicSrcHtml() +
       '<button class="mu-refresh" data-act="music-refresh" aria-label="Deal new picks"' +
       (m.loading ? ' disabled' : '') + '>' + ICON.swap + '</button></div>' +
       (cards ? '<div class="mu-cards' + (m.loading ? ' is-loading' : '') + '">' + cards + '</div>'
              : '<p class="muted2 mu-empty">' + (m.loading ? 'Finding something new…'
-               : 'Nothing in the Music Assistant library yet.') + '</p>') +
+               : (musicSrc() ? 'Nothing from ' + (musicSrc() === 'spotify' ? 'Spotify' : 'YouTube Music') +
+                 ' in the Music Assistant library yet.' : 'Nothing in the Music Assistant library yet.')) + '</p>') +
       '</div>';
   }
 
@@ -2660,7 +2686,7 @@
   function musicSurprise(el) {
     if (el.disabled) return;
     el.disabled = true;
-    act(POST('/api/ha/music/surprise', { entity: el.dataset.entity }), function (d) {
+    act(POST('/api/ha/music/surprise', { entity: el.dataset.entity, source: musicSrc() }), function (d) {
       var p = d && d.pick;
       if (p) toast('Surprise: ' + p.name + (p.media_type === 'artist' ? ' radio' : '') +
         (p.provider ? ' (' + p.provider + ')' : '') + '.', 4500);
@@ -6675,6 +6701,11 @@
         updateSonosSheet();
         break;
       case 'music-play': musicPlay(el); break;
+      case 'music-src':
+        setMusicSrc(el.dataset.src || '');
+        if (state.music) { state.music.items = []; state.music.loading = false; }
+        loadMusic();
+        break;
       case 'music-refresh': state.music && (state.music.loading = false); loadMusic(); break;
       case 'sonos-surprise': {
         if (musicOn()) { musicSurprise(el); break; }
@@ -8689,7 +8720,9 @@
         { uri: 'spotify://artist/7', name: 'Lime Cordiale', media_type: 'artist', sub: 'Artist radio', provider: 'Spotify' },
         { uri: 'ytmusic://playlist/8', name: 'Aussie Summer', media_type: 'playlist', sub: 'Playlist', provider: 'YouTube Music' }
       ].sort(function () { return Math.random() - 0.5; });
-      return { available: true, items: lib.slice(0, 6) };
+      var want = q.get('source');
+      if (want) lib = lib.filter(function (i) { return i.uri.indexOf(want) === 0; });
+      return { available: true, items: lib.slice(0, 6), source: want || null };
     }
     if (path === '/api/ha/music/play') return { ok: true };
     if (path === '/api/ha/music/surprise') {

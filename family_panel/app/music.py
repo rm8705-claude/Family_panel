@@ -141,9 +141,14 @@ def status(config: dict) -> dict:
             out["error"] = ("No Sonos tile matched a Music Assistant player by name; "
                             "set music_assistant_players in the add-on options.")
             return out
+        out["source_counts"] = {}
         for kind in KINDS:
             try:
-                out["library_counts"][kind] = len(_library(entry, kind, 10))
+                got = [s for s in map(_shape, _library(entry, kind, 30)) if s]
+                out["library_counts"][kind] = len(got)
+                for g in got:
+                    k = g["source"] or "unknown"
+                    out["source_counts"][k] = out["source_counts"].get(k, 0) + 1
             except Exception as e:          # noqa: BLE001
                 out["library_counts"][kind] = f"error: {e}"
     except Exception as e:                  # noqa: BLE001
@@ -179,13 +184,34 @@ def _library(entry: str, kind: str, n: int) -> list[dict]:
     return items
 
 
-def _provider(uri: str) -> str | None:
-    head = str(uri or "").split("://", 1)[0].lower()
-    if head.startswith("spotify"):
-        return "Spotify"
-    if head.startswith("ytmusic") or head.startswith("youtube"):
-        return "YouTube Music"
+PROVIDERS = {"spotify": "Spotify", "ytmusic": "YouTube Music"}
+
+# Where an item came from. A library item's uri is just library://playlist/12,
+# so the provider is read from whatever else carries it: a provider uri, the
+# Music Assistant image proxy link (…&provider=spotify--abc…), or the image
+# host itself (Spotify's scdn.co, Google's ytimg/googleusercontent).
+_HINTS = (
+    ("spotify", ("spotify", "scdn.co")),
+    ("ytmusic", ("ytmusic", "youtube", "ytimg.com", "googleusercontent.com")),
+)
+
+
+def _provider_key(item: dict) -> str | None:
+    blobs = [str(item.get("uri") or "")]
+    img = item.get("image")
+    blobs.append(json.dumps(img) if isinstance(img, (dict, list)) else str(img or ""))
+    for k in ("provider", "provider_mappings", "provider_domain"):
+        if item.get(k):
+            blobs.append(json.dumps(item.get(k)))
+    text = " ".join(blobs).lower()
+    for key, needles in _HINTS:
+        if any(n in text for n in needles):
+            return key
     return None
+
+
+def _provider(uri: str) -> str | None:
+    return PROVIDERS.get(_provider_key({"uri": uri}))
 
 
 def _shape(item: dict) -> dict | None:
@@ -198,19 +224,37 @@ def _shape(item: dict) -> dict | None:
     sub = {"artist": "Artist radio", "playlist": "Playlist", "album": "Album"}[kind]
     if kind == "album" and artists:
         sub = artists
+    key = _provider_key(item)
     return {"uri": uri, "name": name, "media_type": kind, "sub": sub,
-            "provider": _provider(uri)}
+            "source": key, "provider": PROVIDERS.get(key)}
 
 
-def discover(config: dict, n: int = 6) -> dict:
-    """A fresh random handful from the whole library, mixed across kinds."""
+def _picks(entry: str, kind: str, n: int, source: str | None) -> list[dict]:
+    """n shaped items of one kind, only from `source` when one is asked for.
+    A filtered ask reads a bigger random page, since only part of it will
+    be from that service."""
+    items = [s for s in map(_shape, _library(entry, kind, n if not source else 60)) if s]
+    if source:
+        items = [i for i in items if i["source"] == source]
+    random.shuffle(items)
+    return items[:n]
+
+
+def _source(source) -> str | None:
+    return source if source in PROVIDERS else None
+
+
+def discover(config: dict, n: int = 6, source: str | None = None) -> dict:
+    """A fresh random handful from the library, mixed across kinds — from
+    one service only when `source` is "spotify" or "ytmusic"."""
+    source = _source(source)
     players, entry = player_map(config)
     if not (players and entry):
-        return {"available": False, "items": []}
+        return {"available": False, "items": [], "source": source}
     items = []
     for kind in KINDS:
         try:
-            items += [s for s in map(_shape, _library(entry, kind, n)) if s]
+            items += _picks(entry, kind, n, source)
         except Exception as e:              # noqa: BLE001 - one kind failing is fine
             log.info("get_library %s: %s", kind, e)
     random.shuffle(items)
@@ -222,7 +266,7 @@ def discover(config: dict, n: int = 6) -> dict:
             seen[it["media_type"]] = seen.get(it["media_type"], 0) + 1
         if len(picked) >= n:
             break
-    return {"available": True, "items": picked}
+    return {"available": True, "items": picked, "source": source}
 
 
 def play(config: dict, entity: str, uri: str, media_type: str) -> None:
@@ -253,19 +297,21 @@ def ha_shuffle(target: str) -> None:
     r.raise_for_status()
 
 
-def surprise(config: dict, entity: str) -> dict:
+def surprise(config: dict, entity: str, source: str | None = None) -> dict:
     """One random artist or playlist from the library, as radio: it starts
     from something you like and wanders off into things you haven't heard."""
     players, entry = player_map(config)
     if not (players.get(entity) and entry):
         raise ValueError("Music Assistant has no player for that speaker")
+    source = _source(source)
     kind = random.choice(("artist", "artist", "playlist"))
-    items = [s for s in map(_shape, _library(entry, kind, 10)) if s]
-    if not items and kind != "playlist":
-        kind = "playlist"
-        items = [s for s in map(_shape, _library(entry, kind, 10)) if s]
+    items = _picks(entry, kind, 10, source)
     if not items:
-        raise ValueError("Nothing in the Music Assistant library yet")
+        kind = "playlist" if kind == "artist" else "artist"
+        items = _picks(entry, kind, 10, source)
+    if not items:
+        raise ValueError("Nothing from " + PROVIDERS[source] + " in the library yet"
+                         if source else "Nothing in the Music Assistant library yet")
     pick = random.choice(items)
     _service("play_media", {"entity_id": players[entity], "media_id": pick["uri"],
                             "media_type": pick["media_type"], "enqueue": "replace",

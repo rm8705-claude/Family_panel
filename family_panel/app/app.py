@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.25.1"
+APP_VERSION = "0.26.0"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -1100,7 +1100,7 @@ def api_ha_music():
     call. {available: false} when Music Assistant isn't set up."""
     import music
     try:
-        return jsonify(music.discover(CONFIG))
+        return jsonify(music.discover(CONFIG, source=request.args.get("source")))
     except Exception as e:
         app.logger.info("music discover: %s", e)
         return jsonify({"available": False, "items": []})
@@ -1135,8 +1135,8 @@ def api_ha_music_surprise():
     body = request.get_json(force=True, silent=True) or {}
     if not _speaker_tile(body.get("entity")):
         return jsonify({"error": "Unknown or read-only speaker"}), 404
-    return _music_call(lambda: jsonify({"ok": True,
-                                        "pick": music.surprise(CONFIG, body["entity"])}))
+    return _music_call(lambda: jsonify({"ok": True, "pick": music.surprise(
+        CONFIG, body["entity"], body.get("source"))}))
 
 
 @app.get("/api/ha/art/<entity>")

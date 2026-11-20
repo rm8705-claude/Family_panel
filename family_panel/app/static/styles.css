@@ -3698,6 +3698,10 @@ html[data-theme="night"] select.inp {
 /* Music Assistant Discover row: a fresh handful from the whole library. */
 .mu-discover { margin-bottom: 1rem; }
 .mu-head { display: flex; align-items: center; gap: 0.5rem; }
+/* Both / Spotify / YouTube Music, beside the Discover heading. Reuses the
+   room-pill look; the heading's capitals don't carry into the pills. */
+.mu-src { display: flex; flex-wrap: wrap; gap: 0.375rem; margin-left: 0.75rem;
+  text-transform: none; letter-spacing: normal; font-weight: 500; }
 .mu-refresh {
   margin-left: auto;
   width: 2.25rem;

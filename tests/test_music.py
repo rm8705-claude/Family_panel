@@ -26,7 +26,10 @@ LIB = {
     "artist": [{"media_type": "artist", "uri": "spotify://artist/a", "name": "Khruangbin"}],
     "playlist": [{"media_type": "playlist", "uri": "ytmusic://playlist/p", "name": "Arvo"}],
     "album": [{"media_type": "album", "uri": "library://album/1", "name": "Currents",
-               "artists": [{"name": "Tame Impala"}]}],
+               "artists": [{"name": "Tame Impala"}],
+               "image": "http://ma:8095/imageproxy?path=x&provider=ytmusic--a1b2"},
+              {"media_type": "album", "uri": "library://album/2", "name": "Rumours",
+               "image": "https://i.scdn.co/image/ab67"}],
 }
 
 
@@ -95,6 +98,15 @@ def test_music_routes_need_a_driveable_speaker(client, monkeypatch):
     monkeypatch.setitem(app_module.CONFIG, "ha_tiles", [
         {"entity": "media_player.lounge", "type": "media", "allow_action": True}])
     got = []
-    monkeypatch.setattr(music, "surprise", lambda cfg, e: got.append(e) or {"name": "X"})
-    r = client.post("/api/ha/music/surprise", json={"entity": "media_player.lounge"})
-    assert r.status_code == 200 and got == ["media_player.lounge"]
+    monkeypatch.setattr(music, "surprise", lambda cfg, e, src=None: got.append((e, src)) or {"name": "X"})
+    r = client.post("/api/ha/music/surprise", json={"entity": "media_player.lounge", "source": "spotify"})
+    assert r.status_code == 200 and got == [("media_player.lounge", "spotify")]
+
+
+def test_discover_from_one_service_only(monkeypatch):
+    fake_ha(monkeypatch, [])
+    names = {i["name"] for i in music.discover(CONFIG, source="spotify")["items"]}
+    assert names == {"Khruangbin", "Rumours"}
+    names = {i["name"] for i in music.discover(CONFIG, source="ytmusic")["items"]}
+    assert names == {"Arvo", "Currents"}
+    assert len(music.discover(CONFIG, source="bogus")["items"]) == 4   # ignored -> both
