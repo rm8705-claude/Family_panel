@@ -407,6 +407,7 @@
     srcFilter: '',              // search text, Sonos favourites and the TV app list
     sonosPin: null,             // entity pinned to the grouped Home tile, or auto
     sonosShare: false,          // the play-together sheet is open
+    music: null,                // Music Assistant Discover picks {available, items, loading}
     sports: false,              // the standings sheet is open
     tvApps: false,              // the TV app picker is open
     tvAppsEntity: null,         // which TV it's showing (only ever one, but…)
@@ -2598,8 +2599,77 @@
     return pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
   }
 
+  /* ---- Music Assistant: Discover + the library-wide Surprise me ----
+     The Sonos favourites never change, so the Discover row deals a fresh
+     handful from the whole Spotify / YouTube Music library (via the Music
+     Assistant add-on) every time the sheet opens, and on the refresh key.
+     No Music Assistant -> {available:false} and none of this draws. */
+  function musicOn() { return !!(state.music && state.music.available); }
+
+  function loadMusic() {
+    if (state.music && state.music.loading) return;
+    state.music = { available: musicOn(), items: (state.music && state.music.items) || [], loading: true };
+    refreshMusicViews();
+    GET('/api/ha/music').then(function (d) {
+      state.music = { available: !!(d && d.available), items: (d && d.items) || [], loading: false };
+      refreshMusicViews();
+    }, function () {
+      state.music = { available: false, items: [], loading: false };
+      refreshMusicViews();
+    });
+  }
+
+  function refreshMusicViews() { updateNowPlaying(); updateSonosSheet(); }
+
+  var MUSIC_KIND_ICON = { artist: 'mic', playlist: 'playlist', album: 'radio' };
+
+  function discoverHtml(t) {
+    if (!musicOn() || !t || !t.allow_action) return '';
+    var m = state.music;
+    var cards = (m.items || []).map(function (it) {
+      return '<button class="mu-card" data-act="music-play" data-entity="' + esc(t.entity) +
+        '" data-uri="' + esc(it.uri) + '" data-type="' + esc(it.media_type) +
+        '" data-name="' + esc(it.name) + '">' +
+        '<span class="mu-ic">' + (ICON[MUSIC_KIND_ICON[it.media_type]] || ICON.playlist) + '</span>' +
+        '<span class="mu-n">' + esc(it.name) + '</span>' +
+        '<span class="mu-s">' + esc(it.sub || '') +
+        (it.provider ? ' · ' + esc(it.provider) : '') + '</span>' +
+        '</button>';
+    }).join('');
+    return '<div class="mu-discover">' +
+      '<div class="np-sec mu-head">Discover' +
+      '<button class="mu-refresh" data-act="music-refresh" aria-label="Deal new picks"' +
+      (m.loading ? ' disabled' : '') + '>' + ICON.swap + '</button></div>' +
+      (cards ? '<div class="mu-cards' + (m.loading ? ' is-loading' : '') + '">' + cards + '</div>'
+             : '<p class="muted2 mu-empty">' + (m.loading ? 'Finding something new…'
+               : 'Nothing in the Music Assistant library yet.') + '</p>') +
+      '</div>';
+  }
+
+  function musicPlay(el) {
+    if (el.disabled) return;
+    el.disabled = true;
+    el.classList.add('is-busy');
+    toast('Starting ' + el.dataset.name + '…');
+    act(POST('/api/ha/music/play', { entity: el.dataset.entity, uri: el.dataset.uri,
+                                     media_type: el.dataset.type }), function () {
+      reloadHaAfterTap();
+    }).then(function () { el.disabled = false; el.classList.remove('is-busy'); });
+  }
+
+  function musicSurprise(el) {
+    if (el.disabled) return;
+    el.disabled = true;
+    act(POST('/api/ha/music/surprise', { entity: el.dataset.entity }), function (d) {
+      var p = d && d.pick;
+      if (p) toast('Surprise: ' + p.name + (p.media_type === 'artist' ? ' radio' : '') +
+        (p.provider ? ' (' + p.provider + ')' : '') + '.', 4500);
+      reloadHaAfterTap();
+    }).then(function () { el.disabled = false; });
+  }
+
   function sourceToolsHtml(t) {
-    if (!(t.attrs && (t.attrs.source_list || []).length)) return '';
+    if (!musicOn() && !(t.attrs && (t.attrs.source_list || []).length)) return '';
     var on = sonosShuffle();
     return '<div class="np-src-tools">' +
       '<button class="sn-wbtn np-surprise" data-act="sonos-surprise" data-entity="' + esc(t.entity) +
@@ -2703,7 +2773,7 @@
     return '<div class="np-sources sn-favs">' +
       '<div class="np-sec">Play something' +
       (list.length > 1 ? ' on <b>' + esc(groupName(group)) + '</b>' : '') + '</div>' +
-      row + sourceRows(group[0]) + '</div>';
+      row + discoverHtml(group[0]) + sourceRows(group[0]) + '</div>';
   }
 
   function sonosSheetHtml() {
@@ -3146,6 +3216,7 @@
     if (list.length <= 1) { if (list[0]) openNowPlaying(list[0].entity); return; }
     openSheet('<div class="sn-sheet" id="sonosCard">' + sonosSheetHtml() + '</div>', { raw: true, centre: true });
     state.sonos = true;
+    loadMusic();
   }
 
   /* Keep every speaker's card in step with the 15 s HA poll, the same way
@@ -3476,7 +3547,8 @@
       if (vol != null) out += volRowHtml(t.entity, vol, 'Volume');
       /* The owner's ask: pick what to play without leaving the panel. The
          favourites are whatever is saved in the Sonos app. */
-      out += '<div class="np-sources"><div class="np-sec">Play something</div>' + sourceRows(t) + '</div>';
+      out += '<div class="np-sources"><div class="np-sec">Play something</div>' +
+        discoverHtml(t) + sourceRows(t) + '</div>';
     }
     return out + '</div>';
   }
@@ -3496,6 +3568,7 @@
     openSheet('<div class="np" id="npCard" role="dialog" aria-modal="true" aria-label="Now playing">' +
       nowPlayingHtml(t) + '</div>', { raw: true, centre: true });
     state.np = entity;
+    if (t.allow_action) loadMusic();
   }
 
   /* Keep the overlay in step with the 15 s HA poll and with optimistic taps. */
@@ -6601,7 +6674,10 @@
         updateNowPlaying();
         updateSonosSheet();
         break;
+      case 'music-play': musicPlay(el); break;
+      case 'music-refresh': state.music && (state.music.loading = false); loadMusic(); break;
       case 'sonos-surprise': {
+        if (musicOn()) { musicSurprise(el); break; }
         var st = mediaTile(el.dataset.entity);
         var pick = st && surprisePick(st);
         if (!pick) { toast('No favourites to pick from yet.'); break; }
@@ -8600,6 +8676,25 @@
 
     /* the demo has nothing to say it on, so it just agrees */
     if (path === '/api/ha/announce') return { ok: true };
+
+    /* Music Assistant: a little pretend library, dealt at random */
+    if (path === '/api/ha/music') {
+      var lib = [
+        { uri: 'spotify://artist/1', name: 'Khruangbin', media_type: 'artist', sub: 'Artist radio', provider: 'Spotify' },
+        { uri: 'spotify://playlist/2', name: 'Discover Weekly', media_type: 'playlist', sub: 'Playlist', provider: 'Spotify' },
+        { uri: 'ytmusic://album/3', name: 'Currents', media_type: 'album', sub: 'Tame Impala', provider: 'YouTube Music' },
+        { uri: 'ytmusic://artist/4', name: 'Ocean Alley', media_type: 'artist', sub: 'Artist radio', provider: 'YouTube Music' },
+        { uri: 'spotify://playlist/5', name: 'Sunday Arvo', media_type: 'playlist', sub: 'Playlist', provider: 'Spotify' },
+        { uri: 'spotify://album/6', name: 'Rumours', media_type: 'album', sub: 'Fleetwood Mac', provider: 'Spotify' },
+        { uri: 'spotify://artist/7', name: 'Lime Cordiale', media_type: 'artist', sub: 'Artist radio', provider: 'Spotify' },
+        { uri: 'ytmusic://playlist/8', name: 'Aussie Summer', media_type: 'playlist', sub: 'Playlist', provider: 'YouTube Music' }
+      ].sort(function () { return Math.random() - 0.5; });
+      return { available: true, items: lib.slice(0, 6) };
+    }
+    if (path === '/api/ha/music/play') return { ok: true };
+    if (path === '/api/ha/music/surprise') {
+      return { ok: true, pick: { name: 'Khruangbin', media_type: 'artist', provider: 'Spotify' } };
+    }
 
     if (path === '/api/ha/action') {
       var tile = M.tiles.filter(function (t) { return t.entity === body.entity; })[0];

@@ -5,7 +5,7 @@
 # together whenever you ship a change (see the repo's `ship` skill).
 name: "Family Panel"
 description: "Self-hosted family wall calendar: shared calendar, chores, lists, meal planner and Home Assistant tiles."
-version: "0.24.0"
+version: "0.25.0"
 slug: "family_panel"
 url: "https://github.com/rm8705-claude/family_panel"
 arch:
@@ -195,6 +195,10 @@ options:
   sonos_night_to: "07:00"
   sonos_tts: "tts.google_translate_en_com"
   sonos_announce_volume: 40
+  # Music Assistant (optional add-on): the panel finds its players by room
+  # name. Only if a speaker's MA player is named differently, map it here:
+  # "media_player.lounge=media_player.lounge_2, media_player.roam=media_player.roam_ma"
+  music_assistant_players: ""
   llm_provider: "anthropic"
   anthropic_api_key: ""
   llm_model: "claude-haiku-4-5"
@@ -272,6 +276,7 @@ schema:
   sonos_night_to: "match(^([01][0-9]|2[0-3]):[0-5][0-9]$)?"
   sonos_tts: "str?"
   sonos_announce_volume: "int(1,100)?"
+  music_assistant_players: "str?"
   llm_provider: "list(anthropic|lmstudio)"
   anthropic_api_key: "password?"
   llm_model: "str?"

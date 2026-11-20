@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.24.0"
+APP_VERSION = "0.25.0"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -1072,6 +1072,64 @@ def api_ha_announce():
     except Exception as e:
         return jsonify({"error": f"Home Assistant did not respond ({e})"}), 502
     return jsonify({"ok": True})
+
+
+def _speaker_tile(entity):
+    """A configured media tile that may be driven, or None."""
+    return next((t for t in CONFIG.get("ha_tiles", []) or []
+                 if t.get("entity") == entity and t.get("type") == "media"
+                 and t.get("allow_action")), None)
+
+
+def _music_call(fn):
+    import ha
+    try:
+        return fn()
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except ha.NotConfigured:
+        return jsonify({"error": "Home Assistant is not configured"}), 503
+    except Exception as e:
+        return jsonify({"error": f"Music Assistant did not respond ({e})"}), 502
+
+
+@app.get("/api/ha/music")
+def api_ha_music():
+    """A fresh random handful from the Music Assistant library (Spotify,
+    YouTube Music, ...) for the Sonos sheet's Discover row. Different every
+    call. {available: false} when Music Assistant isn't set up."""
+    import music
+    try:
+        return jsonify(music.discover(CONFIG))
+    except Exception as e:
+        app.logger.info("music discover: %s", e)
+        return jsonify({"available": False, "items": []})
+
+
+@app.post("/api/ha/music/play")
+def api_ha_music_play():
+    """Play one Discover pick: {entity: sonos tile, uri, media_type}."""
+    import music
+    body = request.get_json(force=True, silent=True) or {}
+    if not _speaker_tile(body.get("entity")):
+        return jsonify({"error": "Unknown or read-only speaker"}), 404
+
+    def go():
+        music.play(CONFIG, body["entity"], str(body.get("uri") or ""),
+                   str(body.get("media_type") or ""))
+        return jsonify({"ok": True})
+    return _music_call(go)
+
+
+@app.post("/api/ha/music/surprise")
+def api_ha_music_surprise():
+    """Random artist or playlist from the library, started as radio."""
+    import music
+    body = request.get_json(force=True, silent=True) or {}
+    if not _speaker_tile(body.get("entity")):
+        return jsonify({"error": "Unknown or read-only speaker"}), 404
+    return _music_call(lambda: jsonify({"ok": True,
+                                        "pick": music.surprise(CONFIG, body["entity"])}))
 
 
 @app.get("/api/ha/art/<entity>")

@@ -3695,6 +3695,54 @@ html[data-theme="night"] select.inp {
 /* Jump to a favourite instead of hunting for it — see sonosSearchHtml() and
    patchSonosFilter() in app.js, which keep every keystroke off the DOM
    rebuild path so the caret and the on-screen keyboard never drop. */
+/* Music Assistant Discover row: a fresh handful from the whole library. */
+.mu-discover { margin-bottom: 1rem; }
+.mu-head { display: flex; align-items: center; gap: 0.5rem; }
+.mu-refresh {
+  margin-left: auto;
+  width: 2.25rem;
+  height: 2.25rem;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--ink-2);
+}
+.mu-refresh svg { width: 1.125rem; height: 1.125rem; display: block; }
+.mu-refresh:active { background: var(--card-2); }
+.mu-refresh:disabled { opacity: 0.4; }
+.mu-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+.mu-cards.is-loading { opacity: 0.5; }
+.mu-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 0.625rem;
+  align-items: center;
+  min-height: var(--tap);
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius-s);
+  background: var(--card);
+  color: var(--ink);
+  text-align: left;
+  font-family: var(--sans);
+}
+.mu-card:active { background: var(--card-2); }
+.mu-card.is-busy { opacity: 0.6; }
+.mu-ic { grid-row: 1 / span 2; color: var(--hero); display: grid; place-items: center; }
+.mu-ic svg { width: 1.25rem; height: 1.25rem; display: block; }
+.mu-n, .mu-s { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mu-n { font-size: 0.9375rem; font-weight: 600; }
+.mu-s { font-size: 0.8125rem; color: var(--ink-3); }
+.mu-empty { font-size: 0.9375rem; }
+@media (max-width: 700px) {
+  .mu-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 /* Surprise me + the shuffle switch, above the favourites search. */
 .np-src-tools {
   display: flex;
