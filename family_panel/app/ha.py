@@ -324,6 +324,7 @@ def tile_shape(tile: dict, cached: dict | None) -> dict:
                         # the entity's source_list — the panel's "play something"
                         "source_list": attrs.get("source_list") or [],
                         "source": attrs.get("source"),
+                        "shuffle": bool(attrs.get("shuffle")),
                         # Which other configured speakers are currently synced
                         # with this one, for the "play here too" / "play
                         # separately" grouping controls. HA lists every member
@@ -450,6 +451,11 @@ ACTIONS = {
         # Two named actions rather than one boolean, same as turn_on/turn_off
         # above — the button already knows which way it wants to go, so there
         # is nothing to parse out of a value.
+        # Sonos play mode. A favourite playlist otherwise starts at track 1
+        # in saved order every time, which is why it "always plays the same
+        # stuff" — see play_shuffled for the one-tap version.
+        "shuffle_on": ("media_player", "shuffle_set", lambda v: {"shuffle": True}),
+        "shuffle_off": ("media_player", "shuffle_set", lambda v: {"shuffle": False}),
         "mute": ("media_player", "volume_mute", lambda v: {"is_volume_muted": True}),
         "unmute": ("media_player", "volume_mute", lambda v: {"is_volume_muted": False}),
     },
@@ -481,6 +487,31 @@ def call_action(entity: str, action: str, value=None) -> None:
     r = requests.post(f"{base}/services/{service_domain}/{service}",
                       headers=_headers(token), json=body, timeout=TIMEOUT)
     r.raise_for_status()
+
+
+def play_shuffled(entity: str, source: str) -> None:
+    """Start a Sonos favourite playlist shuffled, from a random track.
+
+    select_source alone loads the playlist and plays track 1 in saved order,
+    every time. Turning shuffle on reorders the rest of the queue but leaves
+    track 1 playing, so one skip lands somewhere random. The speaker needs a
+    moment to load the new queue before it will take either, so that part
+    runs in a thread and the tap returns as soon as the favourite is asked
+    for. Radio stations can't shuffle or skip; failures there are ignored.
+    """
+    call_action(entity, "select_source", source)
+
+    def settle():
+        time.sleep(2.5)
+        for action in ("shuffle_on", "next"):
+            try:
+                call_action(entity, action)
+            except Exception as e:                      # noqa: BLE001
+                log.info("play_shuffled %s on %s: %s", action, entity, e)
+                return
+            time.sleep(0.5)
+
+    threading.Thread(target=settle, daemon=True).start()
 
 
 # ------------------------------------------------------------ sonos extras

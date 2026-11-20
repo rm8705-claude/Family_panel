@@ -1895,7 +1895,7 @@ ul, ol { list-style: none; }
 
 /* the fan (four keys) and the TV (three) take two columns, so their keys sit
    in one row instead of a block a half-height tile has no room for */
-.tile.is-fan, .tile.is-tv { grid-column: span 2; }
+.tile.is-fan, .tile.is-tv, .tile.is-sonos, .tile.is-media { grid-column: span 2; }
 .tile.is-fan .tile-acts, .tile.is-tv .tile-acts { flex-wrap: nowrap; }
 
 /* Which speaker the grouped tile leads with, pinnable — see sonosTile() in
@@ -3695,6 +3695,15 @@ html[data-theme="night"] select.inp {
 /* Jump to a favourite instead of hunting for it — see sonosSearchHtml() and
    patchSonosFilter() in app.js, which keep every keystroke off the DOM
    rebuild path so the caret and the on-screen keyboard never drop. */
+/* Surprise me + the shuffle switch, above the favourites search. */
+.np-src-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.np-src-tools .np-surprise { color: var(--ink); }
+.np-src-tools .np-shuf:not(.is-on) { color: var(--ink-2); font-weight: 500; }
 .np-src-search {
   position: relative;
   flex: 0 0 auto;

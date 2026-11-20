@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.23.1"
+APP_VERSION = "0.24.0"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -1029,6 +1029,10 @@ def api_ha_action():
         elif tile is not None and tile.get("type") == "tv" and body.get("action") == "launch_app":
             return jsonify({"ok": True,
                             "waking": not ha.tv_launch(tile, body.get("value"))})
+        # A Sonos favourite playlist, shuffled and started on a random track
+        # rather than track 1 of the saved order (see ha.play_shuffled).
+        elif tile is not None and tile.get("type") == "media" and body.get("action") == "play_shuffled":
+            ha.play_shuffled(entity, str(body.get("value") or ""))
         else:
             ha.call_action(entity, body.get("action", ""), body.get("value"))
         ha.refresh_after_action(CONFIG.get("ha_tiles", []) or [])

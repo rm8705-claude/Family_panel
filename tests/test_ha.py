@@ -418,3 +418,41 @@ def test_bin_day_without_recycle_sensor_falls_back():
     assert "binary_sensor.brisbane_bin_day_recycle" in ha.wanted_entities([BIN_TILE])
     renamed = {**BIN_TILE, "recycle_entity": "binary_sensor.yellow_bin"}
     assert "binary_sensor.yellow_bin" in ha.wanted_entities([renamed])
+
+
+def test_play_shuffled_starts_then_shuffles_and_skips(monkeypatch):
+    """A favourite playlist starts, then shuffle goes on and one skip lands
+    on a random track instead of track 1 of the saved order."""
+    calls = []
+    monkeypatch.setattr(ha, "call_action", lambda e, a, v=None: calls.append((e, a, v)))
+    monkeypatch.setattr(ha.time, "sleep", lambda s: None)
+    started = []
+
+    class NowThread:
+        def __init__(self, target, daemon=None):
+            self.target = target
+
+        def start(self):
+            started.append(True)
+            self.target()
+
+    monkeypatch.setattr(ha.threading, "Thread", NowThread)
+    ha.play_shuffled("media_player.lounge", "Kitchen Disco")
+    assert started
+    assert calls == [("media_player.lounge", "select_source", "Kitchen Disco"),
+                     ("media_player.lounge", "shuffle_on", None),
+                     ("media_player.lounge", "next", None)]
+    assert ha.ACTIONS["media_player"]["shuffle_on"][2](None) == {"shuffle": True}
+
+
+def test_play_shuffled_action_routes_for_media_tiles(client, monkeypatch):
+    import app as app_module
+    monkeypatch.setitem(app_module.CONFIG, "ha_tiles", [
+        {"entity": "media_player.lounge", "type": "media", "allow_action": True}])
+    got = []
+    monkeypatch.setattr(ha, "play_shuffled", lambda e, s: got.append((e, s)))
+    monkeypatch.setattr(ha, "refresh_after_action", lambda tiles: None)
+    r = client.post("/api/ha/action", json={"entity": "media_player.lounge",
+                                            "action": "play_shuffled", "value": "Road Trip"})
+    assert r.status_code == 200
+    assert got == [("media_player.lounge", "Road Trip")]

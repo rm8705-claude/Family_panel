@@ -228,6 +228,7 @@
   var SKIN_KEY = 'panel-skin';
   var THEME_MODE_KEY = 'panel-theme-mode';
   var SONOS_PIN_KEY = 'panel-sonos-pin';
+  var SONOS_SHUFFLE_KEY = 'panel-sonos-shuffle';
 
   function skinDef(id) {
     for (var i = 0; i < SKINS.length; i++) if (SKINS[i].id === id) return SKINS[i];
@@ -2383,9 +2384,10 @@
         (arr && arr.pick === it.key ? ' data-pick="1"' : ''));
     }).join('');
     /* two rows, never a sideways scroll: as many columns as it takes to fit
-       every tile in two rows, the fan and the TV counting double */
+       every tile in two rows, the fan, the TV and the speakers counting
+       double */
     var slots = (body.match(/class="tile[ "]/g) || []).length +
-      (body.match(/class="tile[^"]* is-(fan|tv)[ "]/g) || []).length;
+      (body.match(/class="tile[^"]* is-(fan|tv|sonos|media)[ "]/g) || []).length;
     return '<section class="card a-ha' + (arr ? ' is-arranging' : '') + '">' +
       (arr ? arrangeBarHtml(arr) : '') +
       '<div class="ha-row' + (Math.ceil(slots / 2) >= 7 ? ' is-dense' : '') +
@@ -2568,6 +2570,45 @@
      you actually want to glance at. Pin sticks until swapped again, and
      persists like the skin/theme choice: it's this physical panel's
      preference, not the household's shared config. */
+  /* Playlists start shuffled, on a random track, unless someone turns it
+     off — on by default, because a favourite always opening on track 1 of
+     the same order is exactly the "it's always the same stuff" complaint.
+     Remembered per panel, like the pin. */
+  function sonosShuffle() {
+    try { return localStorage.getItem(SONOS_SHUFFLE_KEY) !== '0'; }
+    catch (e) { return true; }
+  }
+
+  function setSonosShuffle(on) {
+    try { localStorage.setItem(SONOS_SHUFFLE_KEY, on ? '1' : '0'); } catch (e) { /* nothing to do */ }
+  }
+
+  function isRadioSource(name) {
+    return /\b(fm|am|radio|abc|triple|double j|classic|news|jazz|kids listen)\b/i.test(String(name || ''));
+  }
+
+  /* "Surprise me": a random favourite playlist (any favourite if none look
+     like playlists), never the one already on, started shuffled. */
+  function surprisePick(t) {
+    var a = t.attrs || {};
+    var all = (a.source_list || []).filter(function (x) { return x; });
+    var lists = all.filter(function (x) { return !isRadioSource(x); });
+    var pool = (lists.length ? lists : all).filter(function (x) { return x !== a.source; });
+    if (!pool.length) pool = lists.length ? lists : all;
+    return pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+  }
+
+  function sourceToolsHtml(t) {
+    if (!(t.attrs && (t.attrs.source_list || []).length)) return '';
+    var on = sonosShuffle();
+    return '<div class="np-src-tools">' +
+      '<button class="sn-wbtn np-surprise" data-act="sonos-surprise" data-entity="' + esc(t.entity) +
+      '" data-label="Surprise me">' + ICON.playlist + '<span>Surprise me</span></button>' +
+      '<button class="sn-wbtn np-shuf' + (on ? ' is-on' : '') + '" data-act="sonos-shuffle" aria-pressed="' + on + '">' +
+      'Shuffle playlists: ' + (on ? 'on' : 'off') + '</button>' +
+      '</div>';
+  }
+
   function readSonosPin() {
     try { return localStorage.getItem(SONOS_PIN_KEY) || null; }
     catch (e) { return null; }               // private mode / storage disabled
@@ -3319,8 +3360,7 @@
   /* A saved radio station reads differently from a playlist, so the row
      glyph says which — guessed from the name, since HA doesn't tell us. */
   function sourceIcon(name) {
-    return /\b(fm|am|radio|abc|triple|double j|classic|news|jazz|kids listen)\b/i.test(String(name || ''))
-      ? ICON.radio : ICON.playlist;
+    return isRadioSource(name) ? ICON.radio : ICON.playlist;
   }
 
   /* A box above the favourites to jump straight to one instead of hunting
@@ -3381,7 +3421,9 @@
     var starting = startingSource(t);
     var q = (state.srcFilter || '').trim().toLowerCase();
     var anyMatch = false;
+    var shuffle = sonosShuffle();
     var rows = list.map(function (name) {
+      var act = shuffle && !isRadioSource(name) ? 'play_shuffled' : 'select_source';
       var on = !starting && a.source === name;
       var busy = starting === name;
       var hide = q && name.toLowerCase().indexOf(q) === -1;
@@ -3389,14 +3431,14 @@
       return '<button class="np-src' + (on ? ' is-on' : '') + (busy ? ' is-starting' : '') + '"' +
         (hide ? ' hidden' : '') +
         ' data-act="ha" data-entity="' + esc(t.entity) +
-        '" data-action="select_source" data-value="' + esc(name) + '" data-vstr="1" data-label="' + esc(name) + '">' +
+        '" data-action="' + act + '" data-value="' + esc(name) + '" data-vstr="1" data-label="' + esc(name) + '">' +
         '<span class="np-src-ic">' + sourceIcon(name) + '</span>' +
         '<span class="np-src-n">' + esc(name) + '</span>' +
         (busy ? '<span class="np-src-tag">Starting…</span>'
               : (on ? '<span class="np-src-tag is-on">Playing</span>' : '')) +
         '</button>';
     }).join('');
-    return srcSearchHtml() + '<div class="np-src-list">' + rows +
+    return sourceToolsHtml(t) + srcSearchHtml() + '<div class="np-src-list">' + rows +
       '<p class="np-src-empty muted2"' + (q && !anyMatch ? '' : ' hidden') + '>Nothing matches “' + esc(state.srcFilter) + '”.</p>' +
       '</div>';
   }
@@ -6292,7 +6334,7 @@
         if (attr === 'percentage' && t.attrs.percentage > 0) { t.attrs.on = true; t.state = 'on'; }
         render();
       }
-    } else if (action === 'select_source' || action === 'launch_app') {
+    } else if (action === 'select_source' || action === 'play_shuffled' || action === 'launch_app') {
       /* Shared by Sonos favourites and the TV app picker — both slots are set
          unconditionally and each consumer (startingSource/tvStartingSource)
          checks its own entity, so the one that doesn't apply here is just
@@ -6331,7 +6373,7 @@
       btn.disabled = true;
       btn.classList.add('is-busy');
     }
-    haSend(btn, !!attr || action === 'select_source' || action === 'launch_app' ||
+    haSend(btn, !!attr || action === 'select_source' || action === 'play_shuffled' || action === 'launch_app' ||
       playPause || action === 'join' || action === 'unjoin');
   }
 
@@ -6554,6 +6596,22 @@
       case 'cam-grid': openCameraGrid(); break;
       case 'media-open': openNowPlaying(el.dataset.entity); break;
       case 'sonos-open': openSonosSheet(); break;
+      case 'sonos-shuffle':
+        setSonosShuffle(!sonosShuffle());
+        updateNowPlaying();
+        updateSonosSheet();
+        break;
+      case 'sonos-surprise': {
+        var st = mediaTile(el.dataset.entity);
+        var pick = st && surprisePick(st);
+        if (!pick) { toast('No favourites to pick from yet.'); break; }
+        el.dataset.action = 'play_shuffled';
+        el.dataset.value = pick;
+        el.dataset.vstr = '1';
+        haTap(el);
+        toast('Playing ' + pick + ', shuffled.');
+        break;
+      }
       case 'sonos-target':
         state.sonosTarget = el.dataset.entity;
         updateSonosSheet();
@@ -6914,10 +6972,42 @@
     if (SV.on) svDismiss();
   }, true);
 
+  /* An overlay left open — the camera wall, the Sonos sheet, the aircon —
+     used to hold the screensaver off forever, live camera streams and all.
+     After two untouched minutes it closes itself and the frame comes on.
+     A sheet someone is filling in (an event, a list item, a recipe) is left
+     alone: closing it would throw their typing away. The favourites search
+     box doesn't count as a form. ?idle=<s> shortens this too, for testing. */
+  var SHEET_IDLE_MS = 2 * 60000;
+
+  function sheetIsForm(host) {
+    return !!host.querySelector(
+      'input:not(.np-src-search-in):not([type=range]):not([type=checkbox]):not([type=radio]), textarea, select');
+  }
+
+  function sheetIdleMs() {
+    var forced = Number(Q.get('idle'));
+    return forced > 0 ? Math.min(SHEET_IDLE_MS, forced * 1000) : SHEET_IDLE_MS;
+  }
+
+  function closeIdleSheet() {
+    var host = byId('sheetHost');
+    if (!host.firstChild || state.arrange || !byId('sleep').hidden) return false;
+    if (Date.now() - SV.lastInput < sheetIdleMs()) return false;
+    if (sheetIsForm(host)) return false;
+    if (volDrag) return false;
+    closeSheet();
+    return true;
+  }
+
   function updateSaver() {
     renderSaverDebug();
     if (SV.on) {
       if (svBusy()) svStop();
+      return;
+    }
+    if (closeIdleSheet()) {
+      if (!inSleepWindow()) svStart();
       return;
     }
     if (svBusy() || inSleepWindow()) return;
@@ -8556,7 +8646,7 @@
         tile.attrs.source = String(body.value == null ? '' : body.value);
       }
       /* the favourites list: picking one starts that station or playlist */
-      else if (body.action === 'select_source') {
+      else if (body.action === 'select_source' || body.action === 'play_shuffled') {
         var src = String(body.value == null ? '' : body.value);
         var now = SOURCE_NOW[src] || { title: src, artist: 'Sonos favourite' };
         tile.attrs.source = src;
