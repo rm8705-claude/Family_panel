@@ -5829,8 +5829,38 @@
       '<select class="inp" id="c-slot">' + SLOTS.map(function (s) {
         return '<option value="' + s + '"' + (s === slot ? ' selected' : '') + '>' + capitalise(s) + '</option>';
       }).join('') + '</select></div>' +
+      '<div class="field"><label for="c-repeat">Repeat</label>' +
+      '<select class="inp" id="c-repeat">' + REPEAT_OPTS.map(function (o) {
+        return '<option value="' + o[0] + '"' + (o[0] === repeatValue(c) ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
+      }).join('') + '</select></div>' +
       '<div class="field"><label for="c-stars">Stars</label>' +
-      '<input class="inp mono" id="c-stars" type="number" min="1" max="5" value="' + (c.stars || 1) + '"></div></div>';
+      '<input class="inp mono" id="c-stars" type="number" min="0" max="5" value="' +
+      (c.stars == null ? 1 : c.stars) + '"></div></div>' +
+      '<p class="muted2" style="font-size:.8125rem;margin-top:-.25rem">Fortnightly: “this week” or “next week” ' +
+      'sets which weeks it lands on, so two fortnightly jobs can take turns. Monthly: the first of the chosen ' +
+      'day(s) each month. 0 stars for grown-up jobs.</p>';
+  }
+
+  /* weekly / fortnightly (on this week or next) / monthly (first week) */
+  var REPEAT_OPTS = [['weekly', 'Every week'], ['fortnightly:this', 'Fortnightly — this week'],
+                     ['fortnightly:next', 'Fortnightly — next week'], ['monthly', 'Monthly — first week']];
+
+  function mondayOf(ymdStr) { return addDays(ymdStr, -((dowOf(ymdStr) + 6) % 7)); }
+
+  function repeatValue(c) {
+    var r = (c && c.repeat) || 'weekly';
+    if (r !== 'fortnightly') return r;
+    if (!c.anchor) return 'fortnightly:this';
+    var a = Date.parse(mondayOf(c.anchor) + 'T00:00:00Z');
+    var t = Date.parse(mondayOf(state.today) + 'T00:00:00Z');
+    return Math.round((t - a) / 604800000) % 2 === 0 ? 'fortnightly:this' : 'fortnightly:next';
+  }
+
+  function repeatLabel(c) {
+    var r = (c && c.repeat) || 'weekly';
+    if (r === 'monthly') return 'monthly';
+    if (r === 'fortnightly') return repeatValue(c) === 'fortnightly:this' ? 'fortnightly (on this wk)' : 'fortnightly (on next wk)';
+    return '';
   }
 
   function readChoreForm() {
@@ -5838,9 +5868,12 @@
     var days = readForm('c-days');
     if (!title) { toast('Give the chore a name first.'); return null; }
     if (!days) { toast('Pick at least one day.'); return null; }
+    var rv = (readForm('c-repeat') || 'weekly').split(':');
+    var st = Number(readForm('c-stars'));
     return {
       title: title, person_id: readForm('c-person') || 'kid', days: days,
-      slot: readForm('c-slot') || 'morning', stars: Number(readForm('c-stars')) || 1
+      slot: readForm('c-slot') || 'morning', stars: isNaN(st) ? 1 : st,
+      repeat: rv[0], start: rv[1] || undefined
     };
   }
 
@@ -5855,7 +5888,8 @@
             '" role="button" tabindex="0" style="gap:.875rem;' + pstyle(c.person_id) + '">' +
             '<span class="cd-dot"></span>' +
             '<span class="item-text" style="flex:1 1 auto">' + esc(c.title) + '</span>' +
-            '<span class="mono muted2" style="font-size:.8125rem">' + esc(c.days) + ' · ' + esc(c.slot) + ' · ' + (c.stars || 1) + '★</span>' +
+            '<span class="mono muted2" style="font-size:.8125rem">' + esc(c.days) + ' · ' + esc(c.slot) +
+            (repeatLabel(c) ? ' · ' + esc(repeatLabel(c)) : '') + (c.stars ? ' · ' + c.stars + '★' : '') + '</span>' +
             '<span class="cd-edit">Edit</span>' +
             '<button class="btn sm danger" data-act="chore-delete" data-id="' + esc(c.id) + '">Delete</button></div>';
         }).join('') : '<div class="empty">No chores set up yet — add the first one below.</div>') +
@@ -5865,6 +5899,7 @@
       openSheet(body, {
         title: 'Manage chores',
         foot: '<button class="btn primary" data-act="chore-add">Add chore</button>' +
+          '<button class="btn" data-act="chores-paste">Paste a list</button>' +
           '<span style="flex:1 1 auto"></span><button class="btn ghost" data-act="close-sheet">Close</button>',
         focus: false
       });
@@ -5882,6 +5917,53 @@
         '<span style="flex:1 1 auto"></span>' +
         '<button class="btn danger" data-act="chore-delete" data-id="' + esc(c.id) + '">Delete</button>',
       focus: false
+    });
+  }
+
+  /* Paste a whole list at once: one chore per line,
+       Title | Who | Days | Time | Repeat | Stars
+     Check first (nothing saved), then Add all. */
+  function openChorePaste(text) {
+    if (!state.pin) { openPin('Enter the admin PIN to manage chores.'); return; }
+    openSheet('<p class="muted" style="margin-top:0">One chore per line: ' +
+      '<span class="mono">Title | Who | Days | Time | Repeat | Stars</span>. ' +
+      'Only the first three are needed. Days: Mon, Tue… or Weekdays / Weekends. ' +
+      'Time: morning, afternoon or evening (evening if left out). Repeat: weekly, fortnightly, ' +
+      'fortnightly next or monthly (weekly if left out). Stars: 0 if left out.</p>' +
+      '<textarea class="inp mono chore-paste" id="cb-text" rows="12" spellcheck="false" ' +
+      'placeholder="Take out bins | ' + esc((people()[0] || {}).name || 'Name') + ' | Mon | evening | weekly">' +
+      esc(text || '') + '</textarea>' +
+      '<div id="cbResult" class="cb-result"></div>',
+      { title: 'Paste a list of chores', wide: true, focus: false,
+        foot: '<button class="btn" data-act="chores-paste-check">Check</button>' +
+          '<button class="btn primary" data-act="chores-paste-add">Add all</button>' +
+          '<button class="btn ghost" data-act="manage-chores">Back</button>' +
+          '<span style="flex:1 1 auto"></span><button class="btn ghost" data-act="close-sheet">Close</button>' });
+  }
+
+  function choresPaste(dry) {
+    var text = readForm('cb-text');
+    if (!text.trim()) { toast('Paste the list in first.'); return; }
+    act(POST('/api/chores/bulk', { text: text, dry_run: dry }), function (d) {
+      var rows = (d && d.rows) || [];
+      var host = byId('cbResult');
+      if (!dry && d && d.created) {
+        toast('Added ' + d.created + ' chore' + (d.created === 1 ? '' : 's') +
+          (d.errors ? ' — ' + d.errors + ' line(s) skipped' : '') + '.', 5000);
+        loadChores().then(renderSoon);
+        if (!d.errors) { openChoreManager(); return; }
+      }
+      if (!host) return;
+      host.innerHTML = '<p class="muted">' + (rows.length - d.errors) + ' ready' +
+        (d.errors ? ', ' + d.errors + ' to fix' : '') + (dry ? ' — nothing saved yet.' : '.') + '</p>' +
+        rows.map(function (r) {
+          if (!r.ok) return '<div class="cb-row is-bad"><span class="mono">Line ' + r.line + '</span> ' +
+            esc(r.text) + ' — <b>' + esc(r.error) + '</b></div>';
+          var c = r.chore;
+          return '<div class="cb-row" style="' + pstyle(c.person_id) + '"><span class="cd-dot"></span>' +
+            esc(c.title) + ' <span class="muted2 mono">' + esc(nameOf(c.person_id)) + ' · ' + esc(c.days) +
+            ' · ' + esc(c.slot) + ' · ' + esc(c.repeat) + (c.stars ? ' · ' + c.stars + '★' : '') + '</span></div>';
+        }).join('');
     });
   }
 
@@ -6623,6 +6705,9 @@
       case 'redeem': openRedeem(el.dataset.person); break;
       case 'redeem-save': saveRedeem(el.dataset.person); break;
       case 'manage-chores': openChoreManager(); break;
+      case 'chores-paste': openChorePaste(); break;
+      case 'chores-paste-check': choresPaste(true); break;
+      case 'chores-paste-add': choresPaste(false); break;
       case 'chore-add': addChore(); break;
       case 'chore-edit': openChoreForm(el.dataset.id); break;
       case 'chore-save': saveChore(el.dataset.id); break;
@@ -8777,6 +8862,20 @@
 
     if (path === '/api/chores' && method === 'GET') return { chores: M.chores };
 
+    if (path === '/api/chores/bulk') {
+      var brows = String(body.text || '').split('\n').map(function (l, i) {
+        var p = l.split('|').map(function (x) { return x.trim(); });
+        if (!l.trim()) return null;
+        if (p.length < 3) return { line: i + 1, ok: false, text: l, error: 'Needs at least: Title | Who | Days' };
+        return { line: i + 1, ok: true, chore: { title: p[0], person_id: (M.people || [{}])[0].id || 'kid',
+          days: p[2], slot: p[3] || 'evening', repeat: p[4] || 'weekly', stars: Number(p[5]) || 0 } };
+      }).filter(Boolean);
+      var bad = brows.filter(function (r) { return !r.ok; }).length;
+      if (!body.dry_run) brows.forEach(function (r, i) {
+        if (r.ok) M.chores.push(Object.assign({ id: 900 + i }, r.chore));
+      });
+      return { rows: brows, created: body.dry_run ? 0 : brows.length - bad, errors: bad };
+    }
     if (path === '/api/chores' && method === 'POST') {
       var nc = {
         id: Math.max.apply(null, M.chores.map(function (c) { return c.id; })) + 1,

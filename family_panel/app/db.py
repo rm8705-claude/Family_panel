@@ -20,7 +20,7 @@ DB_PATH = os.environ.get(
 
 _local = threading.local()
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS people(
@@ -53,7 +53,9 @@ CREATE TABLE IF NOT EXISTS chores(
     title TEXT NOT NULL, person_id TEXT NOT NULL,
     days TEXT NOT NULL,                       -- "MO,TU,WE,TH,FR"
     slot TEXT NOT NULL CHECK(slot IN ('morning','afternoon','evening')),
-    stars INTEGER NOT NULL DEFAULT 1);
+    stars INTEGER NOT NULL DEFAULT 1,
+    repeat TEXT NOT NULL DEFAULT 'weekly',    -- weekly | fortnightly | monthly
+    anchor TEXT);                             -- fortnightly: a Monday of an "on" week
 
 CREATE TABLE IF NOT EXISTS chore_done(
     chore_id INTEGER NOT NULL, date TEXT NOT NULL, done_at TEXT,
@@ -126,6 +128,13 @@ def init_db(config: dict) -> None:
                     conn.execute("ALTER TABLE recipes ADD COLUMN source_url TEXT")
                 if "meta" not in cols:
                     conn.execute("ALTER TABLE recipes ADD COLUMN meta TEXT")
+            if version < 3:
+                # v3: chores that repeat fortnightly or monthly
+                cols = {r["name"] for r in conn.execute("PRAGMA table_info(chores)")}
+                if "repeat" not in cols:
+                    conn.execute("ALTER TABLE chores ADD COLUMN repeat TEXT NOT NULL DEFAULT 'weekly'")
+                if "anchor" not in cols:
+                    conn.execute("ALTER TABLE chores ADD COLUMN anchor TEXT")
             conn.execute("UPDATE settings SET value=? WHERE key='schema_version'",
                          (str(SCHEMA_VERSION),))
 

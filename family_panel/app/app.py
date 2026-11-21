@@ -5,6 +5,7 @@ Not an icubed work tool: domestic design system, no icubed branding.
 """
 import json
 import os
+import re
 from datetime import date, datetime, time, timedelta
 
 from flask import Flask, jsonify, request, send_from_directory
@@ -12,7 +13,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.32.0"
+APP_VERSION = "0.33.0"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -260,6 +261,34 @@ def _monday(d: date) -> date:
     return d - timedelta(days=d.weekday())
 
 
+REPEATS = ("weekly", "fortnightly", "monthly")
+
+
+def chore_due(row, d: date) -> bool:
+    """Is this chore on the list for date d?
+    weekly       every chosen weekday
+    fortnightly  chosen weekdays, every second week, counted from `anchor`
+                 (the Monday of an "on" week) — two fortnightly chores with
+                 anchors a week apart take turns
+    monthly      the first of each chosen weekday in the month (day 1-7),
+                 e.g. "first Saturday of the month"
+    """
+    if WEEKDAY_CODES[d.weekday()] not in str(row["days"] or "").split(","):
+        return False
+    rep = (row["repeat"] if "repeat" in row.keys() else None) or "weekly"
+    if rep == "fortnightly":
+        try:
+            anchor = date.fromisoformat(row["anchor"]) if row["anchor"] else None
+        except ValueError:
+            anchor = None
+        if anchor is None:
+            return True
+        return ((_monday(d) - _monday(anchor)).days // 7) % 2 == 0
+    if rep == "monthly":
+        return d.day <= 7
+    return True
+
+
 def _stars_earned(conn, person_id: str, from_d: date | None = None,
                   to_d: date | None = None) -> int:
     q = ("SELECT COALESCE(SUM(c.stars),0) AS s FROM chore_done cd"
@@ -294,6 +323,7 @@ def api_chores_today():
             for r in conn.execute(
                 "SELECT * FROM chores WHERE person_id=? AND days LIKE ?",
                 (p["id"], f"%{weekday}%"))
+            if chore_due(r, d)
         ]
         chores.sort(key=lambda c: (slot_order.get(c["slot"], 3), c["title"].lower()))
         people.append({
@@ -342,10 +372,28 @@ def _chore_payload_ok(body):
         return None, "Days must be codes like MO,TU,WE"
     if body.get("slot", "morning") not in ("morning", "afternoon", "evening"):
         return None, "Slot must be morning, afternoon or evening"
+    repeat = body.get("repeat") or "weekly"
+    if repeat not in REPEATS:
+        return None, "Repeat must be weekly, fortnightly or monthly"
+    anchor = None
+    if repeat == "fortnightly":
+        # "start": "next" puts the first week a week later, so two
+        # fortnightly chores can alternate; an existing anchor is kept.
+        try:
+            anchor = date.fromisoformat(body["anchor"]) if body.get("anchor") else None
+        except ValueError:
+            anchor = None
+        if anchor is None or body.get("start") in ("this", "next"):
+            anchor = _monday(db.local_today()) + timedelta(days=7 if body.get("start") == "next" else 0)
+        anchor = _monday(anchor).isoformat()
+    try:
+        stars = max(0, int(body.get("stars", 1)))
+    except (TypeError, ValueError):
+        return None, "Stars must be a number"
     return {
         "title": body["title"].strip(), "person_id": body["person_id"],
         "days": ",".join(days), "slot": body.get("slot", "morning"),
-        "stars": max(0, int(body.get("stars", 1))),
+        "stars": stars, "repeat": repeat, "anchor": anchor,
     }, None
 
 
@@ -359,10 +407,98 @@ def api_chore_create():
     conn = db.connect()
     with conn:
         cur = conn.execute(
-            "INSERT INTO chores(title, person_id, days, slot, stars) VALUES(?,?,?,?,?)",
-            tuple(payload.values()))
+            "INSERT INTO chores(title, person_id, days, slot, stars, repeat, anchor) "
+            "VALUES(?,?,?,?,?,?,?)", tuple(payload.values()))
     row = conn.execute("SELECT * FROM chores WHERE id=?", (cur.lastrowid,)).fetchone()
     return jsonify(dict(row)), 201
+
+
+# ---- paste a list of chores ----
+_DAY_WORDS = {"mon": "MO", "monday": "MO", "tue": "TU", "tues": "TU", "tuesday": "TU",
+              "wed": "WE", "wednesday": "WE", "thu": "TH", "thur": "TH", "thurs": "TH",
+              "thursday": "TH", "fri": "FR", "friday": "FR", "sat": "SA", "saturday": "SA",
+              "sun": "SU", "sunday": "SU"}
+_DAY_GROUPS = {"weekdays": "MO,TU,WE,TH,FR", "weekends": "SA,SU", "weekend": "SA,SU",
+               "every day": "MO,TU,WE,TH,FR,SA,SU", "daily": "MO,TU,WE,TH,FR,SA,SU"}
+
+
+def _parse_days(text: str) -> str | None:
+    t = text.strip().lower()
+    if t in _DAY_GROUPS:
+        return _DAY_GROUPS[t]
+    out = []
+    for part in re.split(r"[,\s/&+]+|\band\b", t):
+        part = part.strip()
+        if not part:
+            continue
+        code = _DAY_WORDS.get(part) or (part.upper() if part.upper() in WEEKDAY_CODES else None)
+        if not code:
+            return None
+        if code not in out:
+            out.append(code)
+    return ",".join(out) or None
+
+
+def parse_chore_line(line: str) -> dict:
+    """Title | Who | Days | Time | Repeat | Stars — only the first three are
+    required. Time: morning/afternoon/evening (default evening). Repeat:
+    weekly, fortnightly, fortnightly next, monthly (default weekly).
+    Stars default 0: these are jobs, not rewards, unless you say so."""
+    parts = [p.strip() for p in line.split("|")]
+    if len(parts) < 3:
+        raise ValueError("Needs at least: Title | Who | Days")
+    title, who, days_txt = parts[0], parts[1], parts[2]
+    people = CONFIG.get("people", []) or []
+    person = next((p for p in people if who.lower() in (str(p.get("name", "")).lower(),
+                                                         str(p.get("id", "")).lower())), None)
+    if person is None:
+        raise ValueError(f"No one called “{who}” on the panel")
+    days = _parse_days(days_txt)
+    if not days:
+        raise ValueError(f"Can't read the days “{days_txt}”")
+    slot = (parts[3].lower() if len(parts) > 3 and parts[3] else "evening")
+    rep_txt = (parts[4].lower() if len(parts) > 4 and parts[4] else "weekly")
+    start = None
+    if rep_txt.startswith("fortnightly"):
+        start = "next" if "next" in rep_txt else "this"
+        rep_txt = "fortnightly"
+    stars = parts[5] if len(parts) > 5 and parts[5] else 0
+    payload, err = _chore_payload_ok({"title": title, "person_id": person["id"], "days": days,
+                                      "slot": slot, "repeat": rep_txt, "start": start,
+                                      "stars": stars})
+    if err:
+        raise ValueError(err)
+    return payload
+
+
+@app.post("/api/chores/bulk")
+def api_chores_bulk():
+    """Paste a list (one chore per line). dry_run: true checks every line and
+    saves nothing; otherwise all good lines are added in one go."""
+    if (resp := require_pin()) is not None:
+        return resp
+    body = request.get_json(force=True, silent=True) or {}
+    rows, good = [], []
+    for n, raw in enumerate(str(body.get("text") or "").splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        try:
+            payload = parse_chore_line(line)
+            rows.append({"line": n, "ok": True, "chore": payload})
+            good.append(payload)
+        except ValueError as e:
+            rows.append({"line": n, "ok": False, "text": line, "error": str(e)})
+    created = 0
+    if not body.get("dry_run") and good:
+        conn = db.connect()
+        with conn:
+            for p in good:
+                conn.execute("INSERT INTO chores(title, person_id, days, slot, stars, repeat, anchor) "
+                             "VALUES(?,?,?,?,?,?,?)", tuple(p.values()))
+                created += 1
+    return jsonify({"rows": rows, "created": created,
+                    "errors": sum(1 for r in rows if not r["ok"])})
 
 
 @app.patch("/api/chores/<int:chore_id>")
@@ -379,7 +515,8 @@ def api_chore_update(chore_id):
         return jsonify({"error": err}), 400
     with conn:
         conn.execute(
-            "UPDATE chores SET title=?, person_id=?, days=?, slot=?, stars=? WHERE id=?",
+            "UPDATE chores SET title=?, person_id=?, days=?, slot=?, stars=?, repeat=?, anchor=? "
+            "WHERE id=?",
             (*payload.values(), chore_id))
     return jsonify(dict(conn.execute(
         "SELECT * FROM chores WHERE id=?", (chore_id,)).fetchone()))
