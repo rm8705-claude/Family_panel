@@ -13,7 +13,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.33.1"
+APP_VERSION = "0.33.2"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -38,6 +38,15 @@ def require_pin():
     if not admin_pin_ok():
         return jsonify({"error": "Admin PIN required"}), 403
     return None
+
+
+@app.post("/api/pin/check")
+def api_pin_check():
+    """Lets the PIN pad say straight away whether the PIN is right, instead
+    of finding out on the first protected save (and losing the form)."""
+    if (resp := require_pin()) is not None:
+        return resp
+    return jsonify({"ok": True})
 
 
 # ------------------------------------------------------------------ shell

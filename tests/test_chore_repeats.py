@@ -98,3 +98,8 @@ def test_old_database_gains_the_repeat_columns(tmp_path, monkeypatch):
     cols = {r[1] for r in c.execute("PRAGMA table_info(chores)")}
     assert {"repeat", "anchor"} <= cols
     assert c.execute("SELECT repeat FROM chores").fetchone()[0] == "weekly"
+
+
+def test_pin_check(client):
+    assert client.post("/api/pin/check", headers=PIN).status_code == 200
+    assert client.post("/api/pin/check", headers={"X-Admin-Pin": "9999"}).status_code == 403

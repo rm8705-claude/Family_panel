@@ -384,7 +384,8 @@
   /* ------------------------------------------------------------ api layer - */
 
   var state = {
-    afterPin: '',               // what to open once a PIN is entered ('arrange')
+    afterPin: '',               // what to open once a PIN is entered ('arrange' | 'chores' | 'paste')
+    chorePasteDraft: '',        // the pasted chore list, kept through a PIN prompt
     arrange: null,              // arrange-tiles mode: {order:[key], pick, saving}
     view: 'today',
     cursor: todayStr(),         // day/week/month/meals navigation anchor
@@ -5885,7 +5886,7 @@
   }
 
   function openChoreManager() {
-    if (!state.pin) { openPin('Enter the admin PIN to manage chores.'); return; }
+    if (!state.pin) { state.afterPin = 'chores'; openPin('Enter the admin PIN to manage chores.'); return; }
     act(GET('/api/chores'), function (d) {
       var list = (d && d.chores) || [];
       D.choreDefs = list;
@@ -5931,7 +5932,11 @@
        Title | Who | Days | Time | Repeat | Stars
      Check first (nothing saved), then Add all. */
   function openChorePaste(text) {
-    if (!state.pin) { openPin('Enter the admin PIN to manage chores.'); return; }
+    if (!state.pin) {
+      state.afterPin = 'paste';
+      openPin('Enter the admin PIN to add chores.');
+      return;
+    }
     openSheet('<p class="muted" style="margin-top:0">One chore per line: ' +
       '<span class="mono">Title | Who | Days | Time | Repeat | Stars</span>. ' +
       'Only the first three are needed. Days: Mon, Tue… or Weekdays / Weekends. ' +
@@ -5951,7 +5956,13 @@
   function choresPaste(dry) {
     var text = readForm('cb-text');
     if (!text.trim()) { toast('Paste the list in first.'); return; }
+    /* If the PIN is turned down mid-way, the pad comes back to this list
+       rather than throwing it away. */
+    state.chorePasteDraft = text;
+    state.afterPin = 'paste';
     act(POST('/api/chores/bulk', { text: text, dry_run: dry }), function (d) {
+      state.afterPin = '';
+      if (!dry && d && d.created && !d.errors) state.chorePasteDraft = '';
       var rows = (d && d.rows) || [];
       var host = byId('cbResult');
       if (!dry && d && d.created) {
@@ -6815,12 +6826,28 @@
       }
       case 'open-pin': openPin(); break;
       case 'pin-key': pinKey(el.dataset.key); break;
-      case 'pin-save':
-        state.pin = readForm('pin-val').trim();
-        closeSheet();
-        if (state.afterPin === 'arrange' && state.pin) { state.afterPin = ''; startArrange(); break; }
-        toast(state.pin ? 'PIN saved for this session.' : 'PIN cleared.');
+      case 'pin-save': {
+        var tryPin = readForm('pin-val').trim();
+        if (!tryPin) { state.pin = ''; closeSheet(); toast('PIN cleared.'); break; }
+        /* Checked here, so a wrong PIN is caught on the pad — not on the
+           first save, where the form you'd filled in was lost with it. */
+        state.pin = tryPin;
+        POST('/api/pin/check').then(function () {
+          closeSheet();
+          var next = state.afterPin;
+          state.afterPin = '';
+          if (next === 'arrange') startArrange();
+          else if (next === 'chores') openChoreManager();
+          else if (next === 'paste') openChorePaste(state.chorePasteDraft);
+          else toast('PIN saved for this session.');
+        }, function (err) {
+          state.pin = '';
+          openPin(err && err.status === 403
+            ? 'That isn’t the admin PIN. It’s the admin_pin in the Family Panel add-on’s Configuration (0000 unless it was changed) — not your Home Assistant password.'
+            : 'Couldn’t check the PIN — is the panel online?', { shake: true });
+        });
         break;
+      }
       case 'arrange-tiles':
         if (state.pin) startArrange();
         else { state.afterPin = 'arrange'; openPin('Enter the admin PIN to arrange the home tiles.'); }
@@ -8869,6 +8896,7 @@
 
     if (path === '/api/chores' && method === 'GET') return { chores: M.chores };
 
+    if (path === '/api/pin/check') return { ok: true };
     if (path === '/api/chores/bulk') {
       var brows = String(body.text || '').split('\n').map(function (l, i) {
         var p = l.split('|').map(function (x) { return x.trim(); });
