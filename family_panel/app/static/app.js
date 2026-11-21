@@ -6712,7 +6712,9 @@
           var host = byId('trafficStatus');
           if (host) host.innerHTML = trafficStatusHtml();
           toast(d && d.minutes != null ? 'Google Maps works: ' + d.minutes + ' min to ' + d.destination + ' right now.'
-            : 'No drive time came back — see the line under the list.', 5000);
+            : (d && d.traffic && !d.traffic.configured
+               ? 'No Google Maps key yet — add google_maps_api_key in the add-on options and restart it.'
+               : 'Google Maps: ' + ((d && d.traffic && d.traffic.error) || 'no answer')), 9000);
         }).then(function () { el.disabled = false; });
         break;
       case 'trip-del':

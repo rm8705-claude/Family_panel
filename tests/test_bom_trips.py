@@ -161,3 +161,16 @@ def test_calendar_trip_skipped_without_waze_or_when_turned_off(monkeypatch):
     trips.save({"label": "Soccer", "destination": "Bishop Park", "time": "09:45",
                 "days": [5], "minutes": 15})
     assert [u["from_calendar"] for u in trips.upcoming({}, now, ev)] == [False]
+
+
+def test_no_route_is_an_error_not_working(monkeypatch):
+    trips._cache.clear()
+
+    class R:
+        status_code = 200
+
+        def json(self):
+            return {}
+    monkeypatch.setattr(trips.requests, "post", lambda *a, **k: R())
+    assert trips.travel_minutes({"google_maps_api_key": "k"}, "Nowhere") == (None, None)
+    assert trips.traffic_status["ok"] is False and "no driving route" in trips.traffic_status["error"]

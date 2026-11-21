@@ -124,9 +124,11 @@ def travel_minutes(config: dict, destination: str) -> tuple[float | None, str | 
                 msg = r.text
             raise RuntimeError(f"Google said {r.status_code}: {str(msg)[:200]}")
         routes = (r.json() or {}).get("routes") or []
-        if routes and routes[0].get("duration"):
-            mins = float(str(routes[0]["duration"]).rstrip("s")) / 60
-            name = routes[0].get("description") or None
+        if not (routes and routes[0].get("duration")):
+            raise RuntimeError(f"Google found no driving route to “{destination}” — "
+                               "check the address (suburb and state help)")
+        mins = float(str(routes[0]["duration"]).rstrip("s")) / 60
+        name = routes[0].get("description") or None
         traffic_status.update(ok=True, error=None, at=db.utc_now_iso())
     except Exception as e:                  # noqa: BLE001 - fall back to usual minutes
         log.info("google routes %s: %s", destination, e)
