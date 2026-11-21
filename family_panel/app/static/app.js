@@ -7010,9 +7010,11 @@
       '<p class="muted">Be at ' + esc(t.label) + ' by <span class="mono">' + esc(fmtTime(t.arrive)) + '</span>' +
       (t.person ? ' · ' + esc(nameOf(t.person)) : '') + '</p>' +
       '<p class="muted">' + (t.live ? 'Traffic now: ' + esc(t.drive_min) + ' min' +
-        (t.route ? ' via ' + esc(t.route) : '') + ' (usually ' + esc(t.usual_min) + ')'
+        (t.route ? ' via ' + esc(t.route) : '') + (t.usual_min != null ? ' (usually ' + esc(t.usual_min) + ')' : '')
         : 'Usual drive: ' + esc(t.drive_min) + ' min — live traffic isn’t available.') + '</p>' +
-      '<p class="muted2 mono" style="font-size:.875rem">' + esc(t.destination) + '</p>',
+      '<p class="muted2 mono" style="font-size:.875rem">' + esc(t.destination) + '</p>' +
+      (t.from_calendar ? '<p class="muted2" style="font-size:.8125rem">From the calendar — the address ' +
+        'in the event’s location.</p>' : ''),
       { title: 'Trip', foot: '<button class="btn" data-act="trips">Manage trips</button>' +
         '<span style="flex:1 1 auto"></span><button class="btn ghost" data-act="close-sheet">Close</button>' });
   }
@@ -7068,7 +7070,9 @@
       D.trips = list;
       var edit = editId ? list.filter(function (t) { return t.id === editId; })[0] : null;
       openSheet('<p class="muted" style="margin-top:0">The panel shows “Leave in … min” in the corner ' +
-        'before each trip, using live traffic from Waze when it’s set up in Home Assistant.</p>' +
+        'before each trip, using live traffic from Waze when it’s set up in Home Assistant. ' +
+        'Calendar events with an address in their location get one automatically — these are ' +
+        'for the regular runs.</p>' +
         tripsListHtml(list) +
         '<h3 class="trip-h">' + (edit ? 'Edit ' + esc(edit.label) : 'Add a trip') + '</h3>' +
         tripFormHtml(edit),

@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.28.0"
+APP_VERSION = "0.29.0"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -858,7 +858,8 @@ def api_trips_next():
     """Today's trips due soon, with live Waze drive times: the leave-by
     countdown on the rail and the screensaver."""
     import trips
-    return jsonify({"items": trips.upcoming(CONFIG)})
+    today = db.local_today()
+    return jsonify({"items": trips.upcoming(CONFIG, events=_event_window_rows(today, today))})
 
 
 @app.get("/api/sports")

@@ -90,3 +90,39 @@ def test_trips_api_round_trip(client):
     assert client.get("/api/trips").get_json()["trips"][0]["label"] == "Daycare pick-up"
     assert client.delete(f"/api/trips/{tid}").status_code == 200
     assert client.put("/api/trips", json={"label": "x"}).status_code == 400
+
+
+def _ev(title, start, location, **kw):
+    return {"id": title, "title": title, "start": start, "date": "2026-11-21",
+            "location": location, "all_day": False, "person_id": kw.get("person")}
+
+
+def test_calendar_events_with_an_address_become_trips(monkeypatch):
+    db.set_json_setting(trips.KEY, [])
+    monkeypatch.setattr(trips, "travel_minutes", lambda cfg, dest: (18.0, "Gympie Rd"))
+    now = datetime(2026, 11, 21, 9, 0, tzinfo=db.LOCAL_TZ)          # Saturday
+    events = [
+        _ev("Swimming", "09:45", "Chermside Aquatic Centre, 375 Hamilton Rd", person="kid"),
+        _ev("Standup", "09:30", "https://zoom.us/j/123"),             # not a place
+        _ev("Lunch", "12:30", "Home"),                                 # not a place
+        _ev("Dentist", "15:00", "1 Example St, Brisbane"),            # too far off yet
+    ]
+    up = trips.upcoming({}, now, events)
+    assert [u["label"] for u in up] == ["Swimming"]
+    s = up[0]
+    assert s["from_calendar"] and s["person"] == "kid"
+    assert s["leave_at"] == "09:27" and s["leave_in_min"] == 27 and s["usual_min"] is None
+
+
+def test_calendar_trip_skipped_without_waze_or_when_turned_off(monkeypatch):
+    db.set_json_setting(trips.KEY, [])
+    now = datetime(2026, 11, 21, 9, 0, tzinfo=db.LOCAL_TZ)
+    ev = [_ev("Soccer", "09:45", "Bishop Park, Nundah")]
+    monkeypatch.setattr(trips, "travel_minutes", lambda cfg, dest: (None, None))
+    assert trips.upcoming({}, now, ev) == []
+    monkeypatch.setattr(trips, "travel_minutes", lambda cfg, dest: (15.0, None))
+    assert trips.upcoming({"calendar_trips": False}, now, ev) == []
+    # a weekly trip at the same time wins over the event
+    trips.save({"label": "Soccer", "destination": "Bishop Park", "time": "09:45",
+                "days": [5], "minutes": 15})
+    assert [u["from_calendar"] for u in trips.upcoming({}, now, ev)] == [False]

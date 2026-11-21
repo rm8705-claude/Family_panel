@@ -13,6 +13,7 @@ the next couple of hours are ever looked up, and each destination is cached
 for five minutes, so Waze sees a handful of requests a morning.
 """
 import logging
+import re
 import time
 import uuid
 from datetime import datetime, timedelta
@@ -101,22 +102,80 @@ def travel_minutes(config: dict, destination: str) -> tuple[float | None, str | 
     return mins, name
 
 
-def upcoming(config: dict, now: datetime | None = None) -> list[dict]:
-    """Today's trips still worth showing, soonest leave time first."""
+# ------------------------------------------------ trips from the calendar
+# Any timed event today with a real place in its location becomes a trip of
+# its own: be there by the event's start, leaving from home. "Zoom", a link,
+# "Home" or "TBC" are not places, so those are skipped. Only events starting
+# in the next few hours are ever sent to Waze, and only ones Waze can find a
+# route to are shown — an event has no "usual drive" to fall back on.
+# calendar_trips: false (add-on option) turns this off.
+_NOT_A_PLACE = re.compile(
+    r"(https?://|www\.|zoom|teams|meet\.google|google meet|webex|skype|facetime|online|"
+    r"virtual|video call|phone|^call\b|\btbc\b|\btba\b|\btbd\b|^home$|^at home$|^house$)", re.I)
+EVENT_LOOKAHEAD_MIN = 180
+
+
+def is_place(location) -> bool:
+    loc = str(location or "").strip()
+    return len(loc) >= 4 and not _NOT_A_PLACE.search(loc)
+
+
+def _event_trips(config: dict, events: list[dict], manual: list[dict], now: datetime) -> list[dict]:
+    if config.get("calendar_trips") is False:
+        return []
+    out, seen = [], set()
+    for e in events or []:
+        if e.get("all_day") or not e.get("start") or e.get("date") != now.strftime("%Y-%m-%d"):
+            continue
+        if not is_place(e.get("location")):
+            continue
+        h, m = (int(x) for x in e["start"].split(":"))
+        arrive = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        if not (arrive - timedelta(minutes=EVENT_LOOKAHEAD_MIN) <= now <= arrive):
+            continue
+        key = (e["location"].strip().lower(), e["start"])
+        if key in seen:                     # the same event on two calendars
+            continue
+        seen.add(key)
+        # A weekly trip set up by hand for the same time wins over the event.
+        if any(abs((h * 60 + m) - _mins(t["time"])) <= 15 for t in manual
+               if now.weekday() in (t.get("days") or [])):
+            continue
+        out.append({"id": "ev:" + str(e.get("id")), "label": e.get("title") or "Event",
+                    "destination": e["location"].strip(), "time": e["start"],
+                    "person": e.get("person_id"), "minutes": None, "from_calendar": True})
+    return out
+
+
+def _mins(hhmm: str) -> int:
+    h, m = (int(x) for x in hhmm.split(":"))
+    return h * 60 + m
+
+
+def upcoming(config: dict, now: datetime | None = None, events: list[dict] | None = None) -> list[dict]:
+    """Today's trips still worth showing, soonest leave time first: the
+    weekly ones set up on the panel, plus calendar events with an address."""
     now = now or datetime.now(db.LOCAL_TZ)
     out = []
-    for t in all_trips():
-        if now.weekday() not in (t.get("days") or []):
-            continue
+    manual = all_trips()
+    todays = [t for t in manual if now.weekday() in (t.get("days") or [])]
+    for t in todays + _event_trips(config, events, manual, now):
         h, m = (int(x) for x in t["time"].split(":"))
         arrive = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        cal = bool(t.get("from_calendar"))
         usual = float(t.get("minutes") or 20)
         # cheap first pass on the usual drive: is it anywhere near due?
-        if not (arrive - timedelta(minutes=usual + LOOKAHEAD_MIN) <= now
-                <= arrive - timedelta(minutes=usual) + timedelta(minutes=AFTER_LEAVE_MIN + 30)):
+        if not cal and not (arrive - timedelta(minutes=usual + LOOKAHEAD_MIN) <= now
+                            <= arrive - timedelta(minutes=usual) + timedelta(minutes=AFTER_LEAVE_MIN + 30)):
             continue
         live, route = travel_minutes(config, t["destination"])
+        if cal and live is None:
+            continue                        # nowhere Waze can route to
+        if cal and live > LOOKAHEAD_MIN:
+            continue                        # interstate, or a mis-read address
         drive = live if live is not None else usual
+        if cal and arrive - timedelta(minutes=drive + LOOKAHEAD_MIN) > now:
+            continue
         leave = arrive - timedelta(minutes=drive)
         if now > leave + timedelta(minutes=AFTER_LEAVE_MIN):
             continue
@@ -124,7 +183,8 @@ def upcoming(config: dict, now: datetime | None = None) -> list[dict]:
             "id": t["id"], "label": t["label"], "destination": t["destination"],
             "person": t.get("person"), "arrive": t["time"],
             "drive_min": round(drive), "live": live is not None, "route": route,
-            "usual_min": round(usual),
+            "usual_min": None if cal else round(usual),
+            "from_calendar": cal,
             "leave_at": leave.strftime("%H:%M"),
             "leave_in_min": int((leave - now).total_seconds() // 60),
         })
