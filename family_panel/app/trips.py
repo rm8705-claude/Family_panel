@@ -6,13 +6,15 @@ one is {id, label, destination, time "HH:MM", days [0=Mon..6=Sun], person,
 minutes}. `minutes` is the usual drive, used whenever live traffic isn't
 available. They live in the settings table and are edited on the panel.
 
-Live drive time comes from Home Assistant's Waze Travel Time integration:
-the waze_travel_time.get_travel_times service (?return_response), from the
-house (the weather lat/lon) to the trip's address. Only trips coming up in
-the next couple of hours are ever looked up, and each destination is cached
-for five minutes, so Waze sees a handful of requests a morning.
+Live drive time comes from Google Maps (the Routes API, traffic-aware), from
+the house (the weather lat/lon) to the trip's address, with the key in the
+add-on option google_maps_api_key. Only trips coming up in the next couple
+of hours are ever looked up, and each destination is cached for five
+minutes, so it's a handful of requests a morning — well inside Google's
+free monthly allowance.
 """
 import logging
+import os
 import re
 import time
 import uuid
@@ -21,7 +23,6 @@ from datetime import datetime, timedelta
 import requests
 
 import db
-import ha
 
 log = logging.getLogger("family-panel.trips")
 
@@ -71,33 +72,65 @@ def delete(trip_id: str) -> None:
     db.set_json_setting(KEY, [x for x in all_trips() if x.get("id") != trip_id])
 
 
-def _origin(config: dict) -> str:
-    w = config.get("weather") or {}
-    return f"{float(w.get('lat', -27.48))},{float(w.get('lon', 152.98))}"
+ROUTES_URL = "https://routes.googleapis.com/directions/v2:computeRoutes"
+# What the panel last heard from Google, for the Trips sheet's status line.
+traffic_status = {"ok": None, "error": None, "at": None}
+
+
+def _api_key(config: dict) -> str:
+    return str(config.get("google_maps_api_key") or os.environ.get("GOOGLE_MAPS_API_KEY") or "").strip()
+
+
+def _place(dest: str) -> dict:
+    """A "lat,lon" pair goes as a point; anything else as an address Google
+    looks up itself (street address, or a place name like a swim centre)."""
+    m = re.fullmatch(r"\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*", dest or "")
+    if m:
+        return {"location": {"latLng": {"latitude": float(m.group(1)), "longitude": float(m.group(2))}}}
+    return {"address": dest}
 
 
 def travel_minutes(config: dict, destination: str) -> tuple[float | None, str | None]:
-    """(minutes, route name) by car right now, or (None, None) when Waze
-    isn't set up or doesn't answer."""
+    """(minutes, route name) by car right now in current traffic, from Google
+    Maps (Routes API), or (None, None) with no key or no answer."""
     hit = _cache.get(destination)
     if hit and time.time() - hit[0] < CACHE_S:
         return hit[1], hit[2]
+    key = _api_key(config)
+    if not key:
+        traffic_status.update(ok=None, error="No google_maps_api_key in the add-on options",
+                              at=db.utc_now_iso())
+        return None, None
+    w = config.get("weather") or {}
+    body = {
+        "origin": {"location": {"latLng": {"latitude": float(w.get("lat", -27.48)),
+                                           "longitude": float(w.get("lon", 152.98))}}},
+        "destination": _place(destination),
+        "travelMode": "DRIVE",
+        "routingPreference": "TRAFFIC_AWARE",
+        "regionCode": "AU",
+        "units": "METRIC",
+    }
+    mins, name = None, None
     try:
-        base, token = ha._api_base()
-        r = requests.post(f"{base}/services/waze_travel_time/get_travel_times?return_response",
-                          headers=ha._headers(token), timeout=20,
-                          json={"origin": _origin(config), "destination": destination,
-                                "region": "au", "units": "metric", "vehicle_type": "car",
-                                "realtime": True})
-        r.raise_for_status()
-        data = r.json() or {}
-        routes = (data.get("service_response", data) or {}).get("routes") or []
-        best = min(routes, key=lambda x: float(x.get("duration") or 1e9)) if routes else None
-        mins = float(best["duration"]) if best and best.get("duration") is not None else None
-        name = best.get("name") if best else None
+        r = requests.post(ROUTES_URL, json=body, timeout=20, headers={
+            "X-Goog-Api-Key": key,
+            "X-Goog-FieldMask": "routes.duration,routes.description,routes.distanceMeters",
+        })
+        if r.status_code >= 400:
+            try:
+                msg = (r.json().get("error") or {}).get("message") or r.text
+            except ValueError:
+                msg = r.text
+            raise RuntimeError(f"Google said {r.status_code}: {str(msg)[:200]}")
+        routes = (r.json() or {}).get("routes") or []
+        if routes and routes[0].get("duration"):
+            mins = float(str(routes[0]["duration"]).rstrip("s")) / 60
+            name = routes[0].get("description") or None
+        traffic_status.update(ok=True, error=None, at=db.utc_now_iso())
     except Exception as e:                  # noqa: BLE001 - fall back to usual minutes
-        log.info("waze %s: %s", destination, e)
-        mins, name = None, None
+        log.info("google routes %s: %s", destination, e)
+        traffic_status.update(ok=False, error=str(e)[:240], at=db.utc_now_iso())
     _cache[destination] = (time.time(), mins, name)
     return mins, name
 
@@ -106,7 +139,7 @@ def travel_minutes(config: dict, destination: str) -> tuple[float | None, str | 
 # Any timed event today with a real place in its location becomes a trip of
 # its own: be there by the event's start, leaving from home. "Zoom", a link,
 # "Home" or "TBC" are not places, so those are skipped. Only events starting
-# in the next few hours are ever sent to Waze, and only ones Waze can find a
+# in the next few hours are ever looked up, and only ones Google can find a
 # route to are shown — an event has no "usual drive" to fall back on.
 # calendar_trips: false (add-on option) turns this off.
 _NOT_A_PLACE = re.compile(
@@ -170,7 +203,7 @@ def upcoming(config: dict, now: datetime | None = None, events: list[dict] | Non
             continue
         live, route = travel_minutes(config, t["destination"])
         if cal and live is None:
-            continue                        # nowhere Waze can route to
+            continue                        # nowhere Google can route to
         if cal and live > LOOKAHEAD_MIN:
             continue                        # interstate, or a mis-read address
         drive = live if live is not None else usual

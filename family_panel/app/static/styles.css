@@ -904,6 +904,7 @@ ul, ol { list-style: none; }
 .trip-n .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--c);
   margin-right: 0.375rem; vertical-align: middle; }
 .trip-h { font-size: 1rem; margin: 1.25rem 0 0.75rem; }
+.trip-err { color: #E5484D; }
 
 /* the screensaver's line: a leave-by about to be due, or a major warning */
 .sv-next.is-urgent, .sv-next.is-warn { background: rgba(229, 72, 77, 0.85); }

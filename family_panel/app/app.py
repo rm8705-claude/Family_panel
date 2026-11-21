@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.29.0"
+APP_VERSION = "0.30.0"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -853,13 +853,31 @@ def api_trips_delete(trip_id):
     return jsonify({"ok": True})
 
 
+@app.get("/api/trips/test")
+def api_trips_test():
+    """Check the Google Maps key now: one live lookup to the first saved trip
+    (or the city), skipping the cache."""
+    import trips
+    saved = trips.all_trips()
+    dest = saved[0]["destination"] if saved else "King George Square, Brisbane City QLD"
+    trips._cache.pop(dest, None)
+    mins, _ = trips.travel_minutes(CONFIG, dest)
+    return jsonify({"minutes": None if mins is None else round(mins), "destination": dest,
+                    "traffic": {"provider": "Google Maps",
+                                "configured": bool(trips._api_key(CONFIG)),
+                                **trips.traffic_status}})
+
+
 @app.get("/api/trips/next")
 def api_trips_next():
-    """Today's trips due soon, with live Waze drive times: the leave-by
+    """Today's trips due soon, with live Google Maps drive times: the leave-by
     countdown on the rail and the screensaver."""
     import trips
     today = db.local_today()
-    return jsonify({"items": trips.upcoming(CONFIG, events=_event_window_rows(today, today))})
+    return jsonify({"items": trips.upcoming(CONFIG, events=_event_window_rows(today, today)),
+                    "traffic": {"provider": "Google Maps",
+                                "configured": bool(trips._api_key(CONFIG)),
+                                **trips.traffic_status}})
 
 
 @app.get("/api/sports")

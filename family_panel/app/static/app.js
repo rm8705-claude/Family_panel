@@ -6705,6 +6705,16 @@
       case 'trip-edit': openTrips(el.dataset.id); break;
       case 'trip-save': saveTrip(); break;
       case 'trip-day': el.classList.toggle('is-on'); break;
+      case 'traffic-test':
+        el.disabled = true;
+        act(GET('/api/trips/test'), function (d) {
+          D.traffic = (d && d.traffic) || D.traffic;
+          var host = byId('trafficStatus');
+          if (host) host.innerHTML = trafficStatusHtml();
+          toast(d && d.minutes != null ? 'Google Maps works: ' + d.minutes + ' min to ' + d.destination + ' right now.'
+            : 'No drive time came back — see the line under the list.', 5000);
+        }).then(function () { el.disabled = false; });
+        break;
       case 'trip-del':
         act(DEL('/api/trips/' + encodeURIComponent(el.dataset.id)), function () {
           openTrips();
@@ -6922,8 +6932,8 @@
        - BOM warnings covering the house (/api/alerts, refreshed by the
          backend every 10 min). Tap for the full text.
        - "Leave in 12 min" for the next trip — work, school, daycare drop-off
-         or pick-up, swimming, soccer — with the live Waze drive time when
-         Home Assistant has the Waze integration (/api/trips/next). Trips
+         or pick-up, swimming, soccer — with the live Google Maps drive time
+         when the add-on has a google_maps_api_key (/api/trips/next). Trips
          are set up on the panel: Settings -> Trips. */
 
   function loadAlerts() {
@@ -6934,6 +6944,7 @@
   function loadTripsNext() {
     return GET('/api/trips/next').then(function (d) {
       D.tripsNext = (d && d.items) || [];
+      D.traffic = (d && d.traffic) || null;
       D.tripsNextAt = Date.now();
       renderAlerts();
     }, function () { /* keep what we had */ });
@@ -7011,7 +7022,7 @@
       (t.person ? ' · ' + esc(nameOf(t.person)) : '') + '</p>' +
       '<p class="muted">' + (t.live ? 'Traffic now: ' + esc(t.drive_min) + ' min' +
         (t.route ? ' via ' + esc(t.route) : '') + (t.usual_min != null ? ' (usually ' + esc(t.usual_min) + ')' : '')
-        : 'Usual drive: ' + esc(t.drive_min) + ' min — live traffic isn’t available.') + '</p>' +
+        : 'Usual drive: ' + esc(t.drive_min) + ' min — live traffic isn’t available right now.') + '</p>' +
       '<p class="muted2 mono" style="font-size:.875rem">' + esc(t.destination) + '</p>' +
       (t.from_calendar ? '<p class="muted2" style="font-size:.8125rem">From the calendar — the address ' +
         'in the event’s location.</p>' : ''),
@@ -7050,6 +7061,19 @@
       '</div>';
   }
 
+  /* One line saying whether live traffic is actually working, so a bad key
+     or a disabled API shows here rather than as silently "usual" times. */
+  function trafficStatusHtml() {
+    var t = D.traffic;
+    if (!t) return '';
+    var txt, cls = 'muted2';
+    if (!t.configured) txt = 'Live traffic: off — add google_maps_api_key in the add-on options.';
+    else if (t.ok === true) txt = 'Live traffic: Google Maps, working.';
+    else if (t.ok === false) { txt = 'Live traffic: Google Maps error — ' + (t.error || 'no answer'); cls = 'trip-err'; }
+    else txt = 'Live traffic: Google Maps, ready (checks once a trip is coming up).';
+    return '<p class="' + cls + '" style="font-size:.875rem">' + esc(txt) + '</p>';
+  }
+
   function tripsListHtml(list) {
     if (!list.length) return '<p class="muted">No trips yet. Add the ones you do every week — work, school, ' +
       'daycare drop-off and pick-up, weekend sport.</p>';
@@ -7070,14 +7094,15 @@
       D.trips = list;
       var edit = editId ? list.filter(function (t) { return t.id === editId; })[0] : null;
       openSheet('<p class="muted" style="margin-top:0">The panel shows “Leave in … min” in the corner ' +
-        'before each trip, using live traffic from Waze when it’s set up in Home Assistant. ' +
+        'before each trip, using live traffic from Google Maps. ' +
         'Calendar events with an address in their location get one automatically — these are ' +
-        'for the regular runs.</p>' +
+        'for the regular runs.</p>' + '<div id="trafficStatus">' + trafficStatusHtml() + '</div>' +
         tripsListHtml(list) +
         '<h3 class="trip-h">' + (edit ? 'Edit ' + esc(edit.label) : 'Add a trip') + '</h3>' +
         tripFormHtml(edit),
         { title: 'Trips', wide: true, focus: false,
           foot: '<button class="btn" data-act="trip-save">' + (edit ? 'Save changes' : 'Add trip') + '</button>' +
+            '<button class="btn ghost" data-act="traffic-test">Test live traffic</button>' +
             (edit ? '<button class="btn ghost" data-act="trips">Cancel edit</button>' : '') +
             '<span style="flex:1 1 auto"></span><button class="btn ghost" data-act="close-sheet">Close</button>' });
     }, function () { toast('Could not load the trips.'); });
@@ -7573,7 +7598,7 @@
     }, 300000);
     setInterval(tick, 30000);
     /* warnings change on the BOM's schedule (the backend checks every 10
-       min); trips every 2 min so the Waze time stays current */
+       min); trips every 2 min so the traffic time stays current */
     setInterval(function () { solo('poll:alerts', loadAlerts); }, 120000);
     setInterval(function () { solo('poll:trips', loadTripsNext); }, 120000);
     /* the idle check runs on its own short beat — the 30 s tick would blur
@@ -8969,6 +8994,9 @@
         short: 'Severe Thunderstorm Warning', severity: 'major', issued: new Date().toISOString(),
         expires: null, message: 'Severe thunderstorms are likely to produce damaging winds and large hail ' +
         'over the next several hours.\nMove your car under cover and stay indoors.' }] };
+    }
+    if (path === '/api/trips/test') {
+      return { minutes: 23, destination: 'Brisbane City', traffic: { configured: true, ok: true } };
     }
     if (path === '/api/trips/next') {
       var lvM = (nowMins() + 12) % 1440, arM = (lvM + 23) % 1440;

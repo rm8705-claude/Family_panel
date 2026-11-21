@@ -71,14 +71,49 @@ def test_upcoming_uses_live_waze_time(monkeypatch):
     assert trips.upcoming({}, datetime(2026, 11, 20, 8, 25, tzinfo=db.LOCAL_TZ)) == []
 
 
-def test_travel_minutes_falls_back_when_waze_missing(monkeypatch):
+def test_travel_minutes_without_a_key_is_none():
     trips._cache.clear()
-    monkeypatch.setattr(trips.ha, "_api_base", lambda: ("http://ha/api", "t"))
-
-    def boom(*a, **k):
-        raise ConnectionError("no waze")
-    monkeypatch.setattr(trips.requests, "post", boom)
     assert trips.travel_minutes({}, "Somewhere") == (None, None)
+    assert "google_maps_api_key" in trips.traffic_status["error"]
+
+
+def test_travel_minutes_asks_google_routes_with_traffic(monkeypatch):
+    trips._cache.clear()
+    seen = {}
+
+    class R:
+        status_code = 200
+
+        def json(self):
+            return {"routes": [{"duration": "1380s", "description": "M3"}]}
+
+    def post(url, json=None, timeout=None, headers=None):
+        seen.update(url=url, body=json, headers=headers)
+        return R()
+    monkeypatch.setattr(trips.requests, "post", post)
+    cfg = {"google_maps_api_key": "k", "weather": {"lat": -27.4, "lon": 153.0}}
+    assert trips.travel_minutes(cfg, "1 Example St, Brisbane") == (23.0, "M3")
+    assert seen["headers"]["X-Goog-Api-Key"] == "k"
+    assert seen["body"]["routingPreference"] == "TRAFFIC_AWARE"
+    assert seen["body"]["destination"] == {"address": "1 Example St, Brisbane"}
+    assert trips.traffic_status["ok"] is True
+    # coordinates go as a point, not an address
+    assert trips._place("-27.47, 153.02")["location"]["latLng"]["longitude"] == 153.02
+
+
+def test_google_error_is_reported(monkeypatch):
+    trips._cache.clear()
+
+    class R:
+        status_code = 403
+        text = "denied"
+
+        def json(self):
+            return {"error": {"message": "Routes API has not been used in project 123"}}
+    monkeypatch.setattr(trips.requests, "post", lambda *a, **k: R())
+    assert trips.travel_minutes({"google_maps_api_key": "k"}, "X") == (None, None)
+    assert trips.traffic_status["ok"] is False
+    assert "Routes API" in trips.traffic_status["error"]
 
 
 def test_trips_api_round_trip(client):
