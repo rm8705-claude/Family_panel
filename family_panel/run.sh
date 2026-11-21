@@ -40,12 +40,14 @@ cfg = {
          "interval_s": 45, "idle_minutes": 3},
     ),
 }
-# Flat optional keys: copied only when set, so ha.py's defaults cover an
-# install that never saved them.
-for key in ("sonos_night_cap", "sonos_night_from", "sonos_night_to",
-            "sonos_tts", "sonos_announce_volume"):
-    if key in opts:
-        cfg[key] = opts[key]
+# Every other option is copied straight across, only when set, so each
+# module's own defaults cover an install that never saved it. This used to
+# be a fixed list, and every option added after it (google_maps_api_key,
+# calendar_trips, the Music Assistant ones) was silently dropped here. The
+# browser never sees this file — /api/status hands out named fields only.
+for key, value in opts.items():
+    if key not in cfg:
+        cfg[key] = value
 
 with open("/data/config.yaml", "w", encoding="utf-8") as f:
     f.write("# Generated on every start from the add-on Configuration tab. Do not edit by\n")
