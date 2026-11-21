@@ -6959,6 +6959,11 @@
       var parts = clockNow().split(' ');
       byId('sleepClock').innerHTML = esc(parts[0]) + '<i>' + esc(parts[1]) + '</i>';
       byId('sleepDate').textContent = fmtLongDate(state.today) + ' · ' + fmtDMY(state.today);
+      /* an early start still has to be seen before the wall wakes */
+      var st = byId('sleepTrip'), trip = dueTrip();
+      st.className = 'sleep-trip' + (trip ? ' is-on' : '') + (trip && leaveIn(trip) <= 5 ? ' is-urgent' : '');
+      st.style.cssText = trip && trip.person ? pstyle(trip.person) : '';
+      st.innerHTML = trip ? tripCardHtml(trip) : '';
     }
     var wasUp = !el.hidden;
     if (el.hidden === should) el.hidden = !should;
@@ -7254,16 +7259,32 @@
     return null;
   }
 
+  /* The trip worth a big card on the screensaver / sleep screen: due to
+     leave within 45 minutes. */
+  function dueTrip() {
+    var t = activeTrips()[0];
+    return t && leaveIn(t) <= 45 ? t : null;
+  }
+
+  /* Big enough to read from across the room: the countdown first, then
+     when, where and how long the drive is. */
+  function tripCardHtml(t) {
+    return '<span class="tc-big">' + esc(leaveWords(leaveIn(t))) + '</span>' +
+      '<span class="tc-line">' + (t.person ? '<span class="dot"></span>' : '') +
+      '<span class="tc-at mono">' + esc(fmtTime(t.leave_at)) + '</span>' +
+      '<span class="tc-to">' + esc(t.label) + '</span></span>' +
+      '<span class="tc-drive">' + esc(t.drive_min) + ' min drive' +
+      (t.live ? (t.route ? ' via ' + esc(t.route) : ' in traffic now') : ' (usual)') +
+      ' · there by ' + esc(fmtTime(t.arrive)) + '</span>';
+  }
+
   function svPaintChip() {
     var host = byId('svNext');
-    var trip = activeTrips()[0];
-    if (trip && leaveIn(trip) <= 45) {
-      host.className = 'sv-next is-on' + (leaveIn(trip) <= 5 ? ' is-urgent' : '');
+    var trip = dueTrip();
+    if (trip) {
+      host.className = 'sv-next is-on is-trip' + (leaveIn(trip) <= 5 ? ' is-urgent' : '');
       host.style.cssText = trip.person ? pstyle(trip.person) : '--c:#FFFFFF';
-      host.innerHTML = '<span class="w">' + esc(leaveWords(leaveIn(trip))) + '</span>' +
-        (trip.person ? '<span class="dot"></span>' : '') +
-        '<span class="t">' + esc(fmtTime(trip.leave_at)) + '</span>' +
-        '<span class="n">' + esc(trip.label) + ' · ' + esc(trip.drive_min) + ' min drive</span>';
+      host.innerHTML = tripCardHtml(trip);
       return;
     }
     var warn = (D.alerts || []).filter(function (w) { return w.severity === 'major'; })[0];

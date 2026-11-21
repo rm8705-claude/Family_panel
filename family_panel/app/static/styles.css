@@ -914,6 +914,62 @@ ul, ol { list-style: none; }
 /* the screensaver's line: a leave-by about to be due, or a major warning */
 .sv-next.is-urgent, .sv-next.is-warn { background: rgba(229, 72, 77, 0.85); }
 
+/* A trip about to be due takes over the screensaver's corner as a big card
+   (and appears under the clock on the sleep screen) — the chip it replaces
+   was unreadable from across the room. */
+.sv-next.is-trip {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  max-width: 48vw;
+  padding: 1.5rem 2rem;
+  border-radius: 1.5rem;
+  border-left: 0.5rem solid var(--c, #FFFFFF);
+  background: rgba(12, 14, 18, 0.78);
+}
+.sv-next.is-trip.is-urgent { background: rgba(190, 40, 46, 0.92); }
+.tc-big {
+  font-size: 3.75rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+.tc-line {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 1.75rem;
+  font-weight: 600;
+  max-width: 100%;
+}
+.tc-line .dot { width: 1rem; height: 1rem; border-radius: 50%; background: var(--c, #FFFFFF); flex: 0 0 auto; }
+.tc-at { white-space: nowrap; }
+.tc-to { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tc-drive { font-size: 1.25rem; color: rgba(255, 255, 255, 0.78); }
+
+.sleep-trip { display: none; }
+.sleep-trip.is-on {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 2.5rem;
+  padding: 1.5rem 2rem;
+  border-radius: 1.5rem;
+  border-left: 0.5rem solid var(--c, #8A93A0);
+  background: rgba(255, 255, 255, 0.04);
+  color: #C3CAD4;
+}
+.sleep-trip.is-urgent { color: #FFFFFF; background: rgba(190, 40, 46, 0.55); }
+.sleep-trip .tc-drive { color: #8A93A0; }
+.sleep-trip.is-urgent .tc-drive { color: rgba(255, 255, 255, 0.8); }
+@media (max-width: 700px) {
+  .tc-big { font-size: 2.5rem; }
+  .tc-line { font-size: 1.25rem; }
+  .tc-drive { font-size: 1rem; }
+  .sv-next.is-trip { max-width: 100%; }
+}
+
 .rail-clock {
   font-family: var(--mono);
   font-size: 2.25rem;
