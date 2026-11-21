@@ -5004,13 +5004,18 @@
      there by the start. Links, Zoom, "Home" and the like get no key. */
   var NOT_A_PLACE = /(https?:\/\/|www\.|zoom|teams|meet\.google|google meet|webex|skype|facetime|online|virtual|video call|phone|^call\b|\btb[acd]\b|^home$|^at home$|^house$)/i;
 
+  var CAR_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14v-5l-2-5H7l-2 5z"/>' +
+    '<path d="M3 12h18"/><circle cx="7.5" cy="17.5" r="1.5"/><circle cx="16.5" cy="17.5" r="1.5"/></svg>';
+
   function whereHtml(e) {
     var loc = String(e.location || '').trim();
     if (loc.length < 4 || NOT_A_PLACE.test(loc)) return esc(loc);
     return '<span class="where-loc">' + esc(loc) + '</span>' +
-      '<button class="btn ghost sm where-drive" data-act="drive-check" data-dest="' + esc(loc) + '"' +
+      '<button class="btn accent where-drive" data-act="drive-check" data-dest="' + esc(loc) + '"' +
       (e.all_day || !e.start ? '' : ' data-date="' + esc(e.date) + '" data-start="' + esc(e.start) + '"') +
-      '>Drive time</button><span class="where-out" aria-live="polite"></span>';
+      '>' + CAR_ICON + '<span>' + (e.all_day || !e.start ? 'Check drive time' : 'When do we leave?') +
+      '</span></button><span class="where-out" aria-live="polite"></span>';
   }
 
   function driveCheck(el) {
@@ -5027,16 +5032,18 @@
         out.className = 'where-out is-err';
         return;
       }
-      var txt = d.minutes + ' min drive' + (d.predicted ? ' (predicted traffic)' : ' in traffic now') +
+      var drive = d.minutes + ' min drive' + (d.predicted ? ' (predicted traffic)' : ' in traffic now') +
         (d.route ? ' via ' + d.route : '');
+      var big = d.minutes + ' min drive';
+      var late = false;
       if (d.leave_at) {
         var other = d.leave_date && d.leave_date !== state.today;
-        txt += ' · leave by ' + (other ? DOW_SHORT[dowOf(d.leave_date)] + ' ' : '') + fmtTime(d.leave_at) +
-          (!other && d.leave_in_min != null && d.leave_in_min >= 0 ? ' (in ' + d.leave_in_min + ' min)' : '') +
-          (!other && d.leave_in_min != null && d.leave_in_min < 0 ? ' — already running late' : '');
+        late = !other && d.leave_in_min != null && d.leave_in_min < 0;
+        big = late ? 'Already running late' : 'Leave by ' + (other ? DOW_SHORT[dowOf(d.leave_date)] + ' ' : '') +
+          fmtTime(d.leave_at) + (!other && d.leave_in_min != null ? ' (in ' + d.leave_in_min + ' min)' : '');
       }
-      out.textContent = txt;
-      out.className = 'where-out';
+      out.innerHTML = '<span class="wo-big">' + esc(big) + '</span><span class="wo-sub">' + esc(drive) + '</span>';
+      out.className = 'where-out is-card' + (late ? ' is-late' : '');
     }, function (err) {
       el.disabled = false;
       if (out) { out.textContent = (err && err.message) || 'Could not check the drive.'; out.className = 'where-out is-err'; }
