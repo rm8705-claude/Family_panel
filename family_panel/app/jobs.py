@@ -154,6 +154,16 @@ def fetch_weather(config: dict) -> None:
         db.mark_sync("weather", False, str(e)[:200])
 
 
+def fetch_bom(config: dict) -> None:
+    import bom
+    try:
+        items = bom.refresh(config.get("weather", {}))
+        db.mark_sync("bom", True, f"{len(items)} warning(s)")
+    except Exception as e:
+        log.warning("BOM warnings fetch failed: %s", e)
+        db.mark_sync("bom", False, str(e)[:200])
+
+
 def poll_ha(config: dict) -> None:
     import ha
     try:
@@ -214,6 +224,10 @@ def start(config: dict) -> BackgroundScheduler:
     add("ics", sync_ics, mins.get("ics", 5))
     add("imap", poll_imap, mins.get("imap", 5))
     add("weather", fetch_weather, mins.get("weather", 30))
+    # Severe weather warnings for the house's own spot. 10 minutes: a
+    # thunderstorm warning is only useful while it's fresh. 0 turns it off.
+    if float(mins.get("bom", 10)) > 0:
+        add("bom", fetch_bom, mins.get("bom", 10))
     add("ha", poll_ha, mins.get("ha", 0.25))
     # photos change rarely; 6-hourly keeps a shared album fresh same-day
     # without hammering Google's share pages

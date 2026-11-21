@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.27.0"
+APP_VERSION = "0.28.0"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -820,6 +820,45 @@ def api_weather():
     if data is None:
         return jsonify({"available": False})
     return jsonify({"available": True, **data})
+
+
+@app.get("/api/alerts")
+def api_alerts():
+    """BOM warnings covering the house's location (cached by the bom job)."""
+    import bom
+    data = bom.latest() or {}
+    return jsonify({"items": data.get("items", []), "updated_at": data.get("at")})
+
+
+@app.get("/api/trips")
+def api_trips():
+    import trips
+    return jsonify({"trips": trips.all_trips()})
+
+
+@app.put("/api/trips")
+def api_trips_save():
+    """Add a trip, or replace the one with the same id."""
+    import trips
+    try:
+        return jsonify({"ok": True, "trip": trips.save(request.get_json(force=True, silent=True) or {})})
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.delete("/api/trips/<trip_id>")
+def api_trips_delete(trip_id):
+    import trips
+    trips.delete(trip_id)
+    return jsonify({"ok": True})
+
+
+@app.get("/api/trips/next")
+def api_trips_next():
+    """Today's trips due soon, with live Waze drive times: the leave-by
+    countdown on the rail and the screensaver."""
+    import trips
+    return jsonify({"items": trips.upcoming(CONFIG)})
 
 
 @app.get("/api/sports")

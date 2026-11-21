@@ -834,6 +834,80 @@ ul, ol { list-style: none; }
   letter-spacing: 0.02em;
 }
 
+/* Leave-by countdown and BOM warnings, under the clock on every view. */
+.rail-alerts { display: flex; flex-direction: column; gap: 0.5rem; margin: 0.875rem 0 0.25rem; }
+.rail-alerts[hidden] { display: none; }
+.ra-trip, .ra-warn {
+  display: flex;
+  text-align: left;
+  width: 100%;
+  border-radius: var(--radius-s);
+  font-family: var(--sans);
+}
+.ra-trip {
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.625rem 0.75rem;
+  background: var(--card);
+  border: 1px solid var(--hair);
+  border-left: 4px solid var(--c, var(--hero));
+  color: var(--ink);
+}
+.ra-trip.is-soon { border-left-color: #F5A524; }
+.ra-trip.is-urgent { border-left-color: #E5484D; background: rgba(229, 72, 77, 0.12); }
+.ra-big { font-size: 1.125rem; font-weight: 700; line-height: 1.15; }
+.ra-sub { font-size: 0.8125rem; color: var(--ink-3); display: flex; align-items: center; gap: 0.375rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ra-sub .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c); flex: 0 0 auto; }
+.ra-warn {
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  background: rgba(245, 165, 36, 0.14);
+  border: 1px solid rgba(245, 165, 36, 0.55);
+  color: var(--ink);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.ra-warn.is-major { background: rgba(229, 72, 77, 0.14); border-color: rgba(229, 72, 77, 0.6); }
+.ra-ic {
+  flex: 0 0 auto;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #F5A524;
+  color: #1A1C21;
+  font-weight: 800;
+  font-size: 0.75rem;
+}
+.ra-warn.is-major .ra-ic { background: #E5484D; color: #FFFFFF; }
+
+.warn-sheet p { margin: 0 0 0.75rem; font-size: 1rem; line-height: 1.5; }
+
+/* Settings -> Trips */
+.trip-list { display: flex; flex-direction: column; gap: 0.375rem; margin-bottom: 1rem; }
+.trip-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--hair);
+  border-left: 4px solid var(--c, var(--hair));
+  border-radius: var(--radius-s);
+  background: var(--card);
+}
+.trip-t { flex: 0 0 5rem; font-size: 0.9375rem; }
+.trip-n { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trip-n .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--c);
+  margin-right: 0.375rem; vertical-align: middle; }
+.trip-h { font-size: 1rem; margin: 1.25rem 0 0.75rem; }
+
+/* the screensaver's line: a leave-by about to be due, or a major warning */
+.sv-next.is-urgent, .sv-next.is-warn { background: rgba(229, 72, 77, 0.85); }
+
 .rail-clock {
   font-family: var(--mono);
   font-size: 2.25rem;

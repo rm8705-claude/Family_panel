@@ -5260,7 +5260,7 @@
 
   var JOB_LABEL = {
     ics: 'Calendar sync', imap: 'Magic import mailbox',
-    weather: 'Weather', ha: 'Home Assistant'
+    weather: 'Weather', ha: 'Home Assistant', bom: 'BOM warnings'
   };
 
   var statusTimer = null;
@@ -5384,6 +5384,7 @@
         (((D.ha && D.ha.tiles) || []).length
           ? '<button class="btn" data-act="arrange-tiles">Arrange home tiles</button>' : '') +
         '<button class="btn" data-act="recipes">Recipes</button>' +
+        '<button class="btn" data-act="trips">Trips</button>' +
         '<span style="flex:1 1 auto"></span>' +
         '<button class="btn ghost" data-act="close-sheet">Close</button>',
       focus: false
@@ -6698,6 +6699,18 @@
         break;
       }
 
+      case 'warning-open': openWarning(el.dataset.id); break;
+      case 'trip-detail': openTripDetail(el.dataset.id); break;
+      case 'trips': openTrips(); break;
+      case 'trip-edit': openTrips(el.dataset.id); break;
+      case 'trip-save': saveTrip(); break;
+      case 'trip-day': el.classList.toggle('is-on'); break;
+      case 'trip-del':
+        act(DEL('/api/trips/' + encodeURIComponent(el.dataset.id)), function () {
+          openTrips();
+          loadTripsNext();
+        });
+        break;
       case 'toggle-day': {
         el.classList.toggle('is-on');
         var box = el.parentNode;
@@ -6902,6 +6915,190 @@
     updateSleep();
   });
 
+  /* ------------------------------------------- warnings + leave-by trips - */
+  /* Two things the household needs to see without going looking, so they
+     sit in the rail under the clock on every view (and on the screensaver):
+
+       - BOM warnings covering the house (/api/alerts, refreshed by the
+         backend every 10 min). Tap for the full text.
+       - "Leave in 12 min" for the next trip — work, school, daycare drop-off
+         or pick-up, swimming, soccer — with the live Waze drive time when
+         Home Assistant has the Waze integration (/api/trips/next). Trips
+         are set up on the panel: Settings -> Trips. */
+
+  function loadAlerts() {
+    return GET('/api/alerts').then(function (d) { D.alerts = (d && d.items) || []; renderAlerts(); },
+      function () { /* keep what we had */ });
+  }
+
+  function loadTripsNext() {
+    return GET('/api/trips/next').then(function (d) {
+      D.tripsNext = (d && d.items) || [];
+      D.tripsNextAt = Date.now();
+      renderAlerts();
+    }, function () { /* keep what we had */ });
+  }
+
+  /* Minutes until a trip's leave time, worked out locally so the countdown
+     moves every tick between the two-minute server refreshes. */
+  function leaveIn(t) {
+    var p = String(t.leave_at || '').split(':').map(Number);
+    if (p.length !== 2) return t.leave_in_min;
+    return (p[0] * 60 + p[1]) - nowMins();
+  }
+
+  function leaveWords(n) {
+    if (n <= 0) return 'Leave now';
+    if (n < 60) return 'Leave in ' + n + ' min';
+    return 'Leave in ' + Math.floor(n / 60) + ' h ' + (n % 60) + ' min';
+  }
+
+  function activeTrips() {
+    return (D.tripsNext || []).filter(function (t) { return leaveIn(t) >= -10; });
+  }
+
+  function renderAlerts() {
+    var host = byId('railAlerts');
+    if (!host) return;
+    var trips = activeTrips().slice(0, 2);
+    var warns = D.alerts || [];
+    host.innerHTML = trips.map(function (t) {
+      var n = leaveIn(t);
+      var cls = n <= 5 ? ' is-urgent' : (n <= 15 ? ' is-soon' : '');
+      return '<button class="ra-trip' + cls + '" data-act="trip-detail" data-id="' + esc(t.id) + '"' +
+        (t.person ? ' style="' + pstyle(t.person) + '"' : '') + '>' +
+        '<span class="ra-big">' + esc(leaveWords(n)) + '</span>' +
+        '<span class="ra-sub">' + (t.person ? '<span class="dot"></span>' : '') +
+        esc(t.label) + ' · ' + esc(t.drive_min) + ' min drive' + (t.live ? '' : ' (usual)') + '</span>' +
+        '</button>';
+    }).join('') + warns.map(function (w) {
+      return '<button class="ra-warn' + (w.severity === 'major' ? ' is-major' : '') +
+        '" data-act="warning-open" data-id="' + esc(w.id) + '">' +
+        '<span class="ra-ic">!</span><span class="ra-w">' + esc(w.short || w.title) + '</span></button>';
+    }).join('');
+    host.hidden = !host.innerHTML;
+  }
+
+  function fmtIsoLocal(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    if (isNaN(d)) return '';
+    return d.toLocaleString('en-AU', { timeZone: 'Australia/Brisbane', weekday: 'short',
+      hour: 'numeric', minute: '2-digit' });
+  }
+
+  function openWarning(id) {
+    var w = (D.alerts || []).filter(function (x) { return x.id === id; })[0];
+    if (!w) { toast('That warning has been lifted.'); return; }
+    var paras = String(w.message || '').split('\n').filter(Boolean).map(function (p) {
+      return '<p>' + esc(p) + '</p>';
+    }).join('');
+    openSheet('<div class="warn-sheet">' +
+      '<p class="muted">' + (w.issued ? 'Issued ' + esc(fmtIsoLocal(w.issued)) : '') +
+      (w.expires ? ' · until ' + esc(fmtIsoLocal(w.expires)) : '') + '</p>' +
+      (paras || '<p class="muted">The full text isn’t available yet — check the BOM app.</p>') +
+      '<p class="muted2" style="font-size:.8125rem">Source: Bureau of Meteorology.</p></div>',
+      { title: w.title, wide: true });
+  }
+
+  function openTripDetail(id) {
+    var t = (D.tripsNext || []).filter(function (x) { return x.id === id; })[0];
+    if (!t) { openTrips(); return; }
+    var n = leaveIn(t);
+    openSheet('<p style="font-size:1.25rem;font-weight:700;margin:0 0 .5rem">' + esc(leaveWords(n)) +
+      ' <span class="muted mono" style="font-weight:500">(' + esc(fmtTime(t.leave_at)) + ')</span></p>' +
+      '<p class="muted">Be at ' + esc(t.label) + ' by <span class="mono">' + esc(fmtTime(t.arrive)) + '</span>' +
+      (t.person ? ' · ' + esc(nameOf(t.person)) : '') + '</p>' +
+      '<p class="muted">' + (t.live ? 'Traffic now: ' + esc(t.drive_min) + ' min' +
+        (t.route ? ' via ' + esc(t.route) : '') + ' (usually ' + esc(t.usual_min) + ')'
+        : 'Usual drive: ' + esc(t.drive_min) + ' min — live traffic isn’t available.') + '</p>' +
+      '<p class="muted2 mono" style="font-size:.875rem">' + esc(t.destination) + '</p>',
+      { title: 'Trip', foot: '<button class="btn" data-act="trips">Manage trips</button>' +
+        '<span style="flex:1 1 auto"></span><button class="btn ghost" data-act="close-sheet">Close</button>' });
+  }
+
+  /* ---- Settings -> Trips: the weekly routine, edited on the panel ---- */
+  var TRIP_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+  function tripDaysText(days) {
+    var d = (days || []).slice().sort();
+    var k = d.join(',');
+    if (k === '0,1,2,3,4') return 'Weekdays';
+    if (k === '5,6') return 'Weekends';
+    if (k === '0,1,2,3,4,5,6') return 'Every day';
+    return d.map(function (i) { return TRIP_DAYS[i]; }).join(' ');
+  }
+
+  function tripFormHtml(t) {
+    t = t || { label: '', destination: '', time: '08:30', days: [0, 1, 2, 3, 4], minutes: 20, person: null };
+    return '<div class="trip-form" data-id="' + esc(t.id || '') + '">' +
+      '<div class="field-row"><div class="field"><label for="t-label">Name</label>' +
+      '<input class="inp" id="t-label" type="text" placeholder="Work, Daycare pick-up, Soccer" value="' + esc(t.label) + '"></div>' +
+      '<div class="field"><label for="t-time">Be there by</label>' +
+      '<input class="inp mono" id="t-time" type="time" value="' + esc(t.time) + '"></div></div>' +
+      '<div class="field"><label for="t-dest">Address</label>' +
+      '<input class="inp" id="t-dest" type="text" placeholder="12 Example St, Suburb QLD" value="' + esc(t.destination) + '"></div>' +
+      '<div class="field"><label>Days</label><div class="pick">' + TRIP_DAYS.map(function (d, i) {
+        return '<button type="button" class="pick-btn sm' + (t.days.indexOf(i) !== -1 ? ' is-on' : '') +
+          '" data-act="trip-day" data-day="' + i + '">' + d + '</button>';
+      }).join('') + '</div></div>' +
+      '<div class="field-row"><div class="field"><label>Who (optional)</label>' + personPicker(t.person || '', 't-person') + '</div>' +
+      '<div class="field"><label for="t-min">Usual drive (min)</label>' +
+      '<input class="inp mono" id="t-min" type="number" min="1" max="240" value="' + esc(t.minutes) + '"></div></div>' +
+      '</div>';
+  }
+
+  function tripsListHtml(list) {
+    if (!list.length) return '<p class="muted">No trips yet. Add the ones you do every week — work, school, ' +
+      'daycare drop-off and pick-up, weekend sport.</p>';
+    return '<div class="trip-list">' + list.map(function (t) {
+      return '<div class="trip-row"' + (t.person ? ' style="' + pstyle(t.person) + '"' : '') + '>' +
+        '<span class="mono trip-t">' + esc(fmtTime(t.time)) + '</span>' +
+        '<span class="trip-n">' + (t.person ? '<span class="dot"></span>' : '') + esc(t.label) +
+        '<span class="muted2"> · ' + esc(tripDaysText(t.days)) + ' · ' + esc(t.destination) + '</span></span>' +
+        '<button class="btn ghost sm" data-act="trip-edit" data-id="' + esc(t.id) + '">Edit</button>' +
+        '<button class="btn ghost sm" data-act="trip-del" data-id="' + esc(t.id) + '">Delete</button>' +
+        '</div>';
+    }).join('') + '</div>';
+  }
+
+  function openTrips(editId) {
+    GET('/api/trips').then(function (d) {
+      var list = (d && d.trips) || [];
+      D.trips = list;
+      var edit = editId ? list.filter(function (t) { return t.id === editId; })[0] : null;
+      openSheet('<p class="muted" style="margin-top:0">The panel shows “Leave in … min” in the corner ' +
+        'before each trip, using live traffic from Waze when it’s set up in Home Assistant.</p>' +
+        tripsListHtml(list) +
+        '<h3 class="trip-h">' + (edit ? 'Edit ' + esc(edit.label) : 'Add a trip') + '</h3>' +
+        tripFormHtml(edit),
+        { title: 'Trips', wide: true, focus: false,
+          foot: '<button class="btn" data-act="trip-save">' + (edit ? 'Save changes' : 'Add trip') + '</button>' +
+            (edit ? '<button class="btn ghost" data-act="trips">Cancel edit</button>' : '') +
+            '<span style="flex:1 1 auto"></span><button class="btn ghost" data-act="close-sheet">Close</button>' });
+    }, function () { toast('Could not load the trips.'); });
+  }
+
+  function saveTrip() {
+    var form = document.querySelector('.trip-form');
+    if (!form) return;
+    var days = Array.prototype.filter.call(form.querySelectorAll('[data-act="trip-day"]'), function (b) {
+      return b.classList.contains('is-on');
+    }).map(function (b) { return Number(b.dataset.day); });
+    var body = {
+      id: form.dataset.id || undefined,
+      label: byId('t-label').value, destination: byId('t-dest').value,
+      time: byId('t-time').value, days: days,
+      minutes: Number(byId('t-min').value) || 20,
+      person: (byId('t-person') && byId('t-person').value) || null
+    };
+    act(PUT('/api/trips', body), function () {
+      toast('Saved.');
+      openTrips();
+      loadTripsNext();
+    });
+  }
+
   /* ----------------------------------------------------------- screensaver - */
   /* Leave the panel alone for a few minutes and it turns into a picture
      frame: one photograph filling the screen, the time, and what is on next.
@@ -6983,6 +7180,24 @@
 
   function svPaintChip() {
     var host = byId('svNext');
+    var trip = activeTrips()[0];
+    if (trip && leaveIn(trip) <= 45) {
+      host.className = 'sv-next is-on' + (leaveIn(trip) <= 5 ? ' is-urgent' : '');
+      host.style.cssText = trip.person ? pstyle(trip.person) : '--c:#FFFFFF';
+      host.innerHTML = '<span class="w">' + esc(leaveWords(leaveIn(trip))) + '</span>' +
+        (trip.person ? '<span class="dot"></span>' : '') +
+        '<span class="t">' + esc(fmtTime(trip.leave_at)) + '</span>' +
+        '<span class="n">' + esc(trip.label) + ' · ' + esc(trip.drive_min) + ' min drive</span>';
+      return;
+    }
+    var warn = (D.alerts || []).filter(function (w) { return w.severity === 'major'; })[0];
+    if (warn) {
+      host.className = 'sv-next is-on is-warn';
+      host.style.cssText = '--c:#E5484D';
+      host.innerHTML = '<span class="w">Warning</span><span class="dot"></span>' +
+        '<span class="n">' + esc(warn.short || warn.title) + '</span>';
+      return;
+    }
     var up = svNextUp();
     if (!up) { host.className = 'sv-next'; host.innerHTML = ''; return; }
     var e = up.ev;
@@ -7220,6 +7435,7 @@
   function tick() {
     var t = todayStr();
     if (t !== state.today) rollOver(t);      // midnight rollover
+    renderAlerts();         // the leave-by countdown moves every tick
     renderSpine();          // and the rail clock with it
     renderWeekNow();
     // refresh the now rule + past-event dimming
@@ -7239,6 +7455,8 @@
      frame: the clock and the agenda can be a minute out, so ask for
      everything at once rather than waiting out the next beat of each timer. */
   function kickLoaders() {
+    loadAlerts();
+    loadTripsNext();
     loadHa().then(renderPoll);
     loadAgenda().then(renderPoll);
     loadChores().then(renderPoll);
@@ -7350,6 +7568,10 @@
       if (!D.lists) solo('poll:lists', loadLists).then(renderPoll);
     }, 300000);
     setInterval(tick, 30000);
+    /* warnings change on the BOM's schedule (the backend checks every 10
+       min); trips every 2 min so the Waze time stays current */
+    setInterval(function () { solo('poll:alerts', loadAlerts); }, 120000);
+    setInterval(function () { solo('poll:trips', loadTripsNext); }, 120000);
     /* the idle check runs on its own short beat — the 30 s tick would blur
        the moment the frame appears, and a sheet closing has to release it
        straight away */
@@ -8737,6 +8959,33 @@
 
     /* the demo has nothing to say it on, so it just agrees */
     if (path === '/api/ha/announce') return { ok: true };
+
+    if (path === '/api/alerts') {
+      return { items: [{ id: 'IDQ20885', title: 'Severe Thunderstorm Warning for Brisbane and parts of Moreton Bay',
+        short: 'Severe Thunderstorm Warning', severity: 'major', issued: new Date().toISOString(),
+        expires: null, message: 'Severe thunderstorms are likely to produce damaging winds and large hail ' +
+        'over the next several hours.\nMove your car under cover and stay indoors.' }] };
+    }
+    if (path === '/api/trips/next') {
+      var lvM = (nowMins() + 12) % 1440, arM = (lvM + 23) % 1440;
+      var hm = function (m) { return pad2(Math.floor(m / 60)) + ':' + pad2(m % 60); };
+      return { items: [{ id: 'w1', label: 'Work', destination: '1 Example St, Brisbane City', person: null,
+        arrive: hm(arM), drive_min: 23, live: true, route: 'M3', usual_min: 20,
+        leave_at: hm(lvM), leave_in_min: 12 }] };
+    }
+    if (path === '/api/trips') {
+      M.trips = M.trips || [];
+      if (method === 'PUT') {
+        var tr = Object.assign({}, body, { id: body.id || ('t' + Date.now()) });
+        M.trips = M.trips.filter(function (x) { return x.id !== tr.id; }).concat([tr]);
+        return { ok: true, trip: tr };
+      }
+      return { trips: M.trips };
+    }
+    if (seg[1] === 'trips' && method === 'DELETE') {
+      M.trips = (M.trips || []).filter(function (x) { return x.id !== seg[2]; });
+      return { ok: true };
+    }
 
     /* Music Assistant: a little pretend library, dealt at random */
     if (path === '/api/ha/music') {
