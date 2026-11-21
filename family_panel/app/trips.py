@@ -90,10 +90,13 @@ def _place(dest: str) -> dict:
     return {"address": dest}
 
 
-def travel_minutes(config: dict, destination: str) -> tuple[float | None, str | None]:
-    """(minutes, route name) by car right now in current traffic, from Google
-    Maps (Routes API), or (None, None) with no key or no answer."""
-    hit = _cache.get(destination)
+def travel_minutes(config: dict, destination: str,
+                   depart: datetime | None = None) -> tuple[float | None, str | None]:
+    """(minutes, route name) by car from Google Maps (Routes API): in traffic
+    right now, or Google's predicted traffic when `depart` is a future time.
+    (None, None) with no key or no answer."""
+    ckey = destination if depart is None else f"{destination}@{depart.strftime('%Y-%m-%d %H:%M')}"
+    hit = _cache.get(ckey)
     if hit and time.time() - hit[0] < CACHE_S:
         return hit[1], hit[2]
     key = _api_key(config)
@@ -111,6 +114,8 @@ def travel_minutes(config: dict, destination: str) -> tuple[float | None, str | 
         "regionCode": "AU",
         "units": "METRIC",
     }
+    if depart is not None and depart > datetime.now(db.LOCAL_TZ) + timedelta(minutes=2):
+        body["departureTime"] = depart.astimezone(db.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     mins, name = None, None
     try:
         r = requests.post(ROUTES_URL, json=body, timeout=20, headers={
@@ -133,8 +138,36 @@ def travel_minutes(config: dict, destination: str) -> tuple[float | None, str | 
     except Exception as e:                  # noqa: BLE001 - fall back to usual minutes
         log.info("google routes %s: %s", destination, e)
         traffic_status.update(ok=False, error=str(e)[:240], at=db.utc_now_iso())
-    _cache[destination] = (time.time(), mins, name)
+    _cache[ckey] = (time.time(), mins, name)
     return mins, name
+
+
+def drive_to(config: dict, destination: str, arrive: datetime | None = None) -> dict:
+    """For the event sheet's Drive time key. With an arrive-by in the future,
+    the drive is Google's prediction for leaving at about the right time:
+    guess a departure, ask, and re-ask once from the corrected departure."""
+    now = datetime.now(db.LOCAL_TZ)
+    if arrive is None or arrive <= now + timedelta(minutes=5):
+        mins, route = travel_minutes(config, destination)
+        leave = (arrive - timedelta(minutes=mins)) if (arrive and mins is not None) else None
+        predicted = False
+    else:
+        mins, route = travel_minutes(config, destination, arrive - timedelta(minutes=30))
+        if mins is not None:
+            m2, r2 = travel_minutes(config, destination, arrive - timedelta(minutes=round(mins)))
+            if m2 is not None:
+                mins, route = m2, r2 or route
+        leave = (arrive - timedelta(minutes=mins)) if mins is not None else None
+        predicted = True
+    return {
+        "minutes": None if mins is None else round(mins),
+        "route": route,
+        "predicted": predicted,
+        "leave_at": leave.strftime("%H:%M") if leave else None,
+        "leave_date": leave.strftime("%Y-%m-%d") if leave else None,
+        "leave_in_min": int((leave - now).total_seconds() // 60) if leave else None,
+        "error": None if mins is not None else traffic_status.get("error"),
+    }
 
 
 # ------------------------------------------------ trips from the calendar

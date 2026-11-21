@@ -174,3 +174,22 @@ def test_no_route_is_an_error_not_working(monkeypatch):
     monkeypatch.setattr(trips.requests, "post", lambda *a, **k: R())
     assert trips.travel_minutes({"google_maps_api_key": "k"}, "Nowhere") == (None, None)
     assert trips.traffic_status["ok"] is False and "no driving route" in trips.traffic_status["error"]
+
+
+def test_drive_to_a_future_event_uses_predicted_traffic(monkeypatch):
+    from datetime import timedelta
+    asked = []
+
+    def tm(cfg, dest, depart=None):
+        asked.append(depart)
+        return (25.0, "Gympie Rd")
+    monkeypatch.setattr(trips, "travel_minutes", tm)
+    arrive = (datetime.now(db.LOCAL_TZ) + timedelta(days=2)).replace(hour=9, minute=0, second=0, microsecond=0)
+    d = trips.drive_to({}, "Bishop Park, Nundah", arrive)
+    assert d["predicted"] is True and d["minutes"] == 25 and d["leave_at"] == "08:35"
+    assert asked[0] == arrive - timedelta(minutes=30)          # first guess
+    assert asked[1] == arrive - timedelta(minutes=25)          # corrected departure
+
+
+def test_drive_endpoint_rejects_non_places(client):
+    assert client.get("/api/trips/drive?dest=https://zoom.us/j/1").status_code == 400

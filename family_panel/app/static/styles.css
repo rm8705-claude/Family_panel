@@ -905,6 +905,11 @@ ul, ol { list-style: none; }
   margin-right: 0.375rem; vertical-align: middle; }
 .trip-h { font-size: 1rem; margin: 1.25rem 0 0.75rem; }
 .trip-err { color: #E5484D; }
+/* event sheet: the address, its Drive time key, and the answer underneath */
+.where-drive { margin-left: 0.625rem; vertical-align: middle; }
+.where-out { display: block; margin-top: 0.375rem; font-size: 0.9375rem; color: var(--ink-2); }
+.where-out:empty { display: none; }
+.where-out.is-err { color: #E5484D; }
 
 /* the screensaver's line: a leave-by about to be due, or a major warning */
 .sv-next.is-urgent, .sv-next.is-warn { background: rgba(229, 72, 77, 0.85); }

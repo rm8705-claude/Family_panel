@@ -4978,7 +4978,7 @@
       : fmtTime(e.start) + (e.end ? ' – ' + fmtTime(e.end) : '');
     rows += detailRow('When', fmtLongDate(e.date) + ' · ' + fmtDMY(e.date));
     rows += detailRow('Time', when);
-    if (e.location) rows += detailRow('Where', e.location);
+    if (e.location) rows += detailRow('Where', whereHtml(e), true);
     rows += detailRow('Who', e.person_id ? personChip(e.person_id) : 'Not assigned', true);
     if (e.notes) rows += detailRow('Notes', e.notes);
     if (e.source === 'ics') rows += detailRow('Calendar', e.feed || 'Google');
@@ -4997,6 +4997,50 @@
 
     openSheet('<h3 style="font-size:1.75rem;font-weight:700;line-height:1.15;margin-bottom:1rem">' +
       esc(e.title) + '</h3>' + rows + note, { title: 'Event', foot: foot, focus: false });
+  }
+
+  /* Tap an event's address to see the drive from home: in traffic now, or
+     Google's predicted traffic for a later day, with when to leave to be
+     there by the start. Links, Zoom, "Home" and the like get no key. */
+  var NOT_A_PLACE = /(https?:\/\/|www\.|zoom|teams|meet\.google|google meet|webex|skype|facetime|online|virtual|video call|phone|^call\b|\btb[acd]\b|^home$|^at home$|^house$)/i;
+
+  function whereHtml(e) {
+    var loc = String(e.location || '').trim();
+    if (loc.length < 4 || NOT_A_PLACE.test(loc)) return esc(loc);
+    return '<span class="where-loc">' + esc(loc) + '</span>' +
+      '<button class="btn ghost sm where-drive" data-act="drive-check" data-dest="' + esc(loc) + '"' +
+      (e.all_day || !e.start ? '' : ' data-date="' + esc(e.date) + '" data-start="' + esc(e.start) + '"') +
+      '>Drive time</button><span class="where-out" aria-live="polite"></span>';
+  }
+
+  function driveCheck(el) {
+    var out = el.parentNode.querySelector('.where-out');
+    el.disabled = true;
+    if (out) out.textContent = 'Checking traffic…';
+    var q = '/api/trips/drive?dest=' + encodeURIComponent(el.dataset.dest) +
+      (el.dataset.date ? '&date=' + el.dataset.date + '&start=' + el.dataset.start : '');
+    GET(q).then(function (d) {
+      el.disabled = false;
+      if (!out) return;
+      if (!d || d.minutes == null) {
+        out.textContent = (d && d.error) || 'No drive time came back.';
+        out.className = 'where-out is-err';
+        return;
+      }
+      var txt = d.minutes + ' min drive' + (d.predicted ? ' (predicted traffic)' : ' in traffic now') +
+        (d.route ? ' via ' + d.route : '');
+      if (d.leave_at) {
+        var other = d.leave_date && d.leave_date !== state.today;
+        txt += ' · leave by ' + (other ? DOW_SHORT[dowOf(d.leave_date)] + ' ' : '') + fmtTime(d.leave_at) +
+          (!other && d.leave_in_min != null && d.leave_in_min >= 0 ? ' (in ' + d.leave_in_min + ' min)' : '') +
+          (!other && d.leave_in_min != null && d.leave_in_min < 0 ? ' — already running late' : '');
+      }
+      out.textContent = txt;
+      out.className = 'where-out';
+    }, function (err) {
+      el.disabled = false;
+      if (out) { out.textContent = (err && err.message) || 'Could not check the drive.'; out.className = 'where-out is-err'; }
+    });
   }
 
   function detailRow(k, v, raw) {
@@ -6705,6 +6749,7 @@
       case 'trip-edit': openTrips(el.dataset.id); break;
       case 'trip-save': saveTrip(); break;
       case 'trip-day': el.classList.toggle('is-on'); break;
+      case 'drive-check': driveCheck(el); break;
       case 'traffic-test':
         el.disabled = true;
         act(GET('/api/trips/test'), function (d) {
@@ -8996,6 +9041,12 @@
         short: 'Severe Thunderstorm Warning', severity: 'major', issued: new Date().toISOString(),
         expires: null, message: 'Severe thunderstorms are likely to produce damaging winds and large hail ' +
         'over the next several hours.\nMove your car under cover and stay indoors.' }] };
+    }
+    if (path === '/api/trips/drive') {
+      return { minutes: 21, route: 'Gympie Rd', predicted: !!q.get('date') && q.get('date') !== todayStr(),
+        leave_at: q.get('start') ? (function () { var p = q.get('start').split(':').map(Number);
+          var m = p[0] * 60 + p[1] - 21; return pad2(Math.floor(m / 60)) + ':' + pad2(m % 60); })() : null,
+        leave_date: q.get('date') || null, leave_in_min: 40, error: null };
     }
     if (path === '/api/trips/test') {
       return { minutes: 23, destination: 'Brisbane City', traffic: { configured: true, ok: true } };

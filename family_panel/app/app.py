@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.30.1"
+APP_VERSION = "0.31.0"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -866,6 +866,25 @@ def api_trips_test():
                     "traffic": {"provider": "Google Maps",
                                 "configured": bool(trips._api_key(CONFIG)),
                                 **trips.traffic_status}})
+
+
+@app.get("/api/trips/drive")
+def api_trips_drive():
+    """Drive time from home to an address (the event sheet's Drive time key).
+    ?dest=<address>&date=YYYY-MM-DD&start=HH:MM — with date and start, also
+    when to leave to arrive by then (predicted traffic for a future time)."""
+    import trips
+    dest = str(request.args.get("dest") or "").strip()
+    if not trips.is_place(dest):
+        return jsonify({"error": "That doesn't look like an address"}), 400
+    arrive = None
+    try:
+        if request.args.get("date") and request.args.get("start"):
+            arrive = datetime.strptime(f"{request.args['date']} {request.args['start']}",
+                                       "%Y-%m-%d %H:%M").replace(tzinfo=db.LOCAL_TZ)
+    except ValueError:
+        arrive = None
+    return jsonify(trips.drive_to(CONFIG, dest, arrive))
 
 
 @app.get("/api/trips/next")
