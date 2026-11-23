@@ -13,7 +13,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.33.2"
+APP_VERSION = "0.34.0"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -1334,6 +1334,29 @@ def api_ha_music_status():
     """Open in a browser to see why the Discover row isn't showing."""
     import music
     return jsonify({"version": APP_VERSION, **music.status(CONFIG)})
+
+
+@app.get("/api/ha/music/search")
+def api_ha_music_search():
+    """?source=<account id>&q=<text> — artists, playlists, albums, songs."""
+    import music
+    return _music_call(lambda: jsonify(music.search(
+        CONFIG, str(request.args.get("source") or ""), str(request.args.get("q") or ""))))
+
+
+@app.get("/api/ha/music/art")
+def api_ha_music_art():
+    """Cover art for the music sheet, fetched here so the wall never loads a
+    picture from outside the house itself (allowed hosts: music.art_allowed)."""
+    import music
+    url = str(request.args.get("u") or "")
+    try:
+        content, ctype = music.fetch_art(url)
+    except Exception:
+        return jsonify({"error": "No artwork"}), 404
+    resp = app.response_class(content, mimetype=ctype)
+    resp.headers["Cache-Control"] = "public, max-age=604800"
+    return resp
 
 
 @app.post("/api/ha/music/play")

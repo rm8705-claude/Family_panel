@@ -2658,12 +2658,13 @@
     if (state.music && state.music.loading) return;
     var prev = state.music || {};
     state.music = { available: !!prev.available, sources: prev.sources || [],
-                    items: prev.items || [], loading: true };
+                    items: prev.items || [], loading: true, q: prev.q || '', results: prev.results || null };
     refreshMusicViews();
     var src = storedMusicSrc();
     GET('/api/ha/music?source=' + encodeURIComponent(src)).then(function (d) {
+      var was = state.music || {};
       state.music = { available: !!(d && d.available), sources: (d && d.sources) || [],
-                      items: (d && d.items) || [], loading: false };
+                      items: (d && d.items) || [], loading: false, q: was.q || '', results: was.results || null };
       refreshMusicViews();
     }, function () {
       state.music = { available: false, sources: [], items: [], loading: false };
@@ -2673,31 +2674,105 @@
 
   function refreshMusicViews() { updateNowPlaying(); updateSonosSheet(); }
 
-  var MUSIC_KIND_ICON = { artist: 'mic', playlist: 'playlist', album: 'radio' };
+  var MUSIC_KIND_ICON = { artist: 'mic', playlist: 'playlist', album: 'radio', track: 'play' };
+
+  /* One cover tile: artwork (through the panel's own /api/ha/music/art),
+     falling back to the kind's icon; artists get a round picture, like the
+     streaming apps. */
+  function musicTileHtml(it, entity) {
+    var art = it.image
+      ? '<img src="' + esc(it.image) + '" alt="" loading="lazy" onerror="this.parentNode.classList.add(\'no-art\');this.remove()">'
+      : '';
+    return '<button class="mu-tile is-' + esc(it.media_type) + (art ? '' : ' no-art') + '" data-act="music-play" data-entity="' +
+      esc(entity) + '" data-uri="' + esc(it.uri) + '" data-type="' + esc(it.media_type) +
+      '" data-name="' + esc(it.name) + '">' +
+      '<span class="mu-art">' + art + '<span class="mu-ic">' +
+      (ICON[MUSIC_KIND_ICON[it.media_type]] || ICON.playlist) + '</span></span>' +
+      '<span class="mu-n">' + esc(it.name) + '</span>' +
+      '<span class="mu-s">' + esc(it.sub || '') + '</span>' +
+      '</button>';
+  }
+
+  function shelfHtml(title, items, entity) {
+    if (!items || !items.length) return '';
+    return (title ? '<div class="mu-shelf-h">' + esc(title) + '</div>' : '') +
+      '<div class="mu-shelf">' + items.map(function (it) { return musicTileHtml(it, entity); }).join('') + '</div>';
+  }
+
+  /* What sits under the search box: search results while there's a query,
+     otherwise the fresh Discover picks. Its own function so a search can
+     repaint just this box without touching the input being typed in. */
+  function musicBodyHtml(entity) {
+    var m = state.music || {};
+    if (m.q && m.q.trim().length >= 2) {
+      if (m.searching && !m.results) return '<p class="muted2 mu-empty">Searching ' + esc(curSrcLabel()) + '…</p>';
+      var r = m.results || {};
+      if (r.error) return '<p class="mu-empty trip-err">' + esc(r.error) + '</p>';
+      var out = shelfHtml('Artists', r.artists, entity) + shelfHtml('Playlists', r.playlists, entity) +
+        shelfHtml('Albums', r.albums, entity) + shelfHtml('Songs', r.tracks, entity);
+      return out || '<p class="muted2 mu-empty">Nothing on ' + esc(curSrcLabel()) + ' matches “' + esc(m.q) + '”.</p>';
+    }
+    if (m.items && m.items.length) {
+      return '<div class="' + (m.loading ? 'is-loading' : '') + '">' + shelfHtml('', m.items, entity) + '</div>';
+    }
+    return '<p class="muted2 mu-empty">' + (m.loading ? 'Finding something new…'
+      : 'Nothing from ' + esc(curSrcLabel()) + ' in the Music Assistant library yet.') + '</p>';
+  }
 
   function discoverHtml(t) {
     if (!musicOn() || !t || !t.allow_action) return '';
     var m = state.music;
-    var cards = (m.items || []).map(function (it) {
-      return '<button class="mu-card" data-act="music-play" data-entity="' + esc(t.entity) +
-        '" data-uri="' + esc(it.uri) + '" data-type="' + esc(it.media_type) +
-        '" data-name="' + esc(it.name) + '">' +
-        '<span class="mu-ic">' + (ICON[MUSIC_KIND_ICON[it.media_type]] || ICON.playlist) + '</span>' +
-        '<span class="mu-n">' + esc(it.name) + '</span>' +
-        '<span class="mu-s">' + esc(it.sub || '') + '</span>' +
-        '</button>';
-    }).join('');
+    var q = m.q || '';
     return '<div class="mu-discover">' +
       '<div class="np-src-tools mu-tools">' +
       '<button class="sn-wbtn np-surprise" data-act="sonos-surprise" data-entity="' + esc(t.entity) +
       '" data-label="Surprise me">' + ICON.playlist + '<span>Surprise me</span></button>' +
-      '<span class="muted2 mu-hint">Fresh picks from ' + esc(curSrcLabel()) + '</span>' +
+      '<div class="np-src-search mu-search">' +
+      '<span class="np-src-search-ic">' + ICON.search + '</span>' +
+      '<input class="inp mu-search-in" type="text" inputmode="search" autocomplete="off" enterkeyhint="search" ' +
+      'placeholder="Search ' + esc(curSrcLabel()) + '" aria-label="Search ' + esc(curSrcLabel()) + '" value="' + esc(q) + '">' +
+      '<button class="np-src-search-x" data-act="music-search-clear" aria-label="Clear search"' +
+      (q ? '' : ' hidden') + '>' + ICON.close + '</button></div>' +
       '<button class="mu-refresh" data-act="music-refresh" aria-label="Deal new picks"' +
       (m.loading ? ' disabled' : '') + '>' + ICON.swap + '</button></div>' +
-      (cards ? '<div class="mu-cards' + (m.loading ? ' is-loading' : '') + '">' + cards + '</div>'
-             : '<p class="muted2 mu-empty">' + (m.loading ? 'Finding something new…'
-               : 'Nothing from ' + esc(curSrcLabel()) + ' in the Music Assistant library yet.') + '</p>') +
+      '<div class="mu-body" data-entity="' + esc(t.entity) + '">' + musicBodyHtml(t.entity) + '</div>' +
       '</div>';
+  }
+
+  function paintMusicBody() {
+    Array.prototype.forEach.call(document.querySelectorAll('.mu-body'), function (b) {
+      b.innerHTML = musicBodyHtml(b.dataset.entity);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('.mu-search .np-src-search-x'), function (x) {
+      x.hidden = !(state.music && state.music.q);
+    });
+  }
+
+  var musicSearchTimer = null, musicSearchSeq = 0;
+
+  function musicSearch(q) {
+    if (!state.music) return;
+    state.music.q = q;
+    clearTimeout(musicSearchTimer);
+    if (q.trim().length < 2) { state.music.results = null; state.music.searching = false; paintMusicBody(); return; }
+    musicSearchTimer = setTimeout(function () {
+      var seq = ++musicSearchSeq;
+      state.music.searching = true;
+      state.music.results = null;
+      paintMusicBody();
+      GET('/api/ha/music/search?source=' + encodeURIComponent(curSrc()) + '&q=' + encodeURIComponent(q.trim()))
+        .then(function (d) {
+          if (seq !== musicSearchSeq || !state.music) return;
+          state.music.searching = false;
+          state.music.results = d || {};
+          paintMusicBody();
+        }, function (err) {
+          if (seq !== musicSearchSeq || !state.music) return;
+          state.music.searching = false;
+          state.music.results = { error: (err && err.message) || 'Search didn’t work.' };
+          paintMusicBody();
+        });
+    }, 450);
   }
 
   function musicPlay(el) {
@@ -3285,7 +3360,8 @@
     if (volDrag) return;                   // a finger is on a volume bar
     /* Same reasoning as updateNowPlaying(): don't yank the search box out
        from under a reader who is mid-word. */
-    if (document.activeElement && document.activeElement.classList.contains('np-src-search-in')) return;
+    if (document.activeElement && (document.activeElement.classList.contains('np-src-search-in') ||
+        document.activeElement.classList.contains('mu-search-in'))) return;
     var lists = host.querySelectorAll('.np-src-list');
     var tops = Array.prototype.map.call(lists, function (l) { return l.scrollTop; });
     host.innerHTML = sonosSheetHtml();
@@ -3442,7 +3518,8 @@
     if (!host) { state.tvApps = false; return; }
     /* Same as the Sonos sheets: never rebuild under a reader who is mid-word
        in the search box, and keep the list where they left it scrolled. */
-    if (document.activeElement && document.activeElement.classList.contains('np-src-search-in')) return;
+    if (document.activeElement && (document.activeElement.classList.contains('np-src-search-in') ||
+        document.activeElement.classList.contains('mu-search-in'))) return;
     var list = host.querySelector('.np-src-list');
     var top = list ? list.scrollTop : 0;
     host.innerHTML = tvAppsHtml(state.tvAppsEntity);
@@ -3638,7 +3715,8 @@
        go. patchSrcFilter already keeps the visible list correct without
        one; a real rebuild picks back up as soon as they tap away (the
        document-wide focusout -> renderCatchUp already does that). */
-    if (document.activeElement && document.activeElement.classList.contains('np-src-search-in')) return;
+    if (document.activeElement && (document.activeElement.classList.contains('np-src-search-in') ||
+        document.activeElement.classList.contains('mu-search-in'))) return;
     var t = mediaTile(state.np);
     if (!t) return;
     /* the 15 s poll redraws the whole card — hold the favourites list where
@@ -6919,8 +6997,14 @@
         updateSonosSheet();
         break;
       case 'music-play': musicPlay(el); break;
+      case 'music-search-clear':
+        if (state.music) { state.music.q = ''; state.music.results = null; }
+        Array.prototype.forEach.call(document.querySelectorAll('.mu-search-in'), function (i) { i.value = ''; });
+        paintMusicBody();
+        break;
       case 'music-src':
         setMusicSrc(el.dataset.src || 'favs');
+        if (state.music) { state.music.q = ''; state.music.results = null; }
         if (el.dataset.src === 'favs') { refreshMusicViews(); break; }
         if (state.music) { state.music.items = []; state.music.loading = false; }
         loadMusic();
@@ -7007,6 +7091,9 @@
     if (e.target && e.target.id === 'f-date') {
       var h = byId('f-date-hint');
       if (h) h.textContent = e.target.value ? fmtDMY(e.target.value) : '';
+    }
+    if (e.target && e.target.classList && e.target.classList.contains('mu-search-in')) {
+      musicSearch(e.target.value);
     }
     if (e.target && e.target.classList && e.target.classList.contains('np-src-search-in')) {
       state.srcFilter = e.target.value;
@@ -7550,7 +7637,7 @@
 
   function sheetIsForm(host) {
     return !!host.querySelector(
-      'input:not(.np-src-search-in):not([type=range]):not([type=checkbox]):not([type=radio]), textarea, select');
+      'input:not(.np-src-search-in):not(.mu-search-in):not([type=range]):not([type=checkbox]):not([type=radio]), textarea, select');
   }
 
   function sheetIdleMs() {
@@ -9249,6 +9336,16 @@
       return { available: true, items: lib.slice(0, 6), sources: srcs, source: want };
     }
     if (path === '/api/ha/music/play') return { ok: true };
+    if (path === '/api/ha/music/search') {
+      var qq = q.get('q') || '';
+      var mk = function (kind, n) {
+        var out = [];
+        for (var i = 1; i <= n; i++) out.push({ uri: 'spotify://' + kind + '/' + i, name: qq + ' ' + kind + ' ' + i,
+          media_type: kind, sub: kind === 'artist' ? 'Artist radio' : 'Someone', image: null });
+        return out;
+      };
+      return { query: qq, artists: mk('artist', 4), playlists: mk('playlist', 6), albums: mk('album', 5), tracks: mk('track', 8) };
+    }
     if (path === '/api/ha/music/surprise') {
       return { ok: true, pick: { name: 'Khruangbin', media_type: 'artist', provider: 'Spotify' } };
     }

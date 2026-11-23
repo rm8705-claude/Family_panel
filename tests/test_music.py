@@ -143,3 +143,54 @@ def test_two_spotify_logins_are_two_named_buttons(monkeypatch):
     assert [s["label"] for s in d["sources"]] == ["Rohan", "Mel", "YouTube Music"]
     assert [i["name"] for i in d["items"]] == ["Mel's Mix"]
     assert music.discover(cfg)["items"] == []          # favourites: buttons only
+
+
+def test_artwork_only_from_known_hosts():
+    ok = music.art_allowed
+    assert ok("https://i.scdn.co/image/ab67616d")
+    assert ok("https://lh3.googleusercontent.com/abc=w544")
+    assert ok("http://192.168.1.21:8095/imageproxy?path=x&provider=spotify")
+    assert not ok("http://169.254.169.254/latest/meta-data")
+    assert not ok("https://evil.example.com/imageproxy?path=x")
+    assert not ok("http://192.168.1.21:8123/api/states")
+    assert not ok("file:///etc/passwd")
+
+
+def test_items_carry_an_art_link_from_any_shape():
+    music._ma.update(base="http://172.30.32.1:8095")
+    a = music._shape({"media_type": "album", "uri": "spotify://album/1", "name": "Currents",
+                      "metadata": {"images": [{"type": "thumb", "path": "https://i.scdn.co/image/x"}]}})
+    assert a["image"].startswith("/api/ha/music/art?u=https%3A%2F%2Fi.scdn.co")
+    t = music._shape({"media_type": "track", "uri": "ytmusic://track/9", "name": "Song",
+                      "artists": [{"name": "Band"}],
+                      "image": {"path": "/data/thumbs/x.jpg", "provider": "filesystem"}})
+    assert t["sub"] == "Band" and "imageproxy" in t["image"]
+    assert music._shape({"media_type": "playlist", "uri": "u", "name": "No art"})["image"] is None
+
+
+def test_search_keeps_to_one_account(monkeypatch):
+    fake_ha(monkeypatch, [])
+    music._ma.update(base=None, providers=None, at=0.0)
+    ha_post = music.requests.post
+
+    def post(url, headers=None, json=None, timeout=None):
+        if not url.endswith("/api"):
+            return ha_post(url, headers=headers, json=json, timeout=timeout)
+        assert json["command"] == "music/search"
+        return Resp({"artists": [{"media_type": "artist", "uri": "spotify--m://artist/1", "name": "Mel pick",
+                                  "provider": "spotify--m"},
+                                 {"media_type": "artist", "uri": "spotify--r://artist/2", "name": "Rohan pick",
+                                  "provider": "spotify--r"}],
+                     "tracks": [{"media_type": "track", "uri": "spotify--m://track/3", "name": "Song",
+                                 "provider_mappings": [{"provider_instance": "spotify--m"}]}]})
+    monkeypatch.setattr(music.requests, "post", post)
+    r = music.search(CONFIG, "spotify--m", "khruangbin")
+    assert [a["name"] for a in r["artists"]] == ["Mel pick"]
+    assert [t["name"] for t in r["tracks"]] == ["Song"]
+    import pytest
+    with pytest.raises(ValueError):
+        music.search(CONFIG, "spotify--m", "k")
+
+
+def test_art_endpoint_refuses_other_hosts(client):
+    assert client.get("/api/ha/music/art?u=http://169.254.169.254/").status_code == 404

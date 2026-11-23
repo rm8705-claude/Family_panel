@@ -21,11 +21,13 @@ overrides that when names don't line up.
 When Music Assistant isn't installed, info() says unavailable and the panel
 just doesn't draw the Discover row.
 """
+import ipaddress
 import json
 import logging
 import random
 import re
 import time
+from urllib.parse import quote, urlparse
 
 import requests
 
@@ -46,7 +48,8 @@ _TEMPLATE = (
     "{% endfor %}]"
 )
 
-KINDS = ("artist", "playlist", "album")
+KINDS = ("artist", "playlist", "album")          # what Discover deals
+PLAYABLE = KINDS + ("track",)                     # what search can also return
 
 
 def _norm(name) -> str:
@@ -250,6 +253,8 @@ def sources(config: dict) -> list[dict]:
 
 
 def _from_account(item: dict, instance: str) -> bool:
+    if item.get("provider") == instance:
+        return True
     return any(isinstance(m, dict) and instance in (m.get("provider_instance"), m.get("provider_domain"))
                for m in item.get("provider_mappings") or [])
 
@@ -326,15 +331,88 @@ def _provider(uri: str) -> str | None:
     return PROVIDERS.get(_provider_key({"uri": uri}))
 
 
+# ---------------------------------------------------------------- artwork
+# The cover art lives on Spotify's / Google's image hosts, or behind Music
+# Assistant's own image proxy for anything it caches locally. The panel never
+# loads a picture from outside the house directly, so each one is handed to
+# the browser as /api/ha/music/art?u=<url> and fetched by the backend — and
+# that endpoint only fetches from these hosts (see art_allowed).
+ART_HOSTS = ("scdn.co", "spotifycdn.com", "googleusercontent.com", "ytimg.com", "ggpht.com")
+
+
+def _image(item: dict) -> str | None:
+    """The best cover URL an item carries, in whichever shape it came."""
+    cands = []
+    img = item.get("image")
+    if isinstance(img, str):
+        cands.append((img, None))
+    elif isinstance(img, dict):
+        cands.append((img.get("path"), img.get("provider")))
+    for im in ((item.get("metadata") or {}).get("images") or []):
+        if isinstance(im, dict) and im.get("type", "thumb") == "thumb":
+            cands.append((im.get("path"), im.get("provider")))
+    album = item.get("album")
+    if isinstance(album, dict) and album is not item:
+        sub = _image({k: v for k, v in album.items() if k != "album"})
+        if sub:
+            return sub
+    for path, prov in cands:
+        if not path:
+            continue
+        if str(path).startswith("http"):
+            return str(path)
+        if _ma["base"]:                     # a file only MA can read: its proxy
+            return (f"{_ma['base']}/imageproxy?path={quote(str(path), safe='')}"
+                    f"&provider={quote(str(prov or ''), safe='')}&size=300")
+    return None
+
+
+def art_allowed(url: str) -> bool:
+    try:
+        u = urlparse(url)
+    except ValueError:
+        return False
+    if u.scheme not in ("http", "https") or not u.hostname:
+        return False
+    host = u.hostname.lower()
+    if any(host == h or host.endswith("." + h) for h in ART_HOSTS):
+        return True
+    # Music Assistant's image proxy, on the house network only.
+    if u.path.rstrip("/") == "/imageproxy":
+        if any(host == urlparse(b).hostname for b in MA_CANDIDATES):
+            return True
+        try:
+            return ipaddress.ip_address(host).is_private
+        except ValueError:
+            return host.endswith(".local")
+    return False
+
+
+def fetch_art(url: str) -> tuple[bytes, str]:
+    if not art_allowed(url):
+        raise ValueError("Not an artwork address")
+    r = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0 (family-panel)"})
+    r.raise_for_status()
+    ctype = r.headers.get("Content-Type", "image/jpeg")
+    if not ctype.startswith("image/"):
+        raise ValueError("Not an image")
+    return r.content[:3_000_000], ctype
+
+
+def _art_link(item: dict) -> str | None:
+    url = _image(item)
+    return f"/api/ha/music/art?u={quote(url, safe='')}" if url and art_allowed(url) else None
+
+
 def _shape(item: dict) -> dict | None:
     uri, name = item.get("uri"), item.get("name")
     kind = item.get("media_type")
-    if not uri or not name or kind not in KINDS:
+    if not uri or not name or kind not in PLAYABLE:
         return None
     artists = ", ".join(a.get("name", "") for a in (item.get("artists") or [])
                         if isinstance(a, dict) and a.get("name"))
-    sub = {"artist": "Artist radio", "playlist": "Playlist", "album": "Album"}[kind]
-    if kind == "album" and artists:
+    sub = {"artist": "Artist radio", "playlist": "Playlist", "album": "Album", "track": "Song"}[kind]
+    if kind in ("album", "track") and artists:
         sub = artists
     key = _provider_key(item)
     if not key:
@@ -342,7 +420,7 @@ def _shape(item: dict) -> dict | None:
                 if isinstance(m, dict)}
         key = next((d for d in ("spotify", "ytmusic") if d in doms), None)
     return {"uri": uri, "name": name, "media_type": kind, "sub": sub,
-            "source": key, "provider": PROVIDERS.get(key)}
+            "source": key, "provider": PROVIDERS.get(key), "image": _art_link(item)}
 
 
 def _picks(entry: str, kind: str, n: int, source: str | None) -> list[dict]:
@@ -414,16 +492,51 @@ def play(config: dict, entity: str, uri: str, media_type: str) -> None:
     target = players.get(entity)
     if not target:
         raise ValueError("Music Assistant has no player for that speaker")
-    if media_type not in KINDS:
+    if media_type not in PLAYABLE:
         raise ValueError("Unknown media type")
-    if media_type != "artist":
+    if media_type in ("playlist", "album"):
         try:
             ha_shuffle(target)
         except Exception as e:              # noqa: BLE001
             log.info("shuffle on %s: %s", target, e)
     _service("play_media", {"entity_id": target, "media_id": uri,
                             "media_type": media_type, "enqueue": "replace",
-                            "radio_mode": media_type == "artist"})
+                            "radio_mode": media_type in ("artist", "track")})
+
+
+# ---------------------------------------------------------------- search
+SEARCH_KINDS = ("artist", "playlist", "album", "track")
+
+
+def search(config: dict, source: str, query: str, n: int = 12) -> dict:
+    """Search one account (or one service) for artists, playlists, albums and
+    songs. The search runs across the services Music Assistant has; results
+    are kept to the account asked for."""
+    q = " ".join(str(query or "").split())[:100]
+    if len(q) < 2:
+        raise ValueError("Type at least two letters")
+    players, entry = player_map(config)
+    if not (players and entry):
+        raise ValueError("Music Assistant isn't set up")
+    direct = bool(source) and source not in PROVIDERS
+    found: dict = {}
+    if direct:
+        res = ma_api(config, "music/search", {"search_query": q, "media_types": list(SEARCH_KINDS),
+                                               "limit": 25, "library_only": False}) or {}
+        for kind in SEARCH_KINDS:
+            items = res.get(kind + "s") or [] if isinstance(res, dict) else []
+            found[kind] = [i for i in items if isinstance(i, dict) and _from_account(i, source)]
+    else:
+        res = _service("search", {"config_entry_id": entry, "name": q, "limit": 25}, True) or {}
+        for kind in SEARCH_KINDS:
+            found[kind] = [i for i in (res.get(kind + "s") or []) if isinstance(i, dict)]
+    out = {}
+    for kind in SEARCH_KINDS:
+        shaped = [s for s in map(_shape, found.get(kind, [])) if s]
+        if not direct and source in PROVIDERS:
+            shaped = [s for s in shaped if s["source"] == source]
+        out[kind + "s"] = shaped[:n]
+    return {"query": q, "source": source, **out}
 
 
 def ha_shuffle(target: str) -> None:
