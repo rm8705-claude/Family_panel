@@ -40,7 +40,7 @@ def test_audio_route_caps_size(client):
 def test_audio_route_passes_rate(client, monkeypatch):
     import assist
     seen = {}
-    def fake(cfg, pcm, sample_rate=16000):
+    def fake(cfg, pcm, sample_rate=16000, stt_only=False):
         seen["rate"] = sample_rate
         seen["n"] = len(pcm)
         return {"ok": True, "heard": "hi", "response_text": "hello", "tts_path": None}

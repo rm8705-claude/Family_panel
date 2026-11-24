@@ -119,7 +119,8 @@ def text_query(config: dict | None, text: str) -> dict:
 
 # ----------------------------------------------------------------- voice
 
-def audio_query(config: dict | None, pcm_bytes: bytes, sample_rate: int = 16000) -> dict:
+def audio_query(config: dict | None, pcm_bytes: bytes, sample_rate: int = 16000,
+                stt_only: bool = False) -> dict:
     """Run one spoken question through the HA assist pipeline.
 
     `pcm_bytes` is raw 16-bit signed little-endian mono PCM at `sample_rate`
@@ -151,7 +152,9 @@ def audio_query(config: dict | None, pcm_bytes: bytes, sample_rate: int = 16000)
             "id": 1,
             "type": "assist_pipeline/run",
             "start_stage": "stt",
-            "end_stage": "tts",
+            # stt_only: just what was said (the Maps sheet's spoken address)
+            # — no intent, so the house doesn't try to act on it
+            "end_stage": "stt" if stt_only else "tts",
             "input": {"sample_rate": int(sample_rate)},
         }))
         return _run_pipeline(ws, pcm_bytes, deadline)

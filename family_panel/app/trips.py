@@ -75,6 +75,8 @@ def delete(trip_id: str) -> None:
 ROUTES_URL = "https://routes.googleapis.com/directions/v2:computeRoutes"
 # The route line Google last drew to each destination, for the traffic map.
 _polylines: dict = {}
+# Distance and the no-traffic drive for each destination, for the Maps sheet.
+_extras: dict = {}
 # What the panel last heard from Google, for the Trips sheet's status line.
 traffic_status = {"ok": None, "error": None, "at": None}
 
@@ -136,8 +138,8 @@ def travel_minutes(config: dict, destination: str,
     try:
         r = requests.post(ROUTES_URL, json=body, timeout=20, headers={
             "X-Goog-Api-Key": key,
-            "X-Goog-FieldMask": "routes.duration,routes.description,routes.distanceMeters,"
-                                "routes.polyline.encodedPolyline",
+            "X-Goog-FieldMask": "routes.duration,routes.staticDuration,routes.description,"
+                                "routes.distanceMeters,routes.polyline.encodedPolyline",
         })
         if r.status_code >= 400:
             try:
@@ -154,6 +156,11 @@ def travel_minutes(config: dict, destination: str,
         poly = ((routes[0].get("polyline") or {}).get("encodedPolyline"))
         if poly:
             _polylines[destination] = poly
+        static = routes[0].get("staticDuration")
+        _extras[destination] = {
+            "distance_km": round(float(routes[0].get("distanceMeters") or 0) / 1000, 1) or None,
+            "no_traffic_min": round(float(str(static).rstrip("s")) / 60) if static else None,
+        }
         traffic_status.update(ok=True, error=None, at=db.utc_now_iso())
     except Exception as e:                  # noqa: BLE001 - fall back to usual minutes
         log.info("google routes %s: %s", destination, e)
@@ -187,6 +194,8 @@ def drive_to(config: dict, destination: str, arrive: datetime | None = None) -> 
         "leave_date": leave.strftime("%Y-%m-%d") if leave else None,
         "leave_in_min": int((leave - now).total_seconds() // 60) if leave else None,
         "error": None if mins is not None else traffic_status.get("error"),
+        "polyline": _polylines.get(destination),
+        **(_extras.get(destination) or {"distance_km": None, "no_traffic_min": None}),
     }
 
 

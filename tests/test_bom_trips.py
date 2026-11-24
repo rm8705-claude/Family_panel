@@ -235,3 +235,40 @@ def test_mapconfig_prefers_the_browser_key(client, monkeypatch):
     monkeypatch.setitem(app_module.CONFIG, "google_maps_browser_key", "browser-key")
     d = client.get("/api/trips/mapconfig").get_json()
     assert d["key"] == "browser-key" and "lat" in d["home"]
+
+
+def test_drive_carries_distance_and_traffic_delay(monkeypatch):
+    trips._cache.clear()
+
+    class R:
+        status_code = 200
+
+        def json(self):
+            return {"routes": [{"duration": "1380s", "staticDuration": "960s", "distanceMeters": 18420,
+                                "description": "M3", "polyline": {"encodedPolyline": "xyz"}}]}
+    monkeypatch.setattr(trips.requests, "post", lambda *a, **k: R())
+    d = trips.drive_to({"google_maps_api_key": "k"}, "Chermside Westfield")
+    assert d["minutes"] == 23 and d["no_traffic_min"] == 16 and d["distance_km"] == 18.4
+    assert d["polyline"] == "xyz" and d["route"] == "M3"
+
+
+def test_voice_can_stop_at_speech_to_text(monkeypatch):
+    import assist
+    sent = {}
+
+    class WS:
+        def send(self, m):
+            import json as _j
+            try:
+                sent.update(_j.loads(m))
+            except Exception:
+                pass
+
+        def close(self):
+            pass
+    monkeypatch.setattr(assist, "_resolve", lambda c: ("http://ha", "t"))
+    monkeypatch.setattr(assist, "_ws_connect", lambda *a, **k: WS())
+    monkeypatch.setattr(assist, "_authenticate", lambda ws, tok: None)
+    monkeypatch.setattr(assist, "_run_pipeline", lambda ws, pcm, dl: {"ok": True, "heard": "Chermside"})
+    assert assist.audio_query({}, b"\x00\x01" * 10, stt_only=True)["heard"] == "Chermside"
+    assert sent["end_stage"] == "stt"

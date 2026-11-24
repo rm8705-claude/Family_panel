@@ -13,7 +13,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.36.0"
+APP_VERSION = "0.37.0"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -1525,7 +1525,8 @@ def api_assist_audio():
         rate = int(request.args.get("sample_rate", "16000"))
     except ValueError:
         rate = 16000
-    return jsonify(assist.audio_query(CONFIG, pcm, sample_rate=rate))
+    return jsonify(assist.audio_query(CONFIG, pcm, sample_rate=rate,
+                                      stt_only=request.args.get("stt_only") == "1"))
 
 
 @app.get("/api/assist/tts")

@@ -5021,6 +5021,7 @@
   function closeSheet() {
     var host = byId('sheetHost');
     assistRelease();
+    mapsStopRec(true);
     stopLiveCameras();          // before innerHTML='', so the src is blanked
     state.camLive = null;
     state.sonosTarget = null;
@@ -5042,6 +5043,7 @@
     opts = opts || {};
     var host = byId('sheetHost');
     assistRelease();
+    mapsStopRec(true);
     stopLiveCameras();          // one sheet replacing another must not leak
     state.camLive = null;
     state.sonosTarget = null;
@@ -5877,7 +5879,7 @@
 
   /* The one request in the panel that is not JSON, so it does not go through
      api() — but it still has to answer to the mock layer. */
-  function assistAudio(pcm) {
+  function assistAudio(pcm, extra) {
     if (window.__mock && window.__mock.enabled) {
       return mockRequest('POST', '/api/assist/audio?sample_rate=' + AS_RATE, { bytes: pcm.length * 2 });
     }
@@ -5890,7 +5892,7 @@
     /* Speech-to-text plus a conversation turn is slow — this one gets far
        longer than the ten seconds every other request is held to. */
     var disarm = armTimeout(opts, API_AUDIO_TIMEOUT_MS);
-    return fetch('/api/assist/audio?sample_rate=' + AS_RATE, opts).then(function (res) {
+    return fetch('/api/assist/audio?sample_rate=' + AS_RATE + (extra || ''), opts).then(function (res) {
       disarm();
       return res.json().catch(function () { return null; }).then(function (d) {
         if (!res.ok && !(d && d.error)) {
@@ -6990,6 +6992,9 @@
       case 'warning-open': openWarning(el.dataset.id); break;
       case 'trip-detail': openTripDetail(el.dataset.id); break;
       case 'traffic-map': openTrafficMap(el.dataset.id); break;
+      case 'maps': openMapsSheet(); break;
+      case 'maps-go': mapsGo(); break;
+      case 'maps-mic': mapsMic(); break;
       case 'trips': openTrips(); break;
       case 'trip-edit': openTrips(el.dataset.id); break;
       case 'trip-save': saveTrip(); break;
@@ -7152,6 +7157,7 @@
 
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') closeSheet();
+    if (e.key === 'Enter' && e.target && e.target.id === 'mapsIn') { e.preventDefault(); mapsGo(); }
   });
 
   /* The moment the caret leaves a field, whatever the polls wanted to redraw
@@ -7385,7 +7391,13 @@
 
   function loadMapConfig() {
     if (MAP.cfg) return Promise.resolve(MAP.cfg);
-    return GET('/api/trips/mapconfig').then(function (d) { MAP.cfg = d || {}; renderAlerts(); return MAP.cfg; },
+    return GET('/api/trips/mapconfig').then(function (d) {
+      MAP.cfg = d || {};
+      var b = byId('btnMaps');
+      if (b) b.hidden = !mapReady();
+      renderAlerts();
+      return MAP.cfg;
+    },
       function () { return {}; });
   }
 
@@ -7486,6 +7498,130 @@
       '<button class="close-x tmap-close" data-act="close-sheet" aria-label="Close">' + ICON.close + '</button>' +
       '</div>', { raw: true, centre: true });
     mapInto(byId('tmapSheet'), t, true);
+  }
+
+  /* ---- Maps: look anywhere up from home ----
+     The rail's Maps key: the same dark traffic map, full size, with a box
+     to type (or say) an address. It answers with the distance, the drive in
+     traffic right now, how much of that is traffic, and draws the route. */
+  var MAPS = { q: '', res: null, busy: false, rec: null, timer: null };
+
+  function mapsResultHtml() {
+    var r = MAPS.res;
+    if (MAPS.busy) return '<span class="tc-drive">Checking the traffic…</span>';
+    if (!r) return '<span class="tc-drive">Type an address or a place — “Chermside Westfield”, ' +
+      '“12 Smith St, Ascot” — or tap the mic and say it.</span>';
+    if (r.error || r.minutes == null) {
+      return '<span class="tc-drive maps-err">' + esc(r.error || 'Google couldn’t find a route there.') + '</span>';
+    }
+    var delay = r.no_traffic_min != null ? Math.max(0, r.minutes - r.no_traffic_min) : null;
+    return '<span class="tc-big">' + esc(r.minutes) + ' min</span>' +
+      '<span class="tc-line"><span class="tc-to">' + esc(MAPS.q) + '</span></span>' +
+      '<span class="tc-drive">' + (r.distance_km != null ? esc(r.distance_km) + ' km · ' : '') +
+      (delay == null ? 'in traffic now' : delay <= 1 ? 'traffic is clear'
+        : esc(delay) + ' min of that is traffic') +
+      (r.route ? ' · via ' + esc(r.route) : '') + '</span>';
+  }
+
+  function paintMaps() {
+    var c = byId('mapsCard');
+    if (c) c.innerHTML = mapsResultHtml();
+    var m = byId('mapsMic');
+    if (m) {
+      m.classList.toggle('is-rec', !!MAPS.rec);
+      m.setAttribute('aria-label', MAPS.rec ? 'Stop listening' : 'Say an address');
+    }
+  }
+
+  function openMapsSheet() {
+    var canTalk = assistOn() && micUsable();
+    openSheet('<div class="tmap-sheet maps-sheet">' +
+      '<div class="tmap-host" id="mapsHost"></div>' +
+      '<div class="maps-bar">' +
+      '<input class="inp maps-in" id="mapsIn" type="text" inputmode="search" enterkeyhint="go" autocomplete="off" ' +
+      'placeholder="Where to?" aria-label="Where to?" value="' + esc(MAPS.q) + '">' +
+      (canTalk ? '<button class="btn maps-mic" id="mapsMic" data-act="maps-mic" aria-label="Say an address">' +
+        ICON.mic + '</button>' : '') +
+      '<button class="btn accent" data-act="maps-go">Go</button>' +
+      '</div>' +
+      '<div class="tmap-card" id="mapsCard">' + mapsResultHtml() + '</div>' +
+      '<button class="close-x tmap-close" data-act="close-sheet" aria-label="Close">' + ICON.close + '</button>' +
+      '</div>', { raw: true, centre: true });
+    mapInto(byId('mapsHost'), MAPS.res && MAPS.res.polyline
+      ? { id: 'maps:' + MAPS.q, polyline: MAPS.res.polyline } : null, true);
+  }
+
+  function mapsGo(text) {
+    var q = String(text == null ? readForm('mapsIn') : text).trim();
+    if (q.length < 3) { toast('Type a bit more of the address.'); return; }
+    MAPS.q = q;
+    MAPS.busy = true;
+    MAPS.res = null;
+    var inp = byId('mapsIn');
+    if (inp) { inp.value = q; inp.blur(); }
+    paintMaps();
+    GET('/api/trips/drive?dest=' + encodeURIComponent(q), MUSIC_MS).then(function (d) {
+      MAPS.busy = false;
+      MAPS.res = d || {};
+      paintMaps();
+      if (d && d.polyline) mapInto(byId('mapsHost'), { id: 'maps:' + q, polyline: d.polyline }, true);
+    }, function (err) {
+      MAPS.busy = false;
+      MAPS.res = { error: (err && err.message) || 'Couldn’t reach the panel.' };
+      paintMaps();
+    });
+  }
+
+  /* Tap the mic, say it, tap again (or it stops itself after 8 s). The
+     speech goes to Home Assistant for text only — nothing is acted on. */
+  function mapsMic() {
+    if (MAPS.rec) { mapsStopRec(); return; }
+    if (MOCK) { mapsGo('Chermside Westfield'); return; }
+    navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true }
+    }).then(function (stream) {
+      if (!byId('mapsMic')) { stream.getTracks().forEach(function (t) { t.stop(); }); return; }
+      var Ctx = window.AudioContext || window.webkitAudioContext, ctx;
+      try { ctx = new Ctx({ sampleRate: AS_RATE }); } catch (e) { ctx = new Ctx(); }
+      var src = ctx.createMediaStreamSource(stream);
+      var node = ctx.createScriptProcessor(4096, 1, 1);
+      var mute = ctx.createGain();
+      var chunks = [];
+      mute.gain.value = 0;
+      node.onaudioprocess = function (ev) { if (MAPS.rec) chunks.push(new Float32Array(ev.inputBuffer.getChannelData(0))); };
+      src.connect(node); node.connect(mute); mute.connect(ctx.destination);
+      MAPS.rec = { ctx: ctx, stream: stream, node: node, src: src, mute: mute, chunks: chunks, rate: ctx.sampleRate };
+      clearTimeout(MAPS.timer);
+      MAPS.timer = setTimeout(mapsStopRec, 8000);
+      paintMaps();
+      toast('Listening — say the address, then tap the mic again.', 3000);
+    }, function (err) {
+      toast(err && err.name === 'NotAllowedError' ? 'The panel needs permission to use the microphone.'
+        : 'No microphone the panel can use — the keyboard’s own mic key works too.', 5000);
+    });
+  }
+
+  function mapsStopRec(discard) {
+    var r = MAPS.rec;
+    if (!r) return;
+    MAPS.rec = null;
+    clearTimeout(MAPS.timer);
+    asTeardown(r);
+    paintMaps();
+    if (discard) return;
+    var pcm = asToPcm16(r.chunks, r.rate);
+    if (!pcm || pcm.length < AS_RATE / 4) { toast('That was too short to hear.'); return; }
+    MAPS.busy = true;
+    paintMaps();
+    assistAudio(pcm, '&stt_only=1').then(function (d) {
+      MAPS.busy = false;
+      if (d && d.ok && d.heard) mapsGo(d.heard.replace(/[.?!]+$/, ''));
+      else { paintMaps(); toast((d && d.error) || 'Didn’t catch that — try again or type it.', 5000); }
+    }, function (err) {
+      MAPS.busy = false;
+      paintMaps();
+      toast((err && err.message) || 'Couldn’t reach the house.', 5000);
+    });
   }
 
   /* Behind the screensaver / sleep screen while a trip is due. */
@@ -7851,7 +7987,7 @@
 
   function sheetIsForm(host) {
     return !!host.querySelector(
-      'input:not(.np-src-search-in):not(.mu-search-in):not([type=range]):not([type=checkbox]):not([type=radio]), textarea, select');
+      'input:not(.np-src-search-in):not(.mu-search-in):not(.maps-in):not([type=range]):not([type=checkbox]):not([type=radio]), textarea, select');
   }
 
   function sheetIdleMs() {
@@ -9503,7 +9639,8 @@
       return { minutes: 21, route: 'Gympie Rd', predicted: !!q.get('date') && q.get('date') !== todayStr(),
         leave_at: q.get('start') ? (function () { var p = q.get('start').split(':').map(Number);
           var m = p[0] * 60 + p[1] - 21; return pad2(Math.floor(m / 60)) + ':' + pad2(m % 60); })() : null,
-        leave_date: q.get('date') || null, leave_in_min: 40, error: null };
+        leave_date: q.get('date') || null, leave_in_min: 40, error: null,
+        distance_km: 14.2, no_traffic_min: 16, polyline: null };
     }
     if (path === '/api/trips/mapconfig') return { key: null, home: { lat: -27.47, lon: 153.02 } };
     if (path === '/api/trips/test') {
