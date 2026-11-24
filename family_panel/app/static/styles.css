@@ -1042,6 +1042,27 @@ ul, ol { list-style: none; }
   .maps-from { flex: 1 1 100%; }
 }
 
+/* the trip sheet's own little map, under the times */
+.trip-map {
+  position: relative;
+  height: min(22rem, 42vh);
+  margin-top: 1rem;
+  border-radius: var(--radius-s);
+  overflow: hidden;
+  background: #1c1e22;
+}
+.tmap-err {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  text-align: center;
+  color: #C3CAD4;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
 /* the rail's Traffic map key, under the countdown */
 .ra-map {
   display: inline-flex;

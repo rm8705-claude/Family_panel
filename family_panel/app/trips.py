@@ -54,7 +54,12 @@ def _clean(t: dict) -> dict:
         minutes = max(1, min(240, int(t.get("minutes") or 20)))
     except (TypeError, ValueError):
         minutes = 20
-    return {"id": str(t.get("id") or uuid.uuid4().hex[:10]), "label": label,
+    early = t.get("early")
+    try:
+        early = None if early in (None, "") else max(0, min(60, int(early)))
+    except (TypeError, ValueError):
+        early = None
+    return {"id": str(t.get("id") or uuid.uuid4().hex[:10]), "label": label, "early": early,
             "destination": dest, "time": hhmm, "days": days,
             "person": (str(t.get("person")) if t.get("person") else None),
             "minutes": minutes}
@@ -231,6 +236,15 @@ def travel_minutes(config: dict, destination: str, depart: datetime | None = Non
 
 def drive_to(config: dict, destination: str, arrive: datetime | None = None,
              origin: str | None = None) -> dict:
+    early = early_min(config) if arrive is not None else 0
+    target = arrive - timedelta(minutes=early) if arrive is not None else None
+    out = _drive_to(config, destination, target, origin)
+    out.update(early_min=early, target=target.strftime("%H:%M") if target else None)
+    return out
+
+
+def _drive_to(config: dict, destination: str, arrive: datetime | None = None,
+              origin: str | None = None) -> dict:
     """For the event sheet's Drive time key. With an arrive-by in the future,
     the drive is Google's prediction for leaving at about the right time:
     guess a departure, ask, and re-ask once from the corrected departure."""
@@ -316,6 +330,19 @@ def _mins(hhmm: str) -> int:
 SOON_MIN = 10   # leaving within this long: use the traffic on the roads right now
 
 
+def early_min(config: dict, trip: dict | None = None) -> int:
+    """How long before the time to aim to arrive: the trip's own setting, else
+    the arrive_early_min add-on option, else 10 minutes — a rule of thumb for
+    parking, the walk in and the kids' shoes."""
+    for v in ((trip or {}).get("early"), config.get("arrive_early_min")):
+        if v not in (None, ""):
+            try:
+                return max(0, min(60, int(v)))
+            except (TypeError, ValueError):
+                pass
+    return 10
+
+
 def _drive_for(config: dict, dest: str, arrive: datetime, guess: float,
                now: datetime) -> tuple[float | None, str | None, bool]:
     """(minutes, route, predicted) for getting to `dest` by `arrive`.
@@ -349,7 +376,9 @@ def upcoming(config: dict, now: datetime | None = None, events: list[dict] | Non
     todays = [t for t in manual if now.weekday() in (t.get("days") or [])]
     for t in todays + _event_trips(config, events, manual, now):
         h, m = (int(x) for x in t["time"].split(":"))
-        arrive = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        early = early_min(config, t)
+        # aim to be there `early` minutes before the trip / event time
+        arrive = now.replace(hour=h, minute=m, second=0, microsecond=0) - timedelta(minutes=early)
         cal = bool(t.get("from_calendar"))
         usual = float(t.get("minutes") or 20)
         # cheap first pass on the usual drive: is it anywhere near due?
@@ -371,6 +400,7 @@ def upcoming(config: dict, now: datetime | None = None, events: list[dict] | Non
         out.append({
             "id": t["id"], "label": t["label"], "destination": t["destination"],
             "person": t.get("person"), "arrive": t["time"],
+            "target": arrive.strftime("%H:%M"), "early_min": early,
             "drive_min": round(drive), "live": live is not None, "route": route,
             "predicted": bool(predicted and live is not None),
             # beside a forecast, what the same drive takes in traffic right now

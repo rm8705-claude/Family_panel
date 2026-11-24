@@ -7,6 +7,9 @@ import bom
 import db
 import trips
 
+# the older timing tests are about drive times, not the early-arrival buffer
+NO_EARLY = {"arrive_early_min": 0}
+
 
 class Resp:
     status_code = 200
@@ -63,12 +66,12 @@ def test_upcoming_uses_live_waze_time(monkeypatch):
                 "days": [5], "minutes": 15})                   # Saturdays: not today
     monkeypatch.setattr(trips, "travel_minutes", lambda cfg, dest, depart=None, **kw: (28.0, "M3"))
     now = datetime(2026, 11, 20, 7, 50, tzinfo=db.LOCAL_TZ)     # a Friday
-    up = trips.upcoming({}, now)
+    up = trips.upcoming(NO_EARLY, now)
     assert [u["label"] for u in up] == ["Work"]
     assert up[0]["drive_min"] == 28 and up[0]["live"] is True
     assert up[0]["leave_at"] == "08:02" and up[0]["leave_in_min"] == 12
     # long after leaving, it's gone
-    assert trips.upcoming({}, datetime(2026, 11, 20, 8, 25, tzinfo=db.LOCAL_TZ)) == []
+    assert trips.upcoming(NO_EARLY, datetime(2026, 11, 20, 8, 25, tzinfo=db.LOCAL_TZ)) == []
 
 
 def test_travel_minutes_without_a_key_is_none():
@@ -142,7 +145,7 @@ def test_calendar_events_with_an_address_become_trips(monkeypatch):
         _ev("Lunch", "12:30", "Home"),                                 # not a place
         _ev("Dentist", "15:00", "1 Example St, Brisbane"),            # too far off yet
     ]
-    up = trips.upcoming({}, now, events)
+    up = trips.upcoming(NO_EARLY, now, events)
     assert [u["label"] for u in up] == ["Swimming"]
     s = up[0]
     assert s["from_calendar"] and s["person"] == "kid"
@@ -154,13 +157,13 @@ def test_calendar_trip_skipped_without_waze_or_when_turned_off(monkeypatch):
     now = datetime(2026, 11, 21, 9, 0, tzinfo=db.LOCAL_TZ)
     ev = [_ev("Soccer", "09:45", "Bishop Park, Nundah")]
     monkeypatch.setattr(trips, "travel_minutes", lambda cfg, dest, depart=None, **kw: (None, None))
-    assert trips.upcoming({}, now, ev) == []
+    assert trips.upcoming(NO_EARLY, now, ev) == []
     monkeypatch.setattr(trips, "travel_minutes", lambda cfg, dest, depart=None, **kw: (15.0, None))
     assert trips.upcoming({"calendar_trips": False}, now, ev) == []
     # a weekly trip at the same time wins over the event
     trips.save({"label": "Soccer", "destination": "Bishop Park", "time": "09:45",
                 "days": [5], "minutes": 15})
-    assert [u["from_calendar"] for u in trips.upcoming({}, now, ev)] == [False]
+    assert [u["from_calendar"] for u in trips.upcoming(NO_EARLY, now, ev)] == [False]
 
 
 def test_no_route_is_an_error_not_working(monkeypatch):
@@ -185,7 +188,7 @@ def test_drive_to_a_future_event_uses_predicted_traffic(monkeypatch):
         return (25.0, "Gympie Rd")
     monkeypatch.setattr(trips, "travel_minutes", tm)
     arrive = (datetime.now(db.LOCAL_TZ) + timedelta(days=2)).replace(hour=9, minute=0, second=0, microsecond=0)
-    d = trips.drive_to({}, "Bishop Park, Nundah", arrive)
+    d = trips.drive_to(NO_EARLY, "Bishop Park, Nundah", arrive)
     assert d["predicted"] is True and d["minutes"] == 25 and d["leave_at"] == "08:35"
     assert asked[0] == arrive - timedelta(minutes=30)          # first guess
     assert asked[1] == arrive - timedelta(minutes=25)          # corrected departure
@@ -207,11 +210,11 @@ def test_countdown_uses_the_forecast_for_when_you_leave(monkeypatch):
         asked.append(depart)
         return (15.0, "M3") if depart is None else (34.0, "M3")      # empty now, busy at 8
     monkeypatch.setattr(trips, "travel_minutes", tm)
-    early = trips.upcoming({}, datetime(2026, 11, 20, 6, 40, tzinfo=db.LOCAL_TZ))[0]
+    early = trips.upcoming(NO_EARLY, datetime(2026, 11, 20, 6, 40, tzinfo=db.LOCAL_TZ))[0]
     assert early["predicted"] and early["drive_min"] == 34 and early["leave_at"] == "07:56"
     assert asked[0].strftime("%H:%M") == "08:10" and asked[1].strftime("%H:%M") == "07:56"
     asked.clear()
-    late = trips.upcoming({}, datetime(2026, 11, 20, 8, 5, tzinfo=db.LOCAL_TZ))[0]
+    late = trips.upcoming(NO_EARLY, datetime(2026, 11, 20, 8, 5, tzinfo=db.LOCAL_TZ))[0]
     assert not late["predicted"] and late["drive_min"] == 15 and asked == [None]
 
 
@@ -224,7 +227,7 @@ def test_countdown_carries_the_live_time_and_route_line(monkeypatch):
     def tm(cfg, dest, depart=None, **kw):
         return (15.0, "M3") if depart is None else (34.0, "M3")
     monkeypatch.setattr(trips, "travel_minutes", tm)
-    t = trips.upcoming({}, datetime(2026, 11, 20, 6, 40, tzinfo=db.LOCAL_TZ))[0]
+    t = trips.upcoming(NO_EARLY, datetime(2026, 11, 20, 6, 40, tzinfo=db.LOCAL_TZ))[0]
     assert t["drive_min"] == 34 and t["now_min"] == 15 and t["polyline"] == "abc123"
 
 
@@ -311,3 +314,18 @@ def test_lookup_from_somewhere_else(monkeypatch):
     monkeypatch.setattr(trips.requests, "post", post)
     d = trips.drive_to({"google_maps_api_key": "k"}, "Chermside", origin="Nundah QLD")
     assert seen["origin"] == {"address": "Nundah QLD"} and d["from"] == "Nundah QLD" and d["minutes"] == 10
+
+
+def test_leave_time_aims_ten_minutes_early_by_default(monkeypatch):
+    db.set_json_setting(trips.KEY, [])
+    trips.save({"label": "Work", "destination": "1 Example St", "time": "08:30",
+                "days": [4], "minutes": 20})
+    trips.save({"label": "Soccer", "destination": "Oval", "time": "08:45",
+                "days": [4], "minutes": 15, "early": 20})
+    monkeypatch.setattr(trips, "travel_minutes", lambda cfg, dest, depart=None, **kw: (20.0, None))
+    up = {u["label"]: u for u in trips.upcoming({}, datetime(2026, 11, 20, 7, 30, tzinfo=db.LOCAL_TZ))}
+    assert up["Work"]["leave_at"] == "08:00" and up["Work"]["target"] == "08:20"
+    assert up["Work"]["early_min"] == 10 and up["Work"]["arrive"] == "08:30"
+    assert up["Soccer"]["leave_at"] == "08:05" and up["Soccer"]["early_min"] == 20     # its own setting
+    no = trips.upcoming({"arrive_early_min": 0}, datetime(2026, 11, 20, 7, 30, tzinfo=db.LOCAL_TZ))
+    assert {u["label"]: u["leave_at"] for u in no}["Work"] == "08:10"

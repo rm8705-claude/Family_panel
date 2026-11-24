@@ -5170,6 +5170,7 @@
         big = late ? 'Already running late' : 'Leave by ' + (other ? DOW_SHORT[dowOf(d.leave_date)] + ' ' : '') +
           fmtTime(d.leave_at) + (!other && d.leave_in_min != null ? ' (in ' + d.leave_in_min + ' min)' : '');
       }
+      if (d.leave_at && d.early_min && !late) drive += ' · to be there ' + d.early_min + ' min early';
       out.innerHTML = '<span class="wo-big">' + esc(big) + '</span><span class="wo-sub">' + esc(drive) + '</span>';
       out.className = 'where-out is-card' + (late ? ' is-late' : '');
     }, function (err) {
@@ -7314,7 +7315,7 @@
         esc(t.label) + ' · ' + esc(t.drive_min) + ' min ' + esc(trafficWord(t)) + '</span>' +
         (nowLine(t) ? '<span class="ra-sub ra-now">' + esc(nowLine(t)) + '</span>' : '') +
         '</button>' +
-        (mapReady() ? '<button class="ra-map" data-act="traffic-map" data-id="' + esc(t.id) + '">' +
+        (mapKeyKnown() ? '<button class="ra-map" data-act="traffic-map" data-id="' + esc(t.id) + '">' +
           CAR_ICON + '<span>Traffic map</span></button>' : '');
     }).join('') + warns.map(function (w) {
       return '<button class="ra-warn' + (w.severity === 'major' ? ' is-major' : '') +
@@ -7352,7 +7353,9 @@
     var n = leaveIn(t);
     openSheet('<p style="font-size:1.25rem;font-weight:700;margin:0 0 .5rem">' + esc(leaveWords(n)) +
       ' <span class="muted mono" style="font-weight:500">(' + esc(fmtTime(t.leave_at)) + ')</span></p>' +
-      '<p class="muted">Be at ' + esc(t.label) + ' by <span class="mono">' + esc(fmtTime(t.arrive)) + '</span>' +
+      '<p class="muted">' + esc(t.label) + ' at <span class="mono">' + esc(fmtTime(t.arrive)) + '</span>' +
+      (t.early_min ? ' — aiming to be there by <span class="mono">' + esc(fmtTime(t.target)) + '</span>, ' +
+        esc(t.early_min) + ' min early' : '') +
       (t.person ? ' · ' + esc(nameOf(t.person)) : '') + '</p>' +
       '<p class="muted">' + (t.live ? (t.predicted ? 'Traffic forecast for ' + esc(fmtTime(t.leave_at)) + ': '
         : 'Traffic now: ') + esc(t.drive_min) + ' min' +
@@ -7361,10 +7364,13 @@
       (nowLine(t) ? '<p class="muted">Right now: ' + esc(nowLine(t)) + '.</p>' : '') +
       '<p class="muted2 mono" style="font-size:.875rem">' + esc(t.destination) + '</p>' +
       (t.from_calendar ? '<p class="muted2" style="font-size:.8125rem">From the calendar — the address ' +
-        'in the event’s location.</p>' : ''),
-      { title: 'Trip', foot: (mapReady() ? '<button class="btn accent" data-act="traffic-map" data-id="' + esc(t.id) +
-        '">Traffic map</button>' : '') + '<button class="btn" data-act="trips">Manage trips</button>' +
+        'in the event’s location.</p>' : '') +
+      (mapKeyKnown() ? '<div class="trip-map" id="tripMap"></div>' : ''),
+      { title: 'Trip', wide: true, focus: false,
+        foot: (mapKeyKnown() ? '<button class="btn accent" data-act="traffic-map" data-id="' + esc(t.id) +
+        '">Full-screen map</button>' : '') + '<button class="btn" data-act="trips">Manage trips</button>' +
         '<span style="flex:1 1 auto"></span><button class="btn ghost" data-act="close-sheet">Close</button>' });
+    if (mapKeyKnown()) mapInto(byId('tripMap'), t, true);
   }
 
   /* ---- the traffic map ----
@@ -7394,16 +7400,36 @@
 
   function mapReady() { return !!(MAP.cfg && MAP.cfg.key) && !MAP.failed; }
 
+  /* Asked for at boot and again every few minutes until a key turns up —
+     it used to be asked only on waking from the screensaver, and a missing
+     answer was kept for good, so the Maps key never appeared. */
   function loadMapConfig() {
-    if (MAP.cfg) return Promise.resolve(MAP.cfg);
+    if (MAP.cfg && MAP.cfg.key) return Promise.resolve(MAP.cfg);
     return GET('/api/trips/mapconfig').then(function (d) {
       MAP.cfg = d || {};
-      var b = byId('btnMaps');
-      if (b) b.hidden = !mapReady();
+      showMapsKey();
       renderAlerts();
       return MAP.cfg;
-    },
-      function () { return {}; });
+    }, function () { return MAP.cfg || {}; });
+  }
+
+  function mapKeyKnown() { return !!(MAP.cfg && MAP.cfg.key); }
+
+  /* The rail's Maps key shows whenever there's a key — even if Google then
+     refuses it, so the sheet can say why instead of the key just vanishing. */
+  function showMapsKey() {
+    var b = byId('btnMaps');
+    if (b) b.hidden = !mapKeyKnown();
+  }
+
+  var MAP_REFUSED = 'Google wouldn’t draw the map with this key. In Google Cloud Console check that ' +
+    'the Maps JavaScript API is enabled for the key’s project, and that the key’s restrictions allow it ' +
+    '(API restrictions: Maps JavaScript API; website restrictions: none, or this panel’s address).';
+
+  function mapProblem(host) {
+    if (!host) return;
+    host.innerHTML = '<div class="tmap-err">' + esc(MAP.failed ? MAP_REFUSED
+      : 'The map couldn’t load — is the tablet online?') + '</div>';
   }
 
   function loadMapsApi() {
@@ -7411,7 +7437,11 @@
     if (MAP.loading) return MAP.loading;
     MAP.loading = new Promise(function (resolve, reject) {
       window.__fpMapsReady = function () { resolve(); };
-      window.gm_authFailure = function () { MAP.failed = true; renderAlerts(); };
+      window.gm_authFailure = function () {
+        MAP.failed = true;
+        renderAlerts();
+        Array.prototype.forEach.call(document.querySelectorAll('.tmap-host, .trip-map'), mapProblem);
+      };
       var sc = document.createElement('script');
       sc.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(MAP.cfg.key) +
         '&libraries=geometry&loading=async&callback=__fpMapsReady';
@@ -7486,7 +7516,10 @@
       window.google.maps.event.trigger(m, 'resize');
       mapShowTrip(t);
       host.classList.add('has-map');
-    }, function () { /* no key / no API: nothing to draw */ });
+    }, function () {
+      /* behind the saver / sleep screen just stay quiet; in a sheet, say why */
+      if (host.classList.contains('tmap-host') || host.classList.contains('trip-map')) mapProblem(host);
+    });
   }
 
   function mapOutOf(host) {
@@ -7673,7 +7706,10 @@
       }).join('') + '</div></div>' +
       '<div class="field-row"><div class="field"><label>Who (optional)</label>' + personPicker(t.person || '', 't-person') + '</div>' +
       '<div class="field"><label for="t-min">Usual drive (min)</label>' +
-      '<input class="inp mono" id="t-min" type="number" min="1" max="240" value="' + esc(t.minutes) + '"></div></div>' +
+      '<input class="inp mono" id="t-min" type="number" min="1" max="240" value="' + esc(t.minutes) + '"></div>' +
+      '<div class="field"><label for="t-early">Arrive early (min)</label>' +
+      '<input class="inp mono" id="t-early" type="number" min="0" max="60" placeholder="10" value="' +
+      esc(t.early == null ? '' : t.early) + '"></div></div>' +
       '</div>';
   }
 
@@ -7741,6 +7777,7 @@
       label: byId('t-label').value, destination: byId('t-dest').value,
       time: byId('t-time').value, days: days,
       minutes: Number(byId('t-min').value) || 20,
+      early: byId('t-early').value === '' ? null : Number(byId('t-early').value),
       person: (byId('t-person') && byId('t-person').value) || null
     };
     act(PUT('/api/trips', body), function () {
@@ -7846,7 +7883,8 @@
       '<span class="tc-drive">' + esc(t.drive_min) + ' min ' + esc(trafficWord(t)) +
       (t.live && t.route ? ' via ' + esc(t.route) : '') +
       (nowLine(t) ? ' · ' + esc(nowLine(t)) : '') +
-      ' · there by ' + esc(fmtTime(t.arrive)) + '</span>';
+      ' · there by ' + esc(fmtTime(t.target || t.arrive)) +
+      (t.early_min ? ' (' + esc(t.early_min) + ' min early)' : '') + '</span>';
   }
 
   function svPaintChip() {
@@ -8176,6 +8214,9 @@
         if (!st) statusRetry(5000);
         render();
         updateSleep();
+        loadMapConfig();
+        loadAlerts();
+        loadTripsNext();
         return Promise.all([loadAgenda(), loadChores(), loadWeather(), loadHa(),
           loadPhotos(), loadSports()]);
       })
@@ -8243,6 +8284,7 @@
        min); trips every 2 min so the traffic time stays current */
     setInterval(function () { solo('poll:alerts', loadAlerts); }, 120000);
     setInterval(function () { solo('poll:trips', loadTripsNext); }, 120000);
+    setInterval(function () { if (!mapKeyKnown()) solo('poll:mapcfg', loadMapConfig); }, 300000);
     /* the idle check runs on its own short beat — the 30 s tick would blur
        the moment the frame appears, and a sheet closing has to release it
        straight away */
