@@ -6989,6 +6989,7 @@
 
       case 'warning-open': openWarning(el.dataset.id); break;
       case 'trip-detail': openTripDetail(el.dataset.id); break;
+      case 'traffic-map': openTrafficMap(el.dataset.id); break;
       case 'trips': openTrips(); break;
       case 'trip-edit': openTrips(el.dataset.id); break;
       case 'trip-save': saveTrip(); break;
@@ -7218,6 +7219,7 @@
       st.style.cssText = trip && trip.person ? pstyle(trip.person) : '';
       st.innerHTML = trip ? tripCardHtml(trip) : '';
     }
+    paintTripMaps();
     var wasUp = !el.hidden;
     if (el.hidden === should) el.hidden = !should;
     /* The wall just came back. Everything held off behind the overlay catches
@@ -7277,6 +7279,11 @@
     return t.predicted ? 'drive (traffic forecast)' : 'drive (traffic now)';
   }
 
+  /* Beside a forecast, what the same drive takes if you left right now. */
+  function nowLine(t) {
+    return t.live && t.predicted && t.now_min != null ? t.now_min + ' min if you left now' : '';
+  }
+
   function activeTrips() {
     return (D.tripsNext || []).filter(function (t) { return leaveIn(t) >= -10; });
   }
@@ -7294,7 +7301,10 @@
         '<span class="ra-big">' + esc(leaveWords(n)) + '</span>' +
         '<span class="ra-sub">' + (t.person ? '<span class="dot"></span>' : '') +
         esc(t.label) + ' · ' + esc(t.drive_min) + ' min ' + esc(trafficWord(t)) + '</span>' +
-        '</button>';
+        (nowLine(t) ? '<span class="ra-sub ra-now">' + esc(nowLine(t)) + '</span>' : '') +
+        '</button>' +
+        (mapReady() ? '<button class="ra-map" data-act="traffic-map" data-id="' + esc(t.id) + '">' +
+          CAR_ICON + '<span>Traffic map</span></button>' : '');
     }).join('') + warns.map(function (w) {
       return '<button class="ra-warn' + (w.severity === 'major' ? ' is-major' : '') +
         '" data-act="warning-open" data-id="' + esc(w.id) + '">' +
@@ -7337,11 +7347,156 @@
         : 'Traffic now: ') + esc(t.drive_min) + ' min' +
         (t.route ? ' via ' + esc(t.route) : '') + (t.usual_min != null ? ' (usually ' + esc(t.usual_min) + ')' : '')
         : 'Usual drive: ' + esc(t.drive_min) + ' min — live traffic isn’t available right now.') + '</p>' +
+      (nowLine(t) ? '<p class="muted">Right now: ' + esc(nowLine(t)) + '.</p>' : '') +
       '<p class="muted2 mono" style="font-size:.875rem">' + esc(t.destination) + '</p>' +
       (t.from_calendar ? '<p class="muted2" style="font-size:.8125rem">From the calendar — the address ' +
         'in the event’s location.</p>' : ''),
-      { title: 'Trip', foot: '<button class="btn" data-act="trips">Manage trips</button>' +
+      { title: 'Trip', foot: (mapReady() ? '<button class="btn accent" data-act="traffic-map" data-id="' + esc(t.id) +
+        '">Traffic map</button>' : '') + '<button class="btn" data-act="trips">Manage trips</button>' +
         '<span style="flex:1 1 auto"></span><button class="btn ghost" data-act="close-sheet">Close</button>' });
+  }
+
+  /* ---- the traffic map ----
+     A dark, low-contrast greyscale Google map with the live traffic layer
+     on top — the colour is the point, so everything else is grey — and the
+     route to the next trip drawn over it. One map, moved between the three
+     places it shows: behind the screensaver while a trip is due, behind the
+     night sleep screen, and full size in a sheet (the rail's Traffic map
+     key). It's Google's Maps JavaScript API, so it needs that API on the
+     key (/api/trips/mapconfig); without it nothing here draws. */
+  var MAP = { cfg: null, loading: null, map: null, el: null, traffic: null, line: null,
+              pins: [], tripId: null, poly: null, failed: false };
+  var MAP_STYLE = [
+    { elementType: 'geometry', stylers: [{ color: '#1c1e22' }] },
+    { elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+    { elementType: 'labels.text.fill', stylers: [{ color: '#5e636b' }] },
+    { elementType: 'labels.text.stroke', stylers: [{ color: '#1c1e22' }] },
+    { featureType: 'administrative', elementType: 'geometry', stylers: [{ color: '#2a2d32' }] },
+    { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+    { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+    { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#2b2e34' }] },
+    { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#383c43' }] },
+    { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#6a6f77' }] },
+    { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#101215' }] },
+    { featureType: 'landscape.natural', elementType: 'geometry', stylers: [{ color: '#202226' }] }
+  ];
+
+  function mapReady() { return !!(MAP.cfg && MAP.cfg.key) && !MAP.failed; }
+
+  function loadMapConfig() {
+    if (MAP.cfg) return Promise.resolve(MAP.cfg);
+    return GET('/api/trips/mapconfig').then(function (d) { MAP.cfg = d || {}; renderAlerts(); return MAP.cfg; },
+      function () { return {}; });
+  }
+
+  function loadMapsApi() {
+    if (window.google && window.google.maps) return Promise.resolve();
+    if (MAP.loading) return MAP.loading;
+    MAP.loading = new Promise(function (resolve, reject) {
+      window.__fpMapsReady = function () { resolve(); };
+      window.gm_authFailure = function () { MAP.failed = true; renderAlerts(); };
+      var sc = document.createElement('script');
+      sc.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(MAP.cfg.key) +
+        '&libraries=geometry&loading=async&callback=__fpMapsReady';
+      sc.async = true;
+      sc.onerror = function () { MAP.failed = true; MAP.loading = null; reject(new Error('map script')); };
+      document.head.appendChild(sc);
+    });
+    return MAP.loading;
+  }
+
+  function ensureMap() {
+    if (!mapReady()) return Promise.reject(new Error('no map key'));
+    return loadMapsApi().then(function () {
+      if (MAP.map) return MAP.map;
+      var g = window.google.maps;
+      MAP.el = document.createElement('div');
+      MAP.el.className = 'tmap';
+      MAP.map = new g.Map(MAP.el, {
+        center: { lat: MAP.cfg.home.lat, lng: MAP.cfg.home.lon }, zoom: 12,
+        styles: MAP_STYLE, backgroundColor: '#1c1e22', disableDefaultUI: true,
+        clickableIcons: false, keyboardShortcuts: false, gestureHandling: 'none'
+      });
+      MAP.traffic = new g.TrafficLayer();
+      MAP.traffic.setMap(MAP.map);
+      /* the traffic layer is a snapshot; nudge it every 5 minutes */
+      setInterval(function () {
+        if (!MAP.traffic || !MAP.el.isConnected) return;
+        MAP.traffic.setMap(null);
+        MAP.traffic.setMap(MAP.map);
+      }, 300000);
+      return MAP.map;
+    });
+  }
+
+  function mapShowTrip(t) {
+    var g = window.google && window.google.maps;
+    if (!g || !MAP.map) return;
+    var home = { lat: MAP.cfg.home.lat, lng: MAP.cfg.home.lon };
+    if (t && t.polyline === MAP.poly && t.id === MAP.tripId) return;
+    MAP.tripId = t ? t.id : null;
+    MAP.poly = t ? t.polyline : null;
+    if (MAP.line) { MAP.line.setMap(null); MAP.line = null; }
+    MAP.pins.forEach(function (p) { p.setMap(null); });
+    MAP.pins = [];
+    var path = t && t.polyline && g.geometry ? g.geometry.encoding.decodePath(t.polyline) : null;
+    var dot = function (pos, fill) {
+      return new g.Marker({ position: pos, map: MAP.map, clickable: false,
+        icon: { path: g.SymbolPath.CIRCLE, scale: 7, fillColor: fill, fillOpacity: 1,
+                strokeColor: '#FFFFFF', strokeWeight: 2 } });
+    };
+    if (path && path.length) {
+      /* a pale line under the traffic colours — the route without hiding them */
+      MAP.line = new g.Polyline({ path: path, map: MAP.map, strokeColor: '#FFFFFF',
+        strokeOpacity: 0.35, strokeWeight: 9, zIndex: 1 });
+      MAP.pins.push(dot(path[0], '#8A93A0'), dot(path[path.length - 1], '#E5484D'));
+      var b = new g.LatLngBounds();
+      path.forEach(function (p) { b.extend(p); });
+      MAP.map.fitBounds(b, 80);
+    } else {
+      MAP.pins.push(dot(home, '#8A93A0'));
+      MAP.map.setCenter(home);
+      MAP.map.setZoom(12);
+    }
+  }
+
+  /* Put the one map into `host` (or take it out of wherever it is). */
+  function mapInto(host, t, interactive) {
+    if (!host) return;
+    ensureMap().then(function (m) {
+      if (MAP.el.parentNode !== host) host.appendChild(MAP.el);
+      m.setOptions({ gestureHandling: interactive ? 'greedy' : 'none' });
+      window.google.maps.event.trigger(m, 'resize');
+      mapShowTrip(t);
+      host.classList.add('has-map');
+    }, function () { /* no key / no API: nothing to draw */ });
+  }
+
+  function mapOutOf(host) {
+    if (!host) return;
+    host.classList.remove('has-map');
+    if (MAP.el && MAP.el.parentNode === host) host.removeChild(MAP.el);
+  }
+
+  function openTrafficMap(id) {
+    var t = (D.tripsNext || []).filter(function (x) { return x.id === id; })[0] || activeTrips()[0] || null;
+    openSheet('<div class="tmap-sheet">' +
+      '<div class="tmap-host" id="tmapSheet"></div>' +
+      (t ? '<div class="tmap-card">' + tripCardHtml(t) + '</div>' : '') +
+      '<button class="close-x tmap-close" data-act="close-sheet" aria-label="Close">' + ICON.close + '</button>' +
+      '</div>', { raw: true, centre: true });
+    mapInto(byId('tmapSheet'), t, true);
+  }
+
+  /* Behind the screensaver / sleep screen while a trip is due. */
+  function paintTripMaps() {
+    var trip = dueTrip();
+    var sv = byId('svMap'), sl = byId('sleepMap');
+    var saverUp = SV && SV.on, sleepUp = !byId('sleep').hidden;
+    if (trip && mapReady() && saverUp) { mapInto(sv, trip, false); byId('saver').classList.add('with-map'); }
+    else { mapOutOf(sv); byId('saver').classList.remove('with-map'); }
+    if (trip && mapReady() && sleepUp && !saverUp) mapInto(sl, trip, false);
+    else mapOutOf(sl);
   }
 
   /* ---- Settings -> Trips: the weekly routine, edited on the panel ---- */
@@ -7537,11 +7692,13 @@
       '<span class="tc-to">' + esc(t.label) + '</span></span>' +
       '<span class="tc-drive">' + esc(t.drive_min) + ' min ' + esc(trafficWord(t)) +
       (t.live && t.route ? ' via ' + esc(t.route) : '') +
+      (nowLine(t) ? ' · ' + esc(nowLine(t)) : '') +
       ' · there by ' + esc(fmtTime(t.arrive)) + '</span>';
   }
 
   function svPaintChip() {
     var host = byId('svNext');
+    paintTripMaps();
     var trip = dueTrip();
     if (trip) {
       host.className = 'sv-next is-on is-trip' + (leaveIn(trip) <= 5 ? ' is-urgent' : '');
@@ -7639,6 +7796,7 @@
   function svStop() {
     if (!SV.on) return;
     SV.on = false;
+    paintTripMaps();            // the map comes off with the frame
     /* Renders and camera refreshes were paused behind the frame — one pass
        now, so the wall is current by the time the fade finishes. */
     renderSoon();
@@ -7814,6 +7972,7 @@
      frame: the clock and the agenda can be a minute out, so ask for
      everything at once rather than waiting out the next beat of each timer. */
   function kickLoaders() {
+    loadMapConfig();
     loadAlerts();
     loadTripsNext();
     loadHa().then(renderPoll);
@@ -9346,6 +9505,7 @@
           var m = p[0] * 60 + p[1] - 21; return pad2(Math.floor(m / 60)) + ':' + pad2(m % 60); })() : null,
         leave_date: q.get('date') || null, leave_in_min: 40, error: null };
     }
+    if (path === '/api/trips/mapconfig') return { key: null, home: { lat: -27.47, lon: 153.02 } };
     if (path === '/api/trips/test') {
       return { minutes: 23, destination: 'Brisbane City', traffic: { configured: true, ok: true } };
     }

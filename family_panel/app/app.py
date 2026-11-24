@@ -13,7 +13,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.35.1"
+APP_VERSION = "0.36.0"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -997,6 +997,12 @@ def api_trips_delete(trip_id):
     import trips
     trips.delete(trip_id)
     return jsonify({"ok": True})
+
+
+@app.get("/api/trips/mapconfig")
+def api_trips_mapconfig():
+    import trips
+    return jsonify(trips.map_config(CONFIG))
 
 
 @app.get("/api/trips/test")

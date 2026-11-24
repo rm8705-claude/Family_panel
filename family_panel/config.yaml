@@ -5,7 +5,7 @@
 # together whenever you ship a change (see the repo's `ship` skill).
 name: "Family Panel"
 description: "Self-hosted family wall calendar: shared calendar, chores, lists, meal planner and Home Assistant tiles."
-version: "0.35.1"
+version: "0.36.0"
 slug: "family_panel"
 url: "https://github.com/rm8705-claude/family_panel"
 arch:
@@ -210,6 +210,9 @@ options:
   # Live traffic for trips: a Google Cloud API key with the Routes API
   # enabled. Without it, trips count down on their usual drive times.
   google_maps_api_key: ""
+  # Optional: a separate key for the traffic map, which runs in the tablet's
+  # browser (Maps JavaScript API). Left empty, google_maps_api_key is used.
+  google_maps_browser_key: ""
   music_assistant_url: ""
   music_assistant_token: ""
   llm_provider: "anthropic"
@@ -293,6 +296,7 @@ schema:
   music_source_names: "str?"
   calendar_trips: "bool?"
   google_maps_api_key: "password?"
+  google_maps_browser_key: "password?"
   music_assistant_url: "str?"
   music_assistant_token: "password?"
   llm_provider: "list(anthropic|lmstudio)"

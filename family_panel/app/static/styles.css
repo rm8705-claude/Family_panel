@@ -978,6 +978,62 @@ ul, ol { list-style: none; }
 .tc-to { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tc-drive { font-size: 1.25rem; color: rgba(255, 255, 255, 0.78); }
 
+/* The traffic map: behind the screensaver and the sleep screen while a trip
+   is due, and full size in its own sheet. Dark grey on purpose — only the
+   traffic colours and the route should catch the eye. */
+.tmap { position: absolute; inset: 0; }
+.sv-map { position: absolute; inset: 0; display: none; background: #1c1e22; }
+.sv-map.has-map { display: block; }
+.saver.with-map .sv-layer { opacity: 0 !important; }
+.saver.with-map .sv-scrim {
+  background: linear-gradient(to top, rgba(10, 11, 13, 0.78) 0%, rgba(10, 11, 13, 0) 45%);
+}
+.sleep-map { position: absolute; inset: 0; display: none; opacity: 0.55; }
+.sleep-map.has-map { display: block; }
+.sleep-in { position: relative; z-index: 1; text-align: center; }
+.tmap-sheet {
+  position: relative;
+  width: min(72rem, 96vw);
+  height: min(46rem, 90vh);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #1c1e22;
+  border: 1px solid var(--hair);
+}
+.tmap-host { position: absolute; inset: 0; }
+.tmap-card {
+  position: absolute;
+  left: 1.25rem;
+  bottom: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  max-width: min(32rem, 80%);
+  padding: 1rem 1.375rem;
+  border-radius: 1rem;
+  background: rgba(12, 14, 18, 0.82);
+  color: #FFFFFF;
+}
+.tmap-card .tc-big { font-size: 2.25rem; }
+.tmap-card .tc-line { font-size: 1.25rem; }
+.tmap-card .tc-drive { font-size: 1rem; }
+.tmap-close { position: absolute; top: 1rem; right: 1rem; z-index: 2; background: rgba(12, 14, 18, 0.7); color: #FFF; }
+/* the rail's Traffic map key, under the countdown */
+.ra-map {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  padding: 0 0.875rem;
+  border-radius: var(--radius-s);
+  background: var(--hero);
+  color: var(--on-accent, #FFFFFF);
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+.ra-map svg { width: 1.125rem; height: 1.125rem; display: block; }
+.ra-now { color: var(--ink-2); }
+
 .sleep-trip { display: none; }
 .sleep-trip.is-on {
   display: flex;

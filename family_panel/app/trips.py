@@ -73,8 +73,22 @@ def delete(trip_id: str) -> None:
 
 
 ROUTES_URL = "https://routes.googleapis.com/directions/v2:computeRoutes"
+# The route line Google last drew to each destination, for the traffic map.
+_polylines: dict = {}
 # What the panel last heard from Google, for the Trips sheet's status line.
 traffic_status = {"ok": None, "error": None, "at": None}
+
+
+def map_config(config: dict) -> dict:
+    """What the tablet needs to draw the traffic map: a key for Google's Maps
+    JavaScript API (google_maps_browser_key if set, else the same key) and
+    the house's spot. The map runs in the browser, so this key does reach
+    the tablet — a separate browser key restricted to the panel's address
+    is the tidy way to do it."""
+    key = str(config.get("google_maps_browser_key") or "").strip() or _api_key(config)
+    w = config.get("weather") or {}
+    return {"key": key or None,
+            "home": {"lat": float(w.get("lat", -27.48)), "lon": float(w.get("lon", 152.98))}}
 
 
 def _api_key(config: dict) -> str:
@@ -122,7 +136,8 @@ def travel_minutes(config: dict, destination: str,
     try:
         r = requests.post(ROUTES_URL, json=body, timeout=20, headers={
             "X-Goog-Api-Key": key,
-            "X-Goog-FieldMask": "routes.duration,routes.description,routes.distanceMeters",
+            "X-Goog-FieldMask": "routes.duration,routes.description,routes.distanceMeters,"
+                                "routes.polyline.encodedPolyline",
         })
         if r.status_code >= 400:
             try:
@@ -136,6 +151,9 @@ def travel_minutes(config: dict, destination: str,
                                "check the address (suburb and state help)")
         mins = float(str(routes[0]["duration"]).rstrip("s")) / 60
         name = routes[0].get("description") or None
+        poly = ((routes[0].get("polyline") or {}).get("encodedPolyline"))
+        if poly:
+            _polylines[destination] = poly
         traffic_status.update(ok=True, error=None, at=db.utc_now_iso())
     except Exception as e:                  # noqa: BLE001 - fall back to usual minutes
         log.info("google routes %s: %s", destination, e)
@@ -282,6 +300,11 @@ def upcoming(config: dict, now: datetime | None = None, events: list[dict] | Non
             "person": t.get("person"), "arrive": t["time"],
             "drive_min": round(drive), "live": live is not None, "route": route,
             "predicted": bool(predicted and live is not None),
+            # beside a forecast, what the same drive takes in traffic right now
+            "now_min": (round(n) if (n := (travel_minutes(config, t["destination"])[0]
+                                           if predicted and live is not None else live)) is not None
+                        else None),
+            "polyline": _polylines.get(t["destination"]),
             "usual_min": None if cal else round(usual),
             "from_calendar": cal,
             "leave_at": leave.strftime("%H:%M"),

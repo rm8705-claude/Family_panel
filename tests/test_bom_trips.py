@@ -213,3 +213,25 @@ def test_countdown_uses_the_forecast_for_when_you_leave(monkeypatch):
     asked.clear()
     late = trips.upcoming({}, datetime(2026, 11, 20, 8, 5, tzinfo=db.LOCAL_TZ))[0]
     assert not late["predicted"] and late["drive_min"] == 15 and asked == [None]
+
+
+def test_countdown_carries_the_live_time_and_route_line(monkeypatch):
+    db.set_json_setting(trips.KEY, [])
+    trips.save({"label": "Work", "destination": "1 Example St", "time": "08:30",
+                "days": [4], "minutes": 20})
+    trips._polylines["1 Example St"] = "abc123"
+
+    def tm(cfg, dest, depart=None):
+        return (15.0, "M3") if depart is None else (34.0, "M3")
+    monkeypatch.setattr(trips, "travel_minutes", tm)
+    t = trips.upcoming({}, datetime(2026, 11, 20, 6, 40, tzinfo=db.LOCAL_TZ))[0]
+    assert t["drive_min"] == 34 and t["now_min"] == 15 and t["polyline"] == "abc123"
+
+
+def test_mapconfig_prefers_the_browser_key(client, monkeypatch):
+    import app as app_module
+    monkeypatch.setitem(app_module.CONFIG, "google_maps_api_key", "server-key")
+    assert client.get("/api/trips/mapconfig").get_json()["key"] == "server-key"
+    monkeypatch.setitem(app_module.CONFIG, "google_maps_browser_key", "browser-key")
+    d = client.get("/api/trips/mapconfig").get_json()
+    assert d["key"] == "browser-key" and "lat" in d["home"]
