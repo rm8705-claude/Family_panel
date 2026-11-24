@@ -7269,6 +7269,14 @@
     return 'Leave in ' + Math.floor(n / 60) + ' h ' + (n % 60) + ' min';
   }
 
+  /* Which drive time the countdown is using, said plainly: the forecast for
+     when you'd leave, the traffic right now, or (no Google answer) the
+     usual drive. */
+  function trafficWord(t) {
+    if (!t.live) return 'drive (usual — no live traffic)';
+    return t.predicted ? 'drive (traffic forecast)' : 'drive (traffic now)';
+  }
+
   function activeTrips() {
     return (D.tripsNext || []).filter(function (t) { return leaveIn(t) >= -10; });
   }
@@ -7285,7 +7293,7 @@
         (t.person ? ' style="' + pstyle(t.person) + '"' : '') + '>' +
         '<span class="ra-big">' + esc(leaveWords(n)) + '</span>' +
         '<span class="ra-sub">' + (t.person ? '<span class="dot"></span>' : '') +
-        esc(t.label) + ' · ' + esc(t.drive_min) + ' min drive' + (t.live ? '' : ' (usual)') + '</span>' +
+        esc(t.label) + ' · ' + esc(t.drive_min) + ' min ' + esc(trafficWord(t)) + '</span>' +
         '</button>';
     }).join('') + warns.map(function (w) {
       return '<button class="ra-warn' + (w.severity === 'major' ? ' is-major' : '') +
@@ -7325,7 +7333,8 @@
       ' <span class="muted mono" style="font-weight:500">(' + esc(fmtTime(t.leave_at)) + ')</span></p>' +
       '<p class="muted">Be at ' + esc(t.label) + ' by <span class="mono">' + esc(fmtTime(t.arrive)) + '</span>' +
       (t.person ? ' · ' + esc(nameOf(t.person)) : '') + '</p>' +
-      '<p class="muted">' + (t.live ? 'Traffic now: ' + esc(t.drive_min) + ' min' +
+      '<p class="muted">' + (t.live ? (t.predicted ? 'Traffic forecast for ' + esc(fmtTime(t.leave_at)) + ': '
+        : 'Traffic now: ') + esc(t.drive_min) + ' min' +
         (t.route ? ' via ' + esc(t.route) : '') + (t.usual_min != null ? ' (usually ' + esc(t.usual_min) + ')' : '')
         : 'Usual drive: ' + esc(t.drive_min) + ' min — live traffic isn’t available right now.') + '</p>' +
       '<p class="muted2 mono" style="font-size:.875rem">' + esc(t.destination) + '</p>' +
@@ -7526,8 +7535,8 @@
       '<span class="tc-line">' + (t.person ? '<span class="dot"></span>' : '') +
       '<span class="tc-at mono">' + esc(fmtTime(t.leave_at)) + '</span>' +
       '<span class="tc-to">' + esc(t.label) + '</span></span>' +
-      '<span class="tc-drive">' + esc(t.drive_min) + ' min drive' +
-      (t.live ? (t.route ? ' via ' + esc(t.route) : ' in traffic now') : ' (usual)') +
+      '<span class="tc-drive">' + esc(t.drive_min) + ' min ' + esc(trafficWord(t)) +
+      (t.live && t.route ? ' via ' + esc(t.route) : '') +
       ' · there by ' + esc(fmtTime(t.arrive)) + '</span>';
   }
 

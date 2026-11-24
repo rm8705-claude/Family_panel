@@ -110,7 +110,9 @@ def travel_minutes(config: dict, destination: str,
                                            "longitude": float(w.get("lon", 152.98))}}},
         "destination": _place(destination),
         "travelMode": "DRIVE",
-        "routingPreference": "TRAFFIC_AWARE",
+        # The most accurate setting — the one the Google Maps app's own times
+        # match. (Plain TRAFFIC_AWARE trades accuracy for speed.)
+        "routingPreference": "TRAFFIC_AWARE_OPTIMAL",
         "regionCode": "AU",
         "units": "METRIC",
     }
@@ -220,6 +222,33 @@ def _mins(hhmm: str) -> int:
     return h * 60 + m
 
 
+SOON_MIN = 10   # leaving within this long: use the traffic on the roads right now
+
+
+def _drive_for(config: dict, dest: str, arrive: datetime, guess: float,
+               now: datetime) -> tuple[float | None, str | None, bool]:
+    """(minutes, route, predicted) for getting to `dest` by `arrive`.
+
+    The countdown shows up to two hours ahead, and the traffic at 6:30 is not
+    the traffic at 8:00 — so until it's nearly time to go, ask Google for its
+    forecast at the time you'd actually set off: a first guess from the usual
+    drive, then once more from the departure that guess gives. Close to
+    leaving, it's the traffic right now."""
+    first_leave = arrive - timedelta(minutes=guess)
+    if first_leave - now <= timedelta(minutes=SOON_MIN):
+        m, r = travel_minutes(config, dest)
+        return m, r, False
+    m1, r1 = travel_minutes(config, dest, first_leave)
+    if m1 is None:
+        return None, None, False
+    leave = arrive - timedelta(minutes=round(m1))
+    if leave - now <= timedelta(minutes=SOON_MIN):
+        m, r = travel_minutes(config, dest)
+        return (m, r, False) if m is not None else (m1, r1, True)
+    m2, r2 = travel_minutes(config, dest, leave)
+    return (m2, r2 or r1, True) if m2 is not None else (m1, r1, True)
+
+
 def upcoming(config: dict, now: datetime | None = None, events: list[dict] | None = None) -> list[dict]:
     """Today's trips still worth showing, soonest leave time first: the
     weekly ones set up on the panel, plus calendar events with an address."""
@@ -236,7 +265,8 @@ def upcoming(config: dict, now: datetime | None = None, events: list[dict] | Non
         if not cal and not (arrive - timedelta(minutes=usual + LOOKAHEAD_MIN) <= now
                             <= arrive - timedelta(minutes=usual) + timedelta(minutes=AFTER_LEAVE_MIN + 30)):
             continue
-        live, route = travel_minutes(config, t["destination"])
+        live, route, predicted = _drive_for(config, t["destination"], arrive,
+                                            usual if not cal else 20.0, now)
         if cal and live is None:
             continue                        # nowhere Google can route to
         if cal and live > LOOKAHEAD_MIN:
@@ -251,6 +281,7 @@ def upcoming(config: dict, now: datetime | None = None, events: list[dict] | Non
             "id": t["id"], "label": t["label"], "destination": t["destination"],
             "person": t.get("person"), "arrive": t["time"],
             "drive_min": round(drive), "live": live is not None, "route": route,
+            "predicted": bool(predicted and live is not None),
             "usual_min": None if cal else round(usual),
             "from_calendar": cal,
             "leave_at": leave.strftime("%H:%M"),

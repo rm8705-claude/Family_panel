@@ -61,7 +61,7 @@ def test_upcoming_uses_live_waze_time(monkeypatch):
                 "days": [4], "minutes": 20})                   # Fridays
     trips.save({"label": "Soccer", "destination": "Oval", "time": "08:30",
                 "days": [5], "minutes": 15})                   # Saturdays: not today
-    monkeypatch.setattr(trips, "travel_minutes", lambda cfg, dest: (28.0, "M3"))
+    monkeypatch.setattr(trips, "travel_minutes", lambda cfg, dest, depart=None: (28.0, "M3"))
     now = datetime(2026, 11, 20, 7, 50, tzinfo=db.LOCAL_TZ)     # a Friday
     up = trips.upcoming({}, now)
     assert [u["label"] for u in up] == ["Work"]
@@ -94,7 +94,7 @@ def test_travel_minutes_asks_google_routes_with_traffic(monkeypatch):
     cfg = {"google_maps_api_key": "k", "weather": {"lat": -27.4, "lon": 153.0}}
     assert trips.travel_minutes(cfg, "1 Example St, Brisbane") == (23.0, "M3")
     assert seen["headers"]["X-Goog-Api-Key"] == "k"
-    assert seen["body"]["routingPreference"] == "TRAFFIC_AWARE"
+    assert seen["body"]["routingPreference"] == "TRAFFIC_AWARE_OPTIMAL"
     assert seen["body"]["destination"] == {"address": "1 Example St, Brisbane"}
     assert trips.traffic_status["ok"] is True
     # coordinates go as a point, not an address
@@ -134,7 +134,7 @@ def _ev(title, start, location, **kw):
 
 def test_calendar_events_with_an_address_become_trips(monkeypatch):
     db.set_json_setting(trips.KEY, [])
-    monkeypatch.setattr(trips, "travel_minutes", lambda cfg, dest: (18.0, "Gympie Rd"))
+    monkeypatch.setattr(trips, "travel_minutes", lambda cfg, dest, depart=None: (18.0, "Gympie Rd"))
     now = datetime(2026, 11, 21, 9, 0, tzinfo=db.LOCAL_TZ)          # Saturday
     events = [
         _ev("Swimming", "09:45", "Chermside Aquatic Centre, 375 Hamilton Rd", person="kid"),
@@ -153,9 +153,9 @@ def test_calendar_trip_skipped_without_waze_or_when_turned_off(monkeypatch):
     db.set_json_setting(trips.KEY, [])
     now = datetime(2026, 11, 21, 9, 0, tzinfo=db.LOCAL_TZ)
     ev = [_ev("Soccer", "09:45", "Bishop Park, Nundah")]
-    monkeypatch.setattr(trips, "travel_minutes", lambda cfg, dest: (None, None))
+    monkeypatch.setattr(trips, "travel_minutes", lambda cfg, dest, depart=None: (None, None))
     assert trips.upcoming({}, now, ev) == []
-    monkeypatch.setattr(trips, "travel_minutes", lambda cfg, dest: (15.0, None))
+    monkeypatch.setattr(trips, "travel_minutes", lambda cfg, dest, depart=None: (15.0, None))
     assert trips.upcoming({"calendar_trips": False}, now, ev) == []
     # a weekly trip at the same time wins over the event
     trips.save({"label": "Soccer", "destination": "Bishop Park", "time": "09:45",
@@ -193,3 +193,23 @@ def test_drive_to_a_future_event_uses_predicted_traffic(monkeypatch):
 
 def test_drive_endpoint_rejects_non_places(client):
     assert client.get("/api/trips/drive?dest=https://zoom.us/j/1").status_code == 400
+
+
+def test_countdown_uses_the_forecast_for_when_you_leave(monkeypatch):
+    """At 6:40 for an 8:30 arrive-by, the drive is Google's forecast for
+    leaving ~8:00, not the empty roads at 6:40; close to leaving, it's now."""
+    db.set_json_setting(trips.KEY, [])
+    trips.save({"label": "Work", "destination": "1 Example St", "time": "08:30",
+                "days": [4], "minutes": 20})
+    asked = []
+
+    def tm(cfg, dest, depart=None):
+        asked.append(depart)
+        return (15.0, "M3") if depart is None else (34.0, "M3")      # empty now, busy at 8
+    monkeypatch.setattr(trips, "travel_minutes", tm)
+    early = trips.upcoming({}, datetime(2026, 11, 20, 6, 40, tzinfo=db.LOCAL_TZ))[0]
+    assert early["predicted"] and early["drive_min"] == 34 and early["leave_at"] == "07:56"
+    assert asked[0].strftime("%H:%M") == "08:10" and asked[1].strftime("%H:%M") == "07:56"
+    asked.clear()
+    late = trips.upcoming({}, datetime(2026, 11, 20, 8, 5, tzinfo=db.LOCAL_TZ))[0]
+    assert not late["predicted"] and late["drive_min"] == 15 and asked == [None]
