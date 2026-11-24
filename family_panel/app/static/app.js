@@ -7158,6 +7158,11 @@
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') closeSheet();
     if (e.key === 'Enter' && e.target && e.target.id === 'mapsIn') { e.preventDefault(); mapsGo(); }
+    if (e.key === 'Enter' && e.target && e.target.id === 'mapsFrom') {
+      e.preventDefault();
+      var to = byId('mapsIn');
+      if (to && to.value.trim().length >= 3) mapsGo(); else if (to) to.focus();
+    }
   });
 
   /* The moment the caret leaves a field, whatever the polls wanted to redraw
@@ -7504,7 +7509,7 @@
      The rail's Maps key: the same dark traffic map, full size, with a box
      to type (or say) an address. It answers with the distance, the drive in
      traffic right now, how much of that is traffic, and draws the route. */
-  var MAPS = { q: '', res: null, busy: false, rec: null, timer: null };
+  var MAPS = { q: '', from: '', res: null, busy: false, rec: null, timer: null };
 
   function mapsResultHtml() {
     var r = MAPS.res;
@@ -7516,7 +7521,8 @@
     }
     var delay = r.no_traffic_min != null ? Math.max(0, r.minutes - r.no_traffic_min) : null;
     return '<span class="tc-big">' + esc(r.minutes) + ' min</span>' +
-      '<span class="tc-line"><span class="tc-to">' + esc(MAPS.q) + '</span></span>' +
+      '<span class="tc-line"><span class="tc-to">' + esc(MAPS.from ? MAPS.from + ' → ' + MAPS.q : MAPS.q) +
+      '</span></span>' +
       '<span class="tc-drive">' + (r.distance_km != null ? esc(r.distance_km) + ' km · ' : '') +
       (delay == null ? 'in traffic now' : delay <= 1 ? 'traffic is clear'
         : esc(delay) + ' min of that is traffic') +
@@ -7538,6 +7544,9 @@
     openSheet('<div class="tmap-sheet maps-sheet">' +
       '<div class="tmap-host" id="mapsHost"></div>' +
       '<div class="maps-bar">' +
+      /* Leave From empty to start at home (Home Assistant's zone.home). */
+      '<input class="inp maps-in maps-from" id="mapsFrom" type="text" enterkeyhint="next" autocomplete="off" ' +
+      'placeholder="From: home" aria-label="Start from (empty = home)" value="' + esc(MAPS.from) + '">' +
       '<input class="inp maps-in" id="mapsIn" type="text" inputmode="search" enterkeyhint="go" autocomplete="off" ' +
       'placeholder="Where to?" aria-label="Where to?" value="' + esc(MAPS.q) + '">' +
       (canTalk ? '<button class="btn maps-mic" id="mapsMic" data-act="maps-mic" aria-label="Say an address">' +
@@ -7555,12 +7564,14 @@
     var q = String(text == null ? readForm('mapsIn') : text).trim();
     if (q.length < 3) { toast('Type a bit more of the address.'); return; }
     MAPS.q = q;
+    MAPS.from = String(readForm('mapsFrom') || MAPS.from || '').trim();
     MAPS.busy = true;
     MAPS.res = null;
     var inp = byId('mapsIn');
     if (inp) { inp.value = q; inp.blur(); }
     paintMaps();
-    GET('/api/trips/drive?dest=' + encodeURIComponent(q), MUSIC_MS).then(function (d) {
+    GET('/api/trips/drive?dest=' + encodeURIComponent(q) +
+        (MAPS.from ? '&from=' + encodeURIComponent(MAPS.from) : ''), MUSIC_MS).then(function (d) {
       MAPS.busy = false;
       MAPS.res = d || {};
       paintMaps();
@@ -7676,7 +7687,13 @@
     else if (t.ok === true) txt = 'Live traffic: Google Maps, working.';
     else if (t.ok === false) { txt = 'Live traffic: Google Maps error — ' + (t.error || 'no answer'); cls = 'trip-err'; }
     else txt = 'Live traffic: Google Maps, ready (checks once a trip is coming up).';
-    return '<p class="' + cls + '" style="font-size:.875rem">' + esc(txt) + '</p>';
+    var h = MAP.cfg && MAP.cfg.home;
+    var where = h ? 'Home: ' + (h.source === 'zone.home' ? 'Home Assistant’s home location'
+      : h.source === 'home_override' ? 'the home_override add-on option'
+      : 'the weather location (Home Assistant’s home couldn’t be read)') +
+      ' — ' + Number(h.lat).toFixed(4) + ', ' + Number(h.lon).toFixed(4) + '.' : '';
+    return '<p class="' + cls + '" style="font-size:.875rem">' + esc(txt) + '</p>' +
+      (where ? '<p class="muted2" style="font-size:.875rem">' + esc(where) + '</p>' : '');
   }
 
   function tripsListHtml(list) {
@@ -9642,7 +9659,7 @@
         leave_date: q.get('date') || null, leave_in_min: 40, error: null,
         distance_km: 14.2, no_traffic_min: 16, polyline: null };
     }
-    if (path === '/api/trips/mapconfig') return { key: null, home: { lat: -27.47, lon: 153.02 } };
+    if (path === '/api/trips/mapconfig') return { key: null, home: { lat: -27.47, lon: 153.02, source: 'zone.home' } };
     if (path === '/api/trips/test') {
       return { minutes: 23, destination: 'Brisbane City', traffic: { configured: true, ok: true } };
     }

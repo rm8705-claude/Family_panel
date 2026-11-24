@@ -13,7 +13,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.37.0"
+APP_VERSION = "0.38.0"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -1036,7 +1036,10 @@ def api_trips_drive():
                                        "%Y-%m-%d %H:%M").replace(tzinfo=db.LOCAL_TZ)
     except ValueError:
         arrive = None
-    return jsonify(trips.drive_to(CONFIG, dest, arrive))
+    origin = str(request.args.get("from") or "").strip()
+    if origin and not trips.is_place(origin):
+        return jsonify({"error": "The starting point doesn't look like an address"}), 400
+    return jsonify(trips.drive_to(CONFIG, dest, arrive, origin=origin or None))
 
 
 @app.get("/api/trips/next")

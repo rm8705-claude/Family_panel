@@ -1036,6 +1036,11 @@ ul, ol { list-style: none; }
 .maps-mic svg { width: 1.375rem; height: 1.375rem; display: block; }
 .maps-mic.is-rec { background: #E5484D; border-color: #E5484D; }
 .maps-err { color: #FF8A8E; }
+.maps-from { flex: 0 1 15rem; font-size: 1rem; }
+@media (max-width: 700px) {
+  .maps-bar { flex-wrap: wrap; right: 4rem; }
+  .maps-from { flex: 1 1 100%; }
+}
 
 /* the rail's Traffic map key, under the countdown */
 .ra-map {

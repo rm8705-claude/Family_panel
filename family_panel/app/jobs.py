@@ -147,7 +147,8 @@ def poll_imap(config: dict) -> None:
 def fetch_weather(config: dict) -> None:
     import weather
     try:
-        weather.refresh(config.get("weather", {}))
+        import trips
+        weather.refresh(trips.weather_spot(config))
         db.mark_sync("weather", True)
     except Exception as e:
         log.warning("weather fetch failed: %s", e)
@@ -157,7 +158,8 @@ def fetch_weather(config: dict) -> None:
 def fetch_bom(config: dict) -> None:
     import bom
     try:
-        items = bom.refresh(config.get("weather", {}))
+        import trips
+        items = bom.refresh(trips.weather_spot(config))
         db.mark_sync("bom", True, f"{len(items)} warning(s)")
     except Exception as e:
         log.warning("BOM warnings fetch failed: %s", e)

@@ -61,7 +61,7 @@ def test_upcoming_uses_live_waze_time(monkeypatch):
                 "days": [4], "minutes": 20})                   # Fridays
     trips.save({"label": "Soccer", "destination": "Oval", "time": "08:30",
                 "days": [5], "minutes": 15})                   # Saturdays: not today
-    monkeypatch.setattr(trips, "travel_minutes", lambda cfg, dest, depart=None: (28.0, "M3"))
+    monkeypatch.setattr(trips, "travel_minutes", lambda cfg, dest, depart=None, **kw: (28.0, "M3"))
     now = datetime(2026, 11, 20, 7, 50, tzinfo=db.LOCAL_TZ)     # a Friday
     up = trips.upcoming({}, now)
     assert [u["label"] for u in up] == ["Work"]
@@ -134,7 +134,7 @@ def _ev(title, start, location, **kw):
 
 def test_calendar_events_with_an_address_become_trips(monkeypatch):
     db.set_json_setting(trips.KEY, [])
-    monkeypatch.setattr(trips, "travel_minutes", lambda cfg, dest, depart=None: (18.0, "Gympie Rd"))
+    monkeypatch.setattr(trips, "travel_minutes", lambda cfg, dest, depart=None, **kw: (18.0, "Gympie Rd"))
     now = datetime(2026, 11, 21, 9, 0, tzinfo=db.LOCAL_TZ)          # Saturday
     events = [
         _ev("Swimming", "09:45", "Chermside Aquatic Centre, 375 Hamilton Rd", person="kid"),
@@ -153,9 +153,9 @@ def test_calendar_trip_skipped_without_waze_or_when_turned_off(monkeypatch):
     db.set_json_setting(trips.KEY, [])
     now = datetime(2026, 11, 21, 9, 0, tzinfo=db.LOCAL_TZ)
     ev = [_ev("Soccer", "09:45", "Bishop Park, Nundah")]
-    monkeypatch.setattr(trips, "travel_minutes", lambda cfg, dest, depart=None: (None, None))
+    monkeypatch.setattr(trips, "travel_minutes", lambda cfg, dest, depart=None, **kw: (None, None))
     assert trips.upcoming({}, now, ev) == []
-    monkeypatch.setattr(trips, "travel_minutes", lambda cfg, dest, depart=None: (15.0, None))
+    monkeypatch.setattr(trips, "travel_minutes", lambda cfg, dest, depart=None, **kw: (15.0, None))
     assert trips.upcoming({"calendar_trips": False}, now, ev) == []
     # a weekly trip at the same time wins over the event
     trips.save({"label": "Soccer", "destination": "Bishop Park", "time": "09:45",
@@ -180,7 +180,7 @@ def test_drive_to_a_future_event_uses_predicted_traffic(monkeypatch):
     from datetime import timedelta
     asked = []
 
-    def tm(cfg, dest, depart=None):
+    def tm(cfg, dest, depart=None, **kw):
         asked.append(depart)
         return (25.0, "Gympie Rd")
     monkeypatch.setattr(trips, "travel_minutes", tm)
@@ -203,7 +203,7 @@ def test_countdown_uses_the_forecast_for_when_you_leave(monkeypatch):
                 "days": [4], "minutes": 20})
     asked = []
 
-    def tm(cfg, dest, depart=None):
+    def tm(cfg, dest, depart=None, **kw):
         asked.append(depart)
         return (15.0, "M3") if depart is None else (34.0, "M3")      # empty now, busy at 8
     monkeypatch.setattr(trips, "travel_minutes", tm)
@@ -221,7 +221,7 @@ def test_countdown_carries_the_live_time_and_route_line(monkeypatch):
                 "days": [4], "minutes": 20})
     trips._polylines["1 Example St"] = "abc123"
 
-    def tm(cfg, dest, depart=None):
+    def tm(cfg, dest, depart=None, **kw):
         return (15.0, "M3") if depart is None else (34.0, "M3")
     monkeypatch.setattr(trips, "travel_minutes", tm)
     t = trips.upcoming({}, datetime(2026, 11, 20, 6, 40, tzinfo=db.LOCAL_TZ))[0]
@@ -272,3 +272,42 @@ def test_voice_can_stop_at_speech_to_text(monkeypatch):
     monkeypatch.setattr(assist, "_run_pipeline", lambda ws, pcm, dl: {"ok": True, "heard": "Chermside"})
     assert assist.audio_query({}, b"\x00\x01" * 10, stt_only=True)["heard"] == "Chermside"
     assert sent["end_stage"] == "stt"
+
+
+def test_home_comes_from_zone_home_then_override(monkeypatch):
+    import ha
+    trips._home.update(at=0.0, latlon=None, error=None)
+    monkeypatch.setattr(ha, "_api_base", lambda: ("http://ha/api", "t"))
+
+    class R:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"attributes": {"latitude": -27.39, "longitude": 153.03}}
+    monkeypatch.setattr(trips.requests, "get", lambda *a, **k: R())
+    h = trips.home({"weather": {"lat": -27.48, "lon": 152.98}})
+    assert h == {"lat": -27.39, "lon": 153.03, "source": "zone.home"}
+    assert trips.home({"home_override": "-27.5, 153.1"})["source"] == "home_override"
+    # weather follows home while it's the shipped default, but a set one stays
+    assert trips.weather_spot({"weather": {"lat": -27.48, "lon": 152.98}})["lat"] == -27.39
+    assert trips.weather_spot({"weather": {"lat": -33.86, "lon": 151.2}})["lat"] == -33.86
+    trips._home.update(at=0.0, latlon=None, error=None)
+
+
+def test_lookup_from_somewhere_else(monkeypatch):
+    trips._cache.clear()
+    seen = {}
+
+    class R:
+        status_code = 200
+
+        def json(self):
+            return {"routes": [{"duration": "600s", "distanceMeters": 5000}]}
+
+    def post(url, json=None, timeout=None, headers=None):
+        seen.update(json)
+        return R()
+    monkeypatch.setattr(trips.requests, "post", post)
+    d = trips.drive_to({"google_maps_api_key": "k"}, "Chermside", origin="Nundah QLD")
+    assert seen["origin"] == {"address": "Nundah QLD"} and d["from"] == "Nundah QLD" and d["minutes"] == 10

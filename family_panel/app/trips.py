@@ -81,6 +81,61 @@ _extras: dict = {}
 traffic_status = {"ok": None, "error": None, "at": None}
 
 
+# ------------------------------------------------------------------- home
+# Where "home" is, for trips, Maps and the traffic map — and for the weather
+# and BOM warnings while their own lat/lon is still the shipped default:
+#   1. home_override (add-on option) — "lat,lon", for a home that isn't
+#      Home Assistant's
+#   2. Home Assistant's zone.home — the house HA already knows, re-read hourly
+#   3. the weather lat/lon from the add-on options
+DEFAULT_LATLON = (-27.48, 152.98)
+_home = {"at": 0.0, "latlon": None, "error": None}
+HOME_CACHE_S = 3600
+_LATLON = re.compile(r"\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*")
+
+
+def _ha_home() -> tuple[float, float] | None:
+    if _home["latlon"] and time.time() - _home["at"] < HOME_CACHE_S:
+        return _home["latlon"]
+    try:
+        import ha
+        base, token = ha._api_base()
+        r = requests.get(f"{base}/states/zone.home", headers=ha._headers(token), timeout=10)
+        r.raise_for_status()
+        a = (r.json() or {}).get("attributes") or {}
+        latlon = (float(a["latitude"]), float(a["longitude"]))
+        _home.update(at=time.time(), latlon=latlon, error=None)
+    except Exception as e:                  # noqa: BLE001 - keep the last good one
+        _home.update(error=str(e)[:200], at=time.time() - HOME_CACHE_S + 300)  # retry in 5 min
+    return _home["latlon"]
+
+
+def home(config: dict) -> dict:
+    """{lat, lon, source} — see the order above."""
+    m = _LATLON.fullmatch(str(config.get("home_override") or ""))
+    if m:
+        return {"lat": float(m.group(1)), "lon": float(m.group(2)), "source": "home_override"}
+    ha_home = _ha_home()
+    if ha_home:
+        return {"lat": ha_home[0], "lon": ha_home[1], "source": "zone.home"}
+    w = config.get("weather") or {}
+    return {"lat": float(w.get("lat", DEFAULT_LATLON[0])), "lon": float(w.get("lon", DEFAULT_LATLON[1])),
+            "source": "weather"}
+
+
+def weather_spot(config: dict) -> dict:
+    """The weather/BOM location: the add-on's weather lat/lon if someone set
+    it, otherwise home — so a fresh install isn't forecasting for Toowong."""
+    w = dict(config.get("weather") or {})
+    lat, lon = w.get("lat"), w.get("lon")
+    untouched = lat is None or lon is None or (round(float(lat), 4), round(float(lon), 4)) == DEFAULT_LATLON
+    if untouched:
+        h = home(config)
+        if h["source"] != "weather":
+            w.update(lat=h["lat"], lon=h["lon"])
+    return w
+
+
 def map_config(config: dict) -> dict:
     """What the tablet needs to draw the traffic map: a key for Google's Maps
     JavaScript API (google_maps_browser_key if set, else the same key) and
@@ -88,9 +143,7 @@ def map_config(config: dict) -> dict:
     the tablet — a separate browser key restricted to the panel's address
     is the tidy way to do it."""
     key = str(config.get("google_maps_browser_key") or "").strip() or _api_key(config)
-    w = config.get("weather") or {}
-    return {"key": key or None,
-            "home": {"lat": float(w.get("lat", -27.48)), "lon": float(w.get("lon", 152.98))}}
+    return {"key": key or None, "home": home(config)}
 
 
 def _api_key(config: dict) -> str:
@@ -106,12 +159,19 @@ def _place(dest: str) -> dict:
     return {"address": dest}
 
 
-def travel_minutes(config: dict, destination: str,
-                   depart: datetime | None = None) -> tuple[float | None, str | None]:
+def _pkey(destination: str, origin: str | None) -> str:
+    return destination if not origin else f"{origin}>{destination}"
+
+
+def travel_minutes(config: dict, destination: str, depart: datetime | None = None,
+                   origin: str | None = None) -> tuple[float | None, str | None]:
     """(minutes, route name) by car from Google Maps (Routes API): in traffic
     right now, or Google's predicted traffic when `depart` is a future time.
+    From home, or from `origin` (an address or "lat,lon") when given.
     (None, None) with no key or no answer."""
-    ckey = destination if depart is None else f"{destination}@{depart.strftime('%Y-%m-%d %H:%M')}"
+    origin = (origin or "").strip() or None
+    pkey = _pkey(destination, origin)
+    ckey = pkey if depart is None else f"{pkey}@{depart.strftime('%Y-%m-%d %H:%M')}"
     hit = _cache.get(ckey)
     if hit and time.time() - hit[0] < CACHE_S:
         return hit[1], hit[2]
@@ -120,10 +180,10 @@ def travel_minutes(config: dict, destination: str,
         traffic_status.update(ok=None, error="No google_maps_api_key in the add-on options",
                               at=db.utc_now_iso())
         return None, None
-    w = config.get("weather") or {}
+    h = home(config)
     body = {
-        "origin": {"location": {"latLng": {"latitude": float(w.get("lat", -27.48)),
-                                           "longitude": float(w.get("lon", 152.98))}}},
+        "origin": _place(origin) if origin else
+                  {"location": {"latLng": {"latitude": h["lat"], "longitude": h["lon"]}}},
         "destination": _place(destination),
         "travelMode": "DRIVE",
         # The most accurate setting — the one the Google Maps app's own times
@@ -155,9 +215,9 @@ def travel_minutes(config: dict, destination: str,
         name = routes[0].get("description") or None
         poly = ((routes[0].get("polyline") or {}).get("encodedPolyline"))
         if poly:
-            _polylines[destination] = poly
+            _polylines[pkey] = poly
         static = routes[0].get("staticDuration")
-        _extras[destination] = {
+        _extras[pkey] = {
             "distance_km": round(float(routes[0].get("distanceMeters") or 0) / 1000, 1) or None,
             "no_traffic_min": round(float(str(static).rstrip("s")) / 60) if static else None,
         }
@@ -169,19 +229,21 @@ def travel_minutes(config: dict, destination: str,
     return mins, name
 
 
-def drive_to(config: dict, destination: str, arrive: datetime | None = None) -> dict:
+def drive_to(config: dict, destination: str, arrive: datetime | None = None,
+             origin: str | None = None) -> dict:
     """For the event sheet's Drive time key. With an arrive-by in the future,
     the drive is Google's prediction for leaving at about the right time:
     guess a departure, ask, and re-ask once from the corrected departure."""
     now = datetime.now(db.LOCAL_TZ)
     if arrive is None or arrive <= now + timedelta(minutes=5):
-        mins, route = travel_minutes(config, destination)
+        mins, route = travel_minutes(config, destination, origin=origin)
         leave = (arrive - timedelta(minutes=mins)) if (arrive and mins is not None) else None
         predicted = False
     else:
-        mins, route = travel_minutes(config, destination, arrive - timedelta(minutes=30))
+        mins, route = travel_minutes(config, destination, arrive - timedelta(minutes=30), origin=origin)
         if mins is not None:
-            m2, r2 = travel_minutes(config, destination, arrive - timedelta(minutes=round(mins)))
+            m2, r2 = travel_minutes(config, destination, arrive - timedelta(minutes=round(mins)),
+                                    origin=origin)
             if m2 is not None:
                 mins, route = m2, r2 or route
         leave = (arrive - timedelta(minutes=mins)) if mins is not None else None
@@ -194,8 +256,10 @@ def drive_to(config: dict, destination: str, arrive: datetime | None = None) -> 
         "leave_date": leave.strftime("%Y-%m-%d") if leave else None,
         "leave_in_min": int((leave - now).total_seconds() // 60) if leave else None,
         "error": None if mins is not None else traffic_status.get("error"),
-        "polyline": _polylines.get(destination),
-        **(_extras.get(destination) or {"distance_km": None, "no_traffic_min": None}),
+        "polyline": _polylines.get(_pkey(destination, (origin or "").strip() or None)),
+        **(_extras.get(_pkey(destination, (origin or "").strip() or None))
+           or {"distance_km": None, "no_traffic_min": None}),
+        "from": (origin or "").strip() or "Home",
     }
 
 
