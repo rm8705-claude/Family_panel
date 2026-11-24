@@ -1,5 +1,16 @@
 """Music Assistant: player matching, Discover picks, play/surprise routing."""
+import pytest
+
 import music
+
+
+@pytest.fixture(autouse=True)
+def fresh_ma():
+    """Each test starts with no remembered Music Assistant address, account
+    list or "unreachable" note — they'd otherwise carry from test to test."""
+    music._ma.update(base=None, at=0.0, providers=None, down_until=0.0, down_why=None)
+    yield
+    music._ma.update(base=None, at=0.0, providers=None, down_until=0.0, down_why=None)
 
 
 class Resp:
