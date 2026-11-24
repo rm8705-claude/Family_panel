@@ -453,7 +453,7 @@
     return e;
   }
 
-  function api(method, path, body) {
+  function api(method, path, body, ms) {
     if (window.__mock && window.__mock.enabled) return mockRequest(method, path, body);
     var opts = { method: method, headers: {}, cache: 'no-store' };
     if (body !== undefined) {
@@ -461,7 +461,7 @@
       opts.body = JSON.stringify(body);
     }
     if (state.pin) opts.headers['X-Admin-Pin'] = state.pin;
-    var disarm = armTimeout(opts, API_TIMEOUT_MS);
+    var disarm = armTimeout(opts, ms || API_TIMEOUT_MS);
     return fetch(path, opts).then(function (res) {
       disarm();
       if (!res.ok) {
@@ -497,8 +497,12 @@
     });
   }
 
-  var GET = function (p) { return api('GET', p); };
-  var POST = function (p, b) { return api('POST', p, b === undefined ? {} : b); };
+  var GET = function (p, ms) { return api('GET', p, undefined, ms); };
+  var POST = function (p, b, ms) { return api('POST', p, b === undefined ? {} : b, ms); };
+  /* Music Assistant asks Spotify / YouTube Music in turn, which can take a
+     while — the music calls get longer than the usual 10 s before the panel
+     gives up on them. */
+  var MUSIC_MS = 30000;
   var PATCH = function (p, b) { return api('PATCH', p, b); };
   var PUT = function (p, b) { return api('PUT', p, b); };
   var DEL = function (p) { return api('DELETE', p); };
@@ -2661,7 +2665,7 @@
                     items: prev.items || [], loading: true, q: prev.q || '', results: prev.results || null };
     refreshMusicViews();
     var src = storedMusicSrc();
-    GET('/api/ha/music?source=' + encodeURIComponent(src)).then(function (d) {
+    GET('/api/ha/music?source=' + encodeURIComponent(src), MUSIC_MS).then(function (d) {
       var was = state.music || {};
       state.music = { available: !!(d && d.available), sources: (d && d.sources) || [],
                       items: (d && d.items) || [], loading: false, q: was.q || '', results: was.results || null };
@@ -2760,7 +2764,7 @@
       state.music.searching = true;
       state.music.results = null;
       paintMusicBody();
-      GET('/api/ha/music/search?source=' + encodeURIComponent(curSrc()) + '&q=' + encodeURIComponent(q.trim()))
+      GET('/api/ha/music/search?source=' + encodeURIComponent(curSrc()) + '&q=' + encodeURIComponent(q.trim()), MUSIC_MS)
         .then(function (d) {
           if (seq !== musicSearchSeq || !state.music) return;
           state.music.searching = false;
@@ -2781,7 +2785,7 @@
     el.classList.add('is-busy');
     toast('Starting ' + el.dataset.name + '…');
     act(POST('/api/ha/music/play', { entity: el.dataset.entity, uri: el.dataset.uri,
-                                     media_type: el.dataset.type }), function () {
+                                     media_type: el.dataset.type }, MUSIC_MS), function () {
       reloadHaAfterTap();
     }).then(function () { el.disabled = false; el.classList.remove('is-busy'); });
   }
@@ -2789,7 +2793,7 @@
   function musicSurprise(el) {
     if (el.disabled) return;
     el.disabled = true;
-    act(POST('/api/ha/music/surprise', { entity: el.dataset.entity, source: curSrc() }), function (d) {
+    act(POST('/api/ha/music/surprise', { entity: el.dataset.entity, source: curSrc() }, MUSIC_MS), function (d) {
       var p = d && d.pick;
       if (p) toast('Surprise: ' + p.name + (p.media_type === 'artist' ? ' radio' : '') +
         ' (' + curSrcLabel() + ').', 4500);

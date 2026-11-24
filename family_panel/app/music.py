@@ -27,6 +27,7 @@ import logging
 import random
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote, urlparse
 
 import requests
@@ -129,7 +130,7 @@ def status(config: dict) -> dict:
            "unmatched_speakers": None, "library_counts": {}, "error": None,
            "ma_api": None, "accounts": None}
     try:
-        _ma.update(providers=None)
+        _ma.update(providers=None, down_until=0.0, base=None)   # probe afresh
         out["accounts"] = sources(config)
         out["ma_api"] = f"ok at {_ma['base']}"
     except Exception as e:                  # noqa: BLE001
@@ -175,11 +176,15 @@ def status(config: dict) -> dict:
 # MA runs on the host network, so from another add-on it's the Supervisor
 # gateway; music_assistant_url overrides, music_assistant_token is only for
 # an MA that has login turned on.
-MA_CANDIDATES = ("http://172.30.32.1:8095", "http://d5369777-music-assistant:8095",
-                 "http://homeassistant.local:8095")
+# Both ports: newer Music Assistant builds serve the API on 8094 as well as /
+# instead of 8095 (Home Assistant's own integration was seen on :8094).
+MA_CANDIDATES = ("http://172.30.32.1:8095", "http://172.30.32.1:8094",
+                 "http://d5369777-music-assistant:8095", "http://d5369777-music-assistant:8094")
+CONNECT_TIMEOUT = 2.5        # a dead address must fail fast, not eat the request
+DOWN_RETRY_S = 300
 STREAMING = {"spotify": "Spotify", "ytmusic": "YouTube Music", "apple_music": "Apple Music",
              "tidal": "Tidal", "deezer": "Deezer", "qobuz": "Qobuz", "soundcloud": "SoundCloud"}
-_ma = {"base": None, "at": 0.0, "providers": None}
+_ma = {"base": None, "at": 0.0, "providers": None, "down_until": 0.0, "down_why": None}
 
 
 class MAUnavailable(Exception):
@@ -191,7 +196,7 @@ def _ma_post(base: str, config: dict, command: str, args: dict | None):
     tok = str(config.get("music_assistant_token") or "").strip()
     if tok:
         headers["Authorization"] = f"Bearer {tok}"
-    r = requests.post(f"{base}/api", headers=headers, timeout=TIMEOUT,
+    r = requests.post(f"{base}/api", headers=headers, timeout=(CONNECT_TIMEOUT, TIMEOUT),
                       json={"message_id": "panel", "command": command, "args": args or {}})
     if r.status_code in (401, 403):
         raise MAUnavailable(f"Music Assistant at {base} wants a login token "
@@ -208,18 +213,29 @@ def _ma_post(base: str, config: dict, command: str, args: dict | None):
 def ma_api(config: dict, command: str, args: dict | None = None):
     """One Music Assistant API command, on whichever address answers."""
     own = str(config.get("music_assistant_url") or "").strip().rstrip("/")
+    # Known unreachable: say so at once rather than re-probing every address
+    # on every request (that probing is what timed the panel out).
+    if not _ma["base"] and time.time() < _ma["down_until"]:
+        raise MAUnavailable(_ma["down_why"] or "Music Assistant not reachable")
     bases = [own] if own else ([_ma["base"]] if _ma["base"] else []) + \
         [b for b in MA_CANDIDATES if b != _ma["base"]]
     last = None
     for base in bases:
         try:
             out = _ma_post(base, config, command, args)
-            _ma["base"] = base
+            _ma.update(base=base, down_until=0.0, down_why=None)
             return out
         except (requests.ConnectionError, requests.Timeout) as e:
             last = e
-            continue
-    raise MAUnavailable(f"Music Assistant not reachable ({last})")
+        except requests.HTTPError as e:     # something else on that port
+            if e.response is None or e.response.status_code not in (404, 405):
+                raise
+            last = e
+        if base == _ma["base"]:
+            _ma["base"] = None              # the one that worked has gone; look again
+    why = f"Music Assistant not reachable ({last})"
+    _ma.update(down_until=time.time() + DOWN_RETRY_S, down_why=why)
+    raise MAUnavailable(why)
 
 
 def _names(config: dict) -> dict:
@@ -465,13 +481,17 @@ def discover(config: dict, n: int = 6, source: str | None = None) -> dict:
         return {"available": True, "items": [], "sources": srcs,
                 "source": "favs" if source not in ids else source}
     direct = source not in PROVIDERS
-    items = []
-    for kind in KINDS:
+
+    def one(kind):
         try:
-            items += (_account_picks(config, kind, n, source) if direct
-                      else _picks(entry, kind, n, source))
+            return (_account_picks(config, kind, n, source) if direct
+                    else _picks(entry, kind, n, source))
         except Exception as e:              # noqa: BLE001 - one kind failing is fine
-            log.info("get_library %s: %s", kind, e)
+            log.info("discover %s from %s: %s", kind, source, e)
+            return []
+    # the three kinds at once — one after another was most of the wait
+    with ThreadPoolExecutor(max_workers=len(KINDS)) as pool:
+        items = [it for chunk in pool.map(one, KINDS) for it in chunk]
     random.shuffle(items)
     # keep the kinds mixed rather than six playlists in a row
     picked, seen = [], {}

@@ -194,3 +194,40 @@ def test_search_keeps_to_one_account(monkeypatch):
 
 def test_art_endpoint_refuses_other_hosts(client):
     assert client.get("/api/ha/music/art?u=http://169.254.169.254/").status_code == 404
+
+
+def test_ma_probe_fails_fast_and_remembers(monkeypatch):
+    music._ma.update(base=None, providers=None, at=0.0, down_until=0.0, down_why=None)
+    tried = []
+
+    def post(url, headers=None, json=None, timeout=None):
+        tried.append(url)
+        assert timeout[0] <= 3                       # short connect timeout
+        raise music.requests.ConnectionError("refused")
+    monkeypatch.setattr(music.requests, "post", post)
+    import pytest
+    with pytest.raises(music.MAUnavailable):
+        music.ma_api({}, "providers")
+    assert any(":8094/api" in u for u in tried)
+    n = len(tried)
+    with pytest.raises(music.MAUnavailable):        # remembered: no re-probe
+        music.ma_api({}, "providers")
+    assert len(tried) == n
+    music._ma.update(down_until=0.0)
+
+
+def test_ma_probe_skips_a_404_port(monkeypatch):
+    music._ma.update(base=None, providers=None, at=0.0, down_until=0.0, down_why=None)
+
+    class R404:
+        status_code = 404
+
+        def raise_for_status(self):
+            raise music.requests.HTTPError(response=self)
+
+    def post(url, headers=None, json=None, timeout=None):
+        return Resp(["ok"]) if ":8094" in url else R404()
+    monkeypatch.setattr(music.requests, "post", post)
+    assert music.ma_api({}, "providers") == ["ok"]
+    assert music._ma["base"].endswith(":8094")
+    music._ma.update(base=None)
