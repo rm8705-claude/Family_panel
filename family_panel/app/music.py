@@ -26,6 +26,7 @@ import json
 import logging
 import random
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote, urlparse
@@ -587,7 +588,59 @@ def surprise(config: dict, entity: str, source: str | None = None) -> dict:
         raise ValueError("Nothing from that account in the library yet"
                          if source else "Nothing in the Music Assistant library yet")
     pick = random.choice(items)
-    _service("play_media", {"entity_id": players[entity], "media_id": pick["uri"],
-                            "media_type": pick["media_type"], "enqueue": "replace",
-                            "radio_mode": True})
+    _start(entity, pick["name"], lambda: _service(
+        "play_media", {"entity_id": players[entity], "media_id": pick["uri"],
+                       "media_type": pick["media_type"], "enqueue": "replace",
+                       "radio_mode": True}))
     return pick
+
+
+# ------------------------------------------------- start, don't wait
+# Music Assistant can take 10-20 s to get a YouTube Music track going (a
+# fresh PO token, the stream URL, the speaker buffering), and Home
+# Assistant's play_media call waits for all of it. So the panel's request
+# returns as soon as the order is checked and handed over; the call runs on
+# here, and its outcome is kept per speaker for /api/ha/music/play_status —
+# which the panel asks if the music hasn't started after a while.
+_jobs: dict = {}
+_jobs_lock = threading.Lock()
+
+
+def _start(entity: str, name: str, call) -> None:
+    with _jobs_lock:
+        seq = _jobs.get(entity, {}).get("seq", 0) + 1
+        _jobs[entity] = {"seq": seq, "state": "starting", "name": name, "error": None,
+                         "at": time.time()}
+
+    def run():
+        try:
+            call()
+            outcome = {"state": "sent", "error": None}
+        except Exception as e:              # noqa: BLE001 - reported via play_status
+            log.warning("music play on %s failed: %s", entity, e)
+            outcome = {"state": "error", "error": str(e)[:240]}
+        with _jobs_lock:
+            if _jobs.get(entity, {}).get("seq") == seq:      # a newer tap wins
+                _jobs[entity].update(outcome)
+
+    threading.Thread(target=run, daemon=True, name=f"music-play-{entity}").start()
+
+
+def play_status(entity: str) -> dict:
+    with _jobs_lock:
+        j = dict(_jobs.get(entity) or {})
+    j.pop("seq", None)
+    return j or {"state": None}
+
+
+def start_play(config: dict, entity: str, uri: str, media_type: str, name: str = "") -> None:
+    """Check the order now (so a bad one still fails on the tap), play it
+    in the background."""
+    players, _ = player_map(config)
+    if not players.get(entity):
+        raise ValueError("Music Assistant has no player for that speaker")
+    if media_type not in PLAYABLE:
+        raise ValueError("Unknown media type")
+    if not uri:
+        raise ValueError("Nothing to play")
+    _start(entity, name or uri, lambda: play(config, entity, uri, media_type))

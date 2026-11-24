@@ -2783,9 +2783,10 @@
     if (el.disabled) return;
     el.disabled = true;
     el.classList.add('is-busy');
-    toast('Starting ' + el.dataset.name + '…');
     act(POST('/api/ha/music/play', { entity: el.dataset.entity, uri: el.dataset.uri,
-                                     media_type: el.dataset.type }, MUSIC_MS), function () {
+                                     media_type: el.dataset.type, name: el.dataset.name }, MUSIC_MS), function () {
+      toast('Starting ' + el.dataset.name + '…');
+      markMusicStarting(el.dataset.entity, el.dataset.name);
       reloadHaAfterTap();
     }).then(function () { el.disabled = false; el.classList.remove('is-busy'); });
   }
@@ -2795,8 +2796,11 @@
     el.disabled = true;
     act(POST('/api/ha/music/surprise', { entity: el.dataset.entity, source: curSrc() }, MUSIC_MS), function (d) {
       var p = d && d.pick;
-      if (p) toast('Surprise: ' + p.name + (p.media_type === 'artist' ? ' radio' : '') +
-        ' (' + curSrcLabel() + ').', 4500);
+      if (p) {
+        toast('Surprise: ' + p.name + (p.media_type === 'artist' ? ' radio' : '') +
+          ' (' + curSrcLabel() + ').', 4500);
+        markMusicStarting(el.dataset.entity, p.name);
+      }
       reloadHaAfterTap();
     }).then(function () { el.disabled = false; });
   }
@@ -3560,9 +3564,48 @@
   function startingSource(t) {
     var s = state.npStart;
     if (!s || s.entity !== t.entity) return null;
-    if (Date.now() - s.at > 20000) { state.npStart = null; return null; }
-    if ((t.attrs || {}).source === s.name) { state.npStart = null; return null; }
+    var a = t.attrs || {};
+    /* Music Assistant plays (Spotify / YouTube Music) don't show up as a
+       favourite in `source`, and YouTube Music can take 20 s to get going —
+       so those wait longer, and count as started once the track changes or
+       the speaker starts playing. */
+    if (Date.now() - s.at > (s.ma ? 60000 : 20000)) { state.npStart = null; return null; }
+    if (a.source === s.name) { state.npStart = null; return null; }
+    if (s.ma && ((a.title && a.title !== s.prevTitle) || (a.playing && !s.wasPlaying))) {
+      state.npStart = null;
+      return null;
+    }
     return s.name;
+  }
+
+  /* A music tap returns at once (the backend starts it behind the scenes),
+     so the speaker shows "Starting <name>…" until it's actually playing —
+     and if nothing has happened after a while, ask how it went. */
+  function markMusicStarting(entity, name) {
+    var t = mediaTile(entity) || { attrs: {} };
+    var a = t.attrs || {};
+    var mark = { entity: entity, name: name, at: Date.now(), ma: true,
+                 prevTitle: a.title || null, wasPlaying: !!a.playing };
+    state.npStart = mark;
+    updateNowPlaying();
+    updateSonosSheet();
+    render();
+    [25000, 50000].forEach(function (ms) {
+      setTimeout(function () {
+        if (state.npStart !== mark) return;           // started, or a newer tap
+        GET('/api/ha/music/play_status?entity=' + encodeURIComponent(entity)).then(function (d) {
+          if (state.npStart !== mark) return;
+          if (d && d.state === 'error') {
+            state.npStart = null;
+            toast('Couldn’t play ' + name + ': ' + (d.error || 'Music Assistant gave up') + '.', 7000);
+            updateNowPlaying(); updateSonosSheet(); render();
+          } else if (ms === 50000) {
+            toast('Still waiting on ' + name + ' — Music Assistant is slow to start it.', 5000);
+          }
+          reloadHaAfterTap();
+        }, function () { /* the next poll will tell */ });
+      }, ms);
+    });
   }
 
   /* A saved radio station reads differently from a playlist, so the row
@@ -9339,7 +9382,8 @@
       lib = lib.filter(function (i) { return i.uri.indexOf(hit.domain) === 0; });
       return { available: true, items: lib.slice(0, 6), sources: srcs, source: want };
     }
-    if (path === '/api/ha/music/play') return { ok: true };
+    if (path === '/api/ha/music/play') return { ok: true, started: true };
+    if (path === '/api/ha/music/play_status') return { state: 'sent', name: 'Demo', error: null };
     if (path === '/api/ha/music/search') {
       var qq = q.get('q') || '';
       var mk = function (kind, n) {

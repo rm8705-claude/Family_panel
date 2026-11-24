@@ -13,7 +13,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.34.1"
+APP_VERSION = "0.35.0"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -1368,10 +1368,18 @@ def api_ha_music_play():
         return jsonify({"error": "Unknown or read-only speaker"}), 404
 
     def go():
-        music.play(CONFIG, body["entity"], str(body.get("uri") or ""),
-                   str(body.get("media_type") or ""))
-        return jsonify({"ok": True})
+        # returns once the order is checked; the playing carries on behind
+        music.start_play(CONFIG, body["entity"], str(body.get("uri") or ""),
+                         str(body.get("media_type") or ""), str(body.get("name") or ""))
+        return jsonify({"ok": True, "started": True})
     return _music_call(go)
+
+
+@app.get("/api/ha/music/play_status")
+def api_ha_music_play_status():
+    """How the last music request on a speaker went: starting / sent / error."""
+    import music
+    return jsonify(music.play_status(str(request.args.get("entity") or "")))
 
 
 @app.post("/api/ha/music/surprise")

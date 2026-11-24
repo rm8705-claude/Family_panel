@@ -242,3 +242,25 @@ def test_ma_probe_skips_a_404_port(monkeypatch):
     assert music.ma_api({}, "providers") == ["ok"]
     assert music._ma["base"].endswith(":8094")
     music._ma.update(base=None)
+
+
+def test_start_play_returns_at_once_and_reports_failure(monkeypatch):
+    import threading
+    fake_ha(monkeypatch, [])
+    gate = threading.Event()
+
+    def slow_fail(*a, **k):
+        gate.wait(2)
+        raise RuntimeError("PO token server not reachable")
+    monkeypatch.setattr(music, "play", slow_fail)
+    music.start_play(CONFIG, "media_player.lounge", "ytmusic://track/1", "track", "Song")
+    assert music.play_status("media_player.lounge")["state"] == "starting"   # didn't wait
+    gate.set()
+    for _ in range(50):
+        if music.play_status("media_player.lounge")["state"] != "starting":
+            break
+        threading.Event().wait(0.02)
+    st = music.play_status("media_player.lounge")
+    assert st["state"] == "error" and "PO token" in st["error"] and st["name"] == "Song"
+    with pytest.raises(ValueError):                      # a bad order still fails on the tap
+        music.start_play(CONFIG, "media_player.nowhere", "x", "track")
