@@ -8218,13 +8218,29 @@
   }
 
   byId('cheerHost').addEventListener('pointerdown', clearCheer);
+  /* Taps on the screensaver while the radar is involved stay on the
+     screensaver:
+       - the chip, or the small corner radar  -> the radar fills the frame
+       - anywhere while it's filling the frame -> it goes away again
+     Any other tap wakes the panel, as always. */
+  var radarBigTimer = null;
+
+  function radarBig(on) {
+    RADAR.bigUntil = on ? Date.now() + 60000 : 0;   // a minute, then the frame carries on
+    clearTimeout(radarBigTimer);
+    if (on) radarBigTimer = setTimeout(paintRadar, 60500);
+    paintRadar();
+  }
+
   byId('saver').addEventListener('pointerdown', function (e) {
-    if (e.target && e.target.closest && e.target.closest('#svRainChip')) {
+    var t = e.target && e.target.closest ? e.target : null;
+    var radarUp = Date.now() < RADAR.bigUntil;
+    var onChip = t && t.closest('#svRainChip');
+    var onCorner = t && t.closest('#svRadar') && !radarUp;
+    if (radarUp || onChip || onCorner) {
       e.preventDefault();
       e.stopPropagation();
-      RADAR.bigUntil = Date.now() + 60000;     // a minute, then the frame carries on
-      paintRadar();
-      setTimeout(paintRadar, 60500);
+      radarBig(!radarUp);
       return;
     }
     svDismiss(e);

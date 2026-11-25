@@ -1114,9 +1114,15 @@ ul, ol { list-style: none; }
   overflow: hidden;
   background: rgba(12, 14, 18, 0.8);
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
-  pointer-events: none;
 }
 .sv-radar[hidden] { display: none; }
+.sv-radar.is-big::after {
+  content: "Tap anywhere to close";
+  display: block;
+  padding: 0 0.875rem 0.625rem;
+  font-size: 0.8125rem;
+  color: rgba(255, 255, 255, 0.6);
+}
 .sv-radar.is-big {
   top: 4vh;
   right: auto;
