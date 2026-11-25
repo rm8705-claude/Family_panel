@@ -1,4 +1,5 @@
-"""BOM rain radar for the screensaver, only while there's rain about.
+"""BOM rain radar: offered on the screensaver when rain is about, shown
+unasked only for a severe warning, and on a Radar key any time.
 
 The Bureau publishes every radar's images on its public FTP server:
   /anon/gen/radar/IDRxx3.T.<YYYYMMDDHHMM>.png      a rain frame every 5-10 min (UTC)
@@ -110,7 +111,21 @@ def _fetch(ftp, path: str, dest: str) -> bytes:
     return data
 
 
-def refresh(config: dict, home: dict, weather_now_code=None) -> dict:
+def rain_soon(hourly: list, now=None, hours: int = 2, threshold: int = 60) -> bool:
+    """Open-Meteo puts the chance of rain at `threshold`% or more in the next
+    `hours` hours."""
+    now = now or datetime.now(db.LOCAL_TZ)
+    lo = now.strftime("%Y-%m-%d %H:00")
+    hi = (now.replace(minute=0, second=0, microsecond=0)).timestamp() + hours * 3600
+    hi = datetime.fromtimestamp(hi, db.LOCAL_TZ).strftime("%Y-%m-%d %H:00")
+    for h in hourly or []:
+        stamp = f"{h.get('date')} {h.get('time')}"
+        if lo <= stamp <= hi and (h.get("rain_prob") or 0) >= threshold:
+            return True
+    return False
+
+
+def refresh(config: dict, home: dict, weather_now_code=None, soon: bool = False) -> dict:
     product, name, rlat, rlon = pick(config, home)
     d = store_dir()
     ftp = ftplib.FTP(FTP_HOST, timeout=30)
@@ -166,8 +181,13 @@ def refresh(config: dict, home: dict, weather_now_code=None) -> dict:
             frames.append({"name": n, "at": db.to_utc_iso(t)})
         except ValueError:
             continue
+    # "Rain about" no longer puts the radar up by itself — it offers it (a
+    # chip on the screensaver to tap). Only a severe BOM warning shows it
+    # unasked; that part is decided on the panel, which holds the warnings.
+    about = near or wet_now or soon
     out = {"at": db.utc_now_iso(), "product": product, "radar": name,
-           "show": bool(frames) and (near or wet_now), "rain_near": near, "wet_now": wet_now,
+           "show": bool(frames) and about, "rain_about": bool(frames) and about,
+           "rain_near": near, "wet_now": wet_now, "rain_soon": soon,
            "home": {"x": round(fx, 4), "y": round(fy, 4)},
            "frames": frames,
            "layers": [f"{product}.{layer}.png" for layer in LAYERS

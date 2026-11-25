@@ -1572,7 +1572,8 @@
   function openWeatherSheet() {
     openSheet('<div id="weatherCard">' + weatherSheetHtml() + '</div>', {
       title: 'Weather', focus: false,
-      foot: '<span style="flex:1 1 auto"></span>' +
+      foot: (radarHave() ? '<button class="btn" data-act="radar">Rain radar</button>' : '') +
+        '<span style="flex:1 1 auto"></span>' +
         '<button class="btn ghost" data-act="close-sheet">Close</button>'
     });
     state.weather = true;
@@ -2512,57 +2513,100 @@
       esc(fmtIsoLocal(f.at)) + '</p>', { title: 'Cheapest fuel nearby', wide: true });
   }
 
-  /* ---- rain radar on the screensaver ----
-     The nearest BOM radar's last hour, looped in the top corner — but only
-     while rain is about (rain within ~25 km on the latest frame, or raining
-     now). The map layers sit under and over the frames as the BOM's own
-     site stacks them; the dot is the house. */
-  var RADAR = { timer: null, idx: 0, key: '' };
+  /* ---- rain radar ----
+     Never parked on the screensaver for hours (burn-in, and drizzle isn't
+     news):
+       - a severe BOM warning covering the house puts it up unasked, 15 min
+         on / 15 min off for as long as the warning stands;
+       - rain about (within ~25 km on radar, raining now, or likely in the
+         next two hours) only offers it: a chip on the screensaver — tap it
+         and the radar fills the frame for a minute;
+       - the rail's Radar key and the weather sheet open it any time. */
+  var RADAR = { timer: null, idx: 0, severeSince: 0, bigUntil: 0 };
+  var RADAR_ON_MS = 15 * 60000;
 
-  function paintRadar() {
-    var host = byId('svRadar');
-    if (!host) return;
-    var r = D.radar;
-    var show = !!(r && r.show && (r.frames || []).length && SV && SV.on);
-    if (!show) {
-      host.hidden = true;
-      clearTimeout(RADAR.timer);
-      RADAR.timer = null;
-      return;
-    }
-    var key = r.frames.map(function (f) { return f.name; }).join(',');
-    if (key !== RADAR.key || host.hidden) {
-      RADAR.key = key;
-      var layer = function (url, cls) { return '<img class="rd-l ' + cls + '" src="' + esc(url) + '" alt="">'; };
-      var L = r.layers || [];
-      var under = L.filter(function (u) { return /background|topography/.test(u); });
-      var over = L.filter(function (u) { return /locations|range/.test(u); });
-      host.innerHTML = '<div class="rd-box">' +
-        under.map(function (u) { return layer(u, 'rd-under'); }).join('') +
-        r.frames.map(function (f, i) {
-          return '<img class="rd-f" data-i="' + i + '" src="' + esc(f.url) + '" alt=""' + (i ? ' hidden' : '') + '>';
-        }).join('') +
-        over.map(function (u) { return layer(u, 'rd-over'); }).join('') +
-        '<span class="rd-home" style="left:' + (r.home.x * 100).toFixed(2) + '%;top:' + (r.home.y * 100).toFixed(2) + '%"></span>' +
-        '</div><div class="rd-cap"><span>Rain radar · ' + esc(r.radar) + '</span><span class="rd-t mono"></span></div>';
-      RADAR.idx = 0;
-    }
-    host.hidden = false;
-    if (!RADAR.timer) stepRadar();
+  function radarHave() { var r = D.radar; return !!(r && (r.frames || []).length); }
+
+  function radarSevere() {
+    return (D.alerts || []).some(function (w) { return w.severity === 'major'; });
   }
 
-  function stepRadar() {
-    var host = byId('svRadar');
+  /* 15 minutes up, 15 minutes down, counted from when the warning appeared */
+  function radarAutoOn() {
+    if (!radarSevere()) { RADAR.severeSince = 0; return false; }
+    if (!RADAR.severeSince) RADAR.severeSince = Date.now();
+    return Math.floor((Date.now() - RADAR.severeSince) / RADAR_ON_MS) % 2 === 0;
+  }
+
+  function radarHtml(r) {
+    var layer = function (url) { return '<img src="' + esc(url) + '" alt="">'; };
+    var L = r.layers || [];
+    return '<div class="rd-box" data-key="' + esc(r.frames.map(function (f) { return f.name; }).join(',')) + '">' +
+      L.filter(function (u) { return /background|topography/.test(u); }).map(layer).join('') +
+      r.frames.map(function (f, i) {
+        return '<img class="rd-f" src="' + esc(f.url) + '" alt=""' + (i === r.frames.length - 1 ? '' : ' hidden') + '>';
+      }).join('') +
+      L.filter(function (u) { return /locations|range/.test(u); }).map(layer).join('') +
+      (r.home ? '<span class="rd-home" style="left:' + (r.home.x * 100).toFixed(2) + '%;top:' +
+        (r.home.y * 100).toFixed(2) + '%"></span>' : '') +
+      '</div><div class="rd-cap"><span>Rain radar · ' + esc(r.radar) + '</span><span class="rd-t mono"></span></div>';
+  }
+
+  /* fill a host with the loop, unless it already holds these frames */
+  function radarInto(host) {
     var r = D.radar;
-    if (!host || host.hidden || !r || !r.frames.length) { RADAR.timer = null; return; }
-    var imgs = host.querySelectorAll('.rd-f');
-    RADAR.idx = (RADAR.idx + 1) % imgs.length;
-    Array.prototype.forEach.call(imgs, function (im, i) { im.hidden = i !== RADAR.idx; });
-    var t = host.querySelector('.rd-t');
-    var f = r.frames[RADAR.idx];
-    if (t && f) t.textContent = fmtIsoLocal(f.at).replace(/^\w+ /, '');
+    if (!host || !radarHave()) return;
+    var key = r.frames.map(function (f) { return f.name; }).join(',');
+    var box = host.querySelector('.rd-box');
+    if (!box || box.dataset.key !== key) host.innerHTML = radarHtml(r);
+    if (!RADAR.timer) RADAR.timer = setTimeout(stepRadar, 600);
+  }
+
+  function paintRadar() {
+    var host = byId('svRadar'), chip = byId('svRainChip');
+    var rb = byId('btnRadar');
+    if (rb) rb.hidden = !radarHave();
+    if (!host || !chip) return;
+    var r = D.radar || {};
+    var saverOn = !!(SV && SV.on);
+    var big = saverOn && Date.now() < RADAR.bigUntil;
+    var severe = radarSevere();
+    var auto = saverOn && radarHave() && radarAutoOn();
+    var show = saverOn && radarHave() && (big || auto);
+    host.classList.toggle('is-big', big);
+    if (show) { radarInto(host); host.hidden = false; }
+    else host.hidden = true;
+    var offer = saverOn && radarHave() && !show && (r.rain_about || severe);
+    chip.hidden = !offer;
+    if (offer) {
+      chip.className = 'sv-rainchip' + (severe ? ' is-severe' : '');
+      chip.textContent = severe ? 'Storm warning — tap for radar' : 'Rain nearby — tap for radar';
+    }
+  }
+
+  /* one beat for every loop on screen: the screensaver's, and the sheet's */
+  function stepRadar() {
+    RADAR.timer = null;
+    var r = D.radar;
+    var boxes = Array.prototype.filter.call(document.querySelectorAll('.rd-box'), function (b) {
+      return b.offsetParent !== null;
+    });
+    if (!r || !radarHave() || !boxes.length) return;
+    var n = r.frames.length;
+    RADAR.idx = (RADAR.idx + 1) % n;
+    boxes.forEach(function (box) {
+      Array.prototype.forEach.call(box.querySelectorAll('.rd-f'), function (im, i) { im.hidden = i !== RADAR.idx; });
+      var t = box.parentNode.querySelector('.rd-t');
+      if (t) t.textContent = fmtIsoLocal(r.frames[RADAR.idx].at).replace(/^\w+ /, '');
+    });
     /* a beat on each frame, and a longer hold on the newest */
-    RADAR.timer = setTimeout(stepRadar, RADAR.idx === imgs.length - 1 ? 2000 : 550);
+    RADAR.timer = setTimeout(stepRadar, RADAR.idx === n - 1 ? 2000 : 550);
+  }
+
+  function openRadarSheet() {
+    if (!radarHave()) { toast('No radar pictures yet — they load every 10 minutes.'); return; }
+    openSheet('<div class="rd-sheet" id="rdSheet"></div>', { title: 'Rain radar', wide: true, focus: false });
+    radarInto(byId('rdSheet'));
   }
 
   function sportsTile() {
@@ -7178,6 +7222,7 @@
         break;
       case 'sports-open': openSportsSheet(); break;
       case 'fuel-open': openFuel(); break;
+      case 'radar': openRadarSheet(); break;
       case 'fuel-go':
         closeSheet();
         MAPS.from = '';
@@ -7328,6 +7373,7 @@
       var parts = clockNow().split(' ');
       byId('sleepClock').innerHTML = esc(parts[0]) + '<i>' + esc(parts[1]) + '</i>';
       byId('sleepDate').textContent = fmtLongDate(state.today) + ' · ' + fmtDMY(state.today);
+      applyDrift(el);
       /* an early start still has to be seen before the wall wakes */
       var st = byId('sleepTrip'), trip = dueTrip();
       st.className = 'sleep-trip' + (trip ? ' is-on' : '') + (trip && leaveIn(trip) <= 5 ? ' is-urgent' : '');
@@ -7359,7 +7405,7 @@
          are set up on the panel: Settings -> Trips. */
 
   function loadAlerts() {
-    return GET('/api/alerts').then(function (d) { D.alerts = (d && d.items) || []; renderAlerts(); },
+    return GET('/api/alerts').then(function (d) { D.alerts = (d && d.items) || []; renderAlerts(); paintRadar(); },
       function () { /* keep what we had */ });
   }
 
@@ -8053,7 +8099,22 @@
       '<span class="n">' + esc(e.title) + '</span>';
   }
 
+  /* Burn-in care: the clock, cards and radar drift a few pixels every few
+     minutes, so nothing sits on the same pixels all night. Invisible from
+     across the room. */
+  var DRIFT = { at: 0, x: 0, y: 0 };
+
+  function applyDrift(el) {
+    if (Date.now() - DRIFT.at > 180000) {
+      DRIFT.at = Date.now();
+      DRIFT.x = Math.round(Math.random() * 28 - 14);
+      DRIFT.y = Math.round(Math.random() * 20 - 10);
+    }
+    if (el) { el.style.setProperty('--dx', DRIFT.x + 'px'); el.style.setProperty('--dy', DRIFT.y + 'px'); }
+  }
+
   function svPaintClock() {
+    applyDrift(byId('saver'));
     var parts = clockNow().split(' ');
     byId('svClock').innerHTML = esc(parts[0]) + '<i>' + esc(parts[1]) + '</i>';
     byId('svDate').textContent = fmtLongDate(state.today);
@@ -8157,7 +8218,17 @@
   }
 
   byId('cheerHost').addEventListener('pointerdown', clearCheer);
-  byId('saver').addEventListener('pointerdown', svDismiss);
+  byId('saver').addEventListener('pointerdown', function (e) {
+    if (e.target && e.target.closest && e.target.closest('#svRainChip')) {
+      e.preventDefault();
+      e.stopPropagation();
+      RADAR.bigUntil = Date.now() + 60000;     // a minute, then the frame carries on
+      paintRadar();
+      setTimeout(paintRadar, 60500);
+      return;
+    }
+    svDismiss(e);
+  });
   byId('saver').addEventListener('click', function (e) {
     e.preventDefault(); e.stopPropagation();     // the tap's second half
   });

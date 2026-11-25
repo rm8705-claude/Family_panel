@@ -1117,8 +1117,39 @@ ul, ol { list-style: none; }
   pointer-events: none;
 }
 .sv-radar[hidden] { display: none; }
-.rd-box { position: relative; aspect-ratio: 1 / 1; }
+.sv-radar.is-big {
+  top: 4vh;
+  right: auto;
+  left: 50%;
+  width: min(78vh, 70vw);
+  transform: translateX(-50%);
+}
+.rd-box { position: relative; aspect-ratio: 1 / 1; background: #1c1e22; }
 .rd-box img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.rd-sheet { max-width: min(46rem, 100%); margin: 0 auto; border-radius: var(--radius-s); overflow: hidden;
+  background: rgba(12, 14, 18, 0.92); }
+.sv-rainchip {
+  position: absolute;
+  top: 2.5rem;
+  left: 3.5rem;
+  z-index: 3;
+  padding: 0.875rem 1.375rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(12, 14, 18, 0.7);
+  color: #FFFFFF;
+  font-family: var(--sans);
+  font-size: 1.0625rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.sv-rainchip[hidden] { display: none; }
+.sv-rainchip.is-severe { background: rgba(190, 40, 46, 0.9); border-color: transparent; }
+/* burn-in care: the saver's and sleep screen's fixed parts drift a little */
+.sv-foot, .sv-radar, .sv-rainchip, .sleep-in {
+  translate: var(--dx, 0) var(--dy, 0);
+  transition: translate 2s ease;
+}
 .rd-box img[hidden] { display: none; }
 .rd-home {
   position: absolute;

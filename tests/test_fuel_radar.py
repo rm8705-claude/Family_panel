@@ -116,3 +116,13 @@ def test_fuel_and_radar_endpoints(client):
     r = client.get("/api/radar").get_json()
     assert r["frames"][0]["url"] == "/api/radar/img/IDR663.T.202611250800.png"
     assert r["layers"] == ["/api/radar/img/IDR663.background.png"]
+
+
+def test_rain_soon_reads_the_next_two_hours():
+    from datetime import datetime
+    now = datetime(2026, 11, 25, 14, 20, tzinfo=db.LOCAL_TZ)
+    hourly = [{"date": "2026-11-25", "time": "14:00", "rain_prob": 20},
+              {"date": "2026-11-25", "time": "16:00", "rain_prob": 70},
+              {"date": "2026-11-25", "time": "19:00", "rain_prob": 95}]
+    assert radar.rain_soon(hourly, now) is True
+    assert radar.rain_soon(hourly[:1] + hourly[2:], now) is False      # the 95% is too far off

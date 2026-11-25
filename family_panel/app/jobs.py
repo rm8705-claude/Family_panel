@@ -184,10 +184,12 @@ def fetch_radar(config: dict) -> None:
     import trips
     import weather
     try:
-        now_code = ((weather.latest() or {}).get("current") or {}).get("code")
-        out = radar.refresh(config, trips.home(config), now_code)
+        w = weather.latest() or {}
+        now_code = (w.get("current") or {}).get("code")
+        out = radar.refresh(config, trips.home(config), now_code,
+                            soon=radar.rain_soon(w.get("hourly") or []))
         db.mark_sync("radar", True, f"{out['radar']}: {len(out['frames'])} frames, "
-                                    f"{'showing' if out['show'] else 'no rain about'}")
+                                    f"{'rain about' if out['rain_about'] else 'no rain about'}")
     except Exception as e:
         log.warning("radar fetch failed: %s", e)
         db.mark_sync("radar", False, str(e)[:200])
