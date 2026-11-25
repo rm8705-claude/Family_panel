@@ -13,7 +13,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.42.0"
+APP_VERSION = "0.43.0"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -1181,6 +1181,28 @@ def tile_key(t: dict) -> str:
     return t.get("entity") or f"tile:{t.get('label', '')}"
 
 
+SWAP_AC_FAN_KEY = "ha:order:swapped-aircon-fan"
+
+
+def swap_aircon_and_fan_once(tiles_cfg: list) -> None:
+    """One-off (v0.43): the grouped aircon tile and the first fan tile trade
+    places in the saved Home order — the aircon tile went double-width with
+    a key per unit, and belongs where the Dyson was. Runs once; anything
+    re-arranged afterwards (Settings > Arrange home tiles) stands."""
+    if db.get_json_setting(SWAP_AC_FAN_KEY):
+        return
+    keys = list(dict.fromkeys(tile_key(t) for t in tiles_cfg))
+    fan = next((tile_key(t) for t in tiles_cfg if t.get("type") == "fan"), None)
+    ac = "group:climate" if any(t.get("type") == "climate" for t in tiles_cfg) else None
+    if fan and ac:
+        saved = [k for k in (db.get_json_setting(HA_ORDER_KEY) or []) if isinstance(k, str)]
+        order = saved + [k for k in keys if k not in saved]
+        i, j = order.index(ac), order.index(fan)
+        order[i], order[j] = order[j], order[i]
+        db.set_json_setting(HA_ORDER_KEY, order)
+    db.set_json_setting(SWAP_AC_FAN_KEY, True)
+
+
 def ordered_tiles(tiles_cfg: list) -> list:
     """config.yaml's tiles in the saved order. Tiles the saved order doesn't
     know (added to config.yaml since) go on the end in config order; keys
@@ -1222,6 +1244,7 @@ def api_ha_order_reset():
 @app.get("/api/ha/tiles")
 def api_ha_tiles():
     import ha
+    swap_aircon_and_fan_once(CONFIG.get("ha_tiles", []) or [])
     tiles_cfg = ordered_tiles(CONFIG.get("ha_tiles", []) or [])
     cached = ha.cached_states() or {}
     states = cached.get("states", {})

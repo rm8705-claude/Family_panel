@@ -1424,9 +1424,9 @@
       (chips ? '<div class="pd-chips">' + chips + '</div>' : '') +
       todayScheduleCard() +
       weatherCard() +
-      binDayCard() +
       choresCard() +
       tomorrowCard() +
+      binDayCard() +
       dinnerCard() +
       haCard() +
       '</div>';
@@ -1627,7 +1627,25 @@
       '<div class="wx-stat' + (uv != null && uv >= 8 ? ' is-hot' : '') + '"><div class="k">UV</div><div class="v mono">' + (uv != null ? uv : '–') + '</div></div>' +
       '<div class="wx-stat"><div class="k">Min</div><div class="v mono">' + Math.round(today.min) + '°</div></div>' +
       '<div class="wx-stat"><div class="k">Max</div><div class="v mono">' + Math.round(today.max) + '°</div></div>' +
-      '</div><div class="wx-week">' + week + '</div></div></section>';
+      '</div>' + wxHoursHtml(w) + '<div class="wx-week">' + week + '</div></div></section>';
+  }
+
+  /* The next six hours: time, sky, temperature and the chance of rain. */
+  function wxHoursHtml(w) {
+    var now = nowMins();
+    var hrs = (w.hourly || []).filter(function (h) {
+      if (h.date === state.today) return mins(h.time) >= now - 59;
+      return h.date === addDays(state.today, 1);
+    }).slice(0, 6);
+    if (!hrs.length) return '';
+    return '<div class="wx-hours">' + hrs.map(function (h, i) {
+      var rp = Math.round(h.rain_prob || 0);
+      return '<div class="wx-hr' + (i === 0 ? ' is-now' : '') + '">' +
+        '<div class="wd">' + esc(i === 0 ? 'Now' : fmtTimeShort(h.time)) + '</div>' +
+        wxGlyph(h.code) +
+        '<div class="hi mono">' + (h.temp != null ? Math.round(h.temp) + '°' : '–') + '</div>' +
+        '<div class="lo mono' + (rp >= 50 ? ' is-wet' : '') + '">' + rp + '%</div></div>';
+    }).join('') + '</div>';
   }
 
   /* Stars spelled out in gold — the kid reads this from across the kitchen.
@@ -2105,6 +2123,11 @@
       '</div>';
   }
 
+  function acIsOn(t) {
+    var s = String(t.state || (t.attrs && t.attrs.hvac_mode) || '').toLowerCase();
+    return !!s && s !== 'off' && s !== 'unavailable';
+  }
+
   function airconTile(list, off) {
     /* One room and it is simply that room's tile — same tap, same sheet. */
     if (list.length === 1) {
@@ -2114,10 +2137,26 @@
         '<div class="t-label">' + esc(t.label) + '</div>' + tileBody(t) +
         (off ? '' : tileActions(t)) + '</div>';
     }
+    /* Double width, so each unit gets its own on/off key on the tile — the
+       everyday "turn the kids' room on" without opening the sheet. A tap
+       anywhere else on the tile still opens the full climate sheet. */
+    var anyOn = list.some(acIsOn);
     return '<div class="tile is-aircon' + (off ? ' is-off' : '') + '"' +
       (off ? '' : ' data-act="climate-open" role="button" tabindex="0"') + '>' +
-      '<div class="t-label">Aircon<span class="t-count">' + list.length + '</span></div>' +
-      airconTileBody(list) + '</div>';
+      '<div class="t-label">Aircon<span class="t-count">' + list.length + '</span>' +
+      (off || !anyOn ? '' : '<button class="ac-alloff" data-act="ac-all-off">All off</button>') + '</div>' +
+      '<div class="ac-units">' + list.slice(0, 4).map(function (t) {
+        var on = acIsOn(t);
+        var ct = t.attrs && t.attrs.current_temp;
+        var can = !off && t.allow_action;
+        return '<div class="ac-unit' + (on ? ' is-on' : '') + '">' +
+          '<span class="ac-un"><span class="ac-dot"></span>' + esc(t.label) + '</span>' +
+          '<span class="ac-ut mono">' + esc(typeof ct === 'number' ? Math.round(ct * 10) / 10 + '°' : '–') + '</span>' +
+          (can ? '<button class="ac-key' + (on ? ' is-on' : '') + '" data-act="ha" data-entity="' + esc(t.entity) +
+            '" data-action="' + (on ? 'turn_off' : 'turn_on') + '" data-label="' + esc(t.label + (on ? ' off' : ' on')) +
+            '" aria-pressed="' + on + '">' + (on ? 'On' : 'Off') + '</button>' : '') +
+          '</div>';
+      }).join('') + '</div></div>';
   }
 
   /* CAMERAS — one tile carrying a thumbnail that steps through the channels
@@ -2405,7 +2444,7 @@
        every tile in two rows, the fan, the TV, the speakers and the cameras
        counting double */
     var slots = (body.match(/class="tile[ "]/g) || []).length +
-      (body.match(/class="tile[^"]* is-(fan|tv|sonos|media|cams)[ "]/g) || []).length;
+      (body.match(/class="tile[^"]* is-(fan|tv|sonos|media|cams|aircon)[ "]/g) || []).length;
     return '<section class="card a-ha' + (arr ? ' is-arranging' : '') + '">' +
       (arr ? arrangeBarHtml(arr) : '') +
       '<div class="ha-row' + (Math.ceil(slots / 2) >= 7 ? ' is-dense' : '') +
@@ -7223,6 +7262,13 @@
         break;
       case 'sports-open': openSportsSheet(); break;
       case 'fuel-open': openFuel(); break;
+      case 'ac-all-off':
+        climateTiles().filter(function (t) { return acIsOn(t) && t.allow_action; }).forEach(function (t) {
+          act(POST('/api/ha/action', { entity: t.entity, action: 'turn_off' }), function () { reloadHaAfterTap(); });
+          t.state = 'off';
+        });
+        render();
+        break;
       case 'radar': openRadarSheet(); break;
       case 'fuel-go':
         closeSheet();

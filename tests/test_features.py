@@ -167,3 +167,20 @@ def test_static_still_serves_nested_paths(client):
 
 def test_static_404s_for_a_missing_file(client):
     assert client.get("/static/does-not-exist.js").status_code == 404
+
+
+def test_aircon_and_fan_swap_places_once():
+    import app as app_module
+    import db
+    tiles = [{"entity": "climate.a", "type": "climate"}, {"entity": "climate.b", "type": "climate"},
+             {"entity": "cover.c", "type": "cover"}, {"entity": "fan.dyson", "type": "fan"},
+             {"entity": "media_player.x", "type": "media"}]
+    db.set_json_setting(app_module.SWAP_AC_FAN_KEY, None)
+    db.set_json_setting(app_module.HA_ORDER_KEY, ["cover.c", "group:climate", "fan.dyson"])
+    app_module.swap_aircon_and_fan_once(tiles)
+    assert db.get_json_setting(app_module.HA_ORDER_KEY) == ["cover.c", "fan.dyson", "group:climate", "group:media"]
+    # someone re-arranges afterwards: it isn't swapped back
+    db.set_json_setting(app_module.HA_ORDER_KEY, ["group:climate", "fan.dyson"])
+    app_module.swap_aircon_and_fan_once(tiles)
+    assert db.get_json_setting(app_module.HA_ORDER_KEY) == ["group:climate", "fan.dyson"]
+    db.set_json_setting(app_module.HA_ORDER_KEY, [])
