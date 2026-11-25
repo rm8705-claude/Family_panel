@@ -166,6 +166,33 @@ def fetch_bom(config: dict) -> None:
         db.mark_sync("bom", False, str(e)[:200])
 
 
+def fetch_fuel(config: dict) -> None:
+    import fuel
+    import trips
+    try:
+        out = fuel.refresh(config, trips.home(config))
+        db.mark_sync("fuel", True, f"{out['count']} servos within {out['radius_km']:g} km ({out['fuel']})")
+    except fuel.NotConfigured:
+        db.mark_sync("fuel", True, "not configured (qld_fuel_token)")
+    except Exception as e:
+        log.warning("fuel prices failed: %s", e)
+        db.mark_sync("fuel", False, str(e)[:200])
+
+
+def fetch_radar(config: dict) -> None:
+    import radar
+    import trips
+    import weather
+    try:
+        now_code = ((weather.latest() or {}).get("current") or {}).get("code")
+        out = radar.refresh(config, trips.home(config), now_code)
+        db.mark_sync("radar", True, f"{out['radar']}: {len(out['frames'])} frames, "
+                                    f"{'showing' if out['show'] else 'no rain about'}")
+    except Exception as e:
+        log.warning("radar fetch failed: %s", e)
+        db.mark_sync("radar", False, str(e)[:200])
+
+
 def poll_ha(config: dict) -> None:
     import ha
     try:
@@ -230,6 +257,12 @@ def start(config: dict) -> BackgroundScheduler:
     # thunderstorm warning is only useful while it's fresh. 0 turns it off.
     if float(mins.get("bom", 10)) > 0:
         add("bom", fetch_bom, mins.get("bom", 10))
+    # Fuel prices: servos must report within 30 minutes of a change.
+    if float(mins.get("fuel", 30)) > 0:
+        add("fuel", fetch_fuel, mins.get("fuel", 30))
+    # Rain radar: a new frame every 5-10 minutes.
+    if float(mins.get("radar", 10)) > 0:
+        add("radar", fetch_radar, mins.get("radar", 10))
     add("ha", poll_ha, mins.get("ha", 0.25))
     # photos change rarely; 6-hourly keeps a shared album fresh same-day
     # without hammering Google's share pages

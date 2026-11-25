@@ -5,7 +5,7 @@
 # together whenever you ship a change (see the repo's `ship` skill).
 name: "Family Panel"
 description: "Self-hosted family wall calendar: shared calendar, chores, lists, meal planner and Home Assistant tiles."
-version: "0.39.1"
+version: "0.40.0"
 slug: "family_panel"
 url: "https://github.com/rm8705-claude/family_panel"
 arch:
@@ -220,6 +220,15 @@ options:
   # Leave-by times aim to get you there this many minutes early (trips can
   # set their own in Settings > Trips). 0 = arrive right on time.
   arrive_early_min: 10
+  # Cheapest fuel nearby (Queensland Fuel Price Reporting). Register as a data
+  # consumer at fuelpricesqld.com.au and paste the subscriber token here.
+  # fuel_type: Unleaded, E10, Premium Unleaded 95, Premium Unleaded 98, Diesel…
+  qld_fuel_token: ""
+  fuel_type: "Unleaded"
+  fuel_radius_km: 8
+  # Rain radar on the screensaver: the nearest BOM radar is picked from home.
+  # Only to force another, put its 128 km product id here, e.g. "IDR663".
+  bom_radar: ""
   music_assistant_url: ""
   music_assistant_token: ""
   llm_provider: "anthropic"
@@ -306,6 +315,10 @@ schema:
   google_maps_browser_key: "password?"
   home_override: "str?"
   arrive_early_min: "int(0,60)?"
+  qld_fuel_token: "password?"
+  fuel_type: "str?"
+  fuel_radius_km: "int(1,50)?"
+  bom_radar: "str?"
   music_assistant_url: "str?"
   music_assistant_token: "password?"
   llm_provider: "list(anthropic|lmstudio)"
@@ -326,6 +339,9 @@ schema:
     sports: "int?"
     # BOM warnings for the house. Omitted = every 10 minutes; 0 turns it off.
     bom: "int?"
+    # Fuel prices (default 30) and the rain radar (default 10); 0 = off.
+    fuel: "int?"
+    radar: "int?"
   photos:
     folder: "str?"
     shared_album_url: "str?"

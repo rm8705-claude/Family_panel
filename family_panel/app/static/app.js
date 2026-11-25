@@ -783,6 +783,14 @@
     return bg(GET('/api/weather'), function (d) { D.weather = d; });
   }
 
+  function loadFuel() {
+    return bg(GET('/api/fuel'), function (d) { D.fuel = d; });
+  }
+
+  function loadRadar() {
+    return bg(GET('/api/radar'), function (d) { D.radar = d; paintRadar(); });
+  }
+
   function loadSports() {
     return bg(GET('/api/sports'), function (d) { D.sports = d; });
   }
@@ -2379,6 +2387,8 @@
        unaffected by HA being down — but it can be arranged like the rest. */
     var sp = sportsTile();
     if (sp) items.push({ key: 'sports', html: sp });
+    var fu = fuelTile();
+    if (fu) items.push({ key: 'fuel', html: fu });
     /* the saved order (Settings -> Arrange home tiles) — the server already
        sorts the HA tiles by it; this places the sports tile too, and in
        arrange mode the order being edited wins */
@@ -2469,6 +2479,90 @@
 
   function sportsHave() {
     return !!(atpRows().length || f1DriverRows().length);
+  }
+
+  /* ---- cheapest fuel nearby (Queensland Fuel Price Reporting) ---- */
+  function fuelTile() {
+    var f = D.fuel;
+    if (!f || !f.available || !(f.cheapest || []).length) return '';
+    var c = f.cheapest[0];
+    return '<div class="tile is-fuel" data-act="fuel-open" role="button" tabindex="0">' +
+      '<div class="t-label">Fuel · ' + esc(f.fuel) + '</div>' +
+      '<div class="t-value mono">' + esc(c.price.toFixed(1)) + '<span class="fu-unit">¢</span></div>' +
+      '<div class="t-sub">' + esc(c.name) + ' · ' + esc(c.km) + ' km</div></div>';
+  }
+
+  function openFuel() {
+    var f = D.fuel;
+    if (!f || !f.available) return;
+    var rows = (f.cheapest || []).map(function (c, i) {
+      var addr = c.address + (c.postcode ? ' ' + c.postcode : '') + ' QLD';
+      return '<div class="fu-row' + (i === 0 ? ' is-best' : '') + '">' +
+        '<span class="fu-price mono">' + esc(c.price.toFixed(1)) + '</span>' +
+        '<span class="fu-site"><b>' + esc(c.name) + '</b>' +
+        '<span class="muted2">' + esc(c.address) + ' · ' + esc(c.km) + ' km</span></span>' +
+        (mapKeyKnown() ? '<button class="btn sm" data-act="fuel-go" data-addr="' + esc(addr) + '">Directions</button>' : '') +
+        '</div>';
+    }).join('');
+    openSheet('<p class="muted" style="margin-top:0">' + esc(f.fuel) + ', cents a litre, within ' +
+      esc(f.radius_km) + ' km of home' + (f.average != null ? ' — the average nearby is ' + esc(f.average.toFixed(1)) + '¢' : '') +
+      '. Servos report within 30 minutes of a change.</p>' +
+      '<div class="fu-list">' + (rows || '<p class="muted">No servos found nearby.</p>') + '</div>' +
+      '<p class="muted2" style="font-size:.8125rem">Source: Queensland Fuel Price Reporting · updated ' +
+      esc(fmtIsoLocal(f.at)) + '</p>', { title: 'Cheapest fuel nearby', wide: true });
+  }
+
+  /* ---- rain radar on the screensaver ----
+     The nearest BOM radar's last hour, looped in the top corner — but only
+     while rain is about (rain within ~25 km on the latest frame, or raining
+     now). The map layers sit under and over the frames as the BOM's own
+     site stacks them; the dot is the house. */
+  var RADAR = { timer: null, idx: 0, key: '' };
+
+  function paintRadar() {
+    var host = byId('svRadar');
+    if (!host) return;
+    var r = D.radar;
+    var show = !!(r && r.show && (r.frames || []).length && SV && SV.on);
+    if (!show) {
+      host.hidden = true;
+      clearTimeout(RADAR.timer);
+      RADAR.timer = null;
+      return;
+    }
+    var key = r.frames.map(function (f) { return f.name; }).join(',');
+    if (key !== RADAR.key || host.hidden) {
+      RADAR.key = key;
+      var layer = function (url, cls) { return '<img class="rd-l ' + cls + '" src="' + esc(url) + '" alt="">'; };
+      var L = r.layers || [];
+      var under = L.filter(function (u) { return /background|topography/.test(u); });
+      var over = L.filter(function (u) { return /locations|range/.test(u); });
+      host.innerHTML = '<div class="rd-box">' +
+        under.map(function (u) { return layer(u, 'rd-under'); }).join('') +
+        r.frames.map(function (f, i) {
+          return '<img class="rd-f" data-i="' + i + '" src="' + esc(f.url) + '" alt=""' + (i ? ' hidden' : '') + '>';
+        }).join('') +
+        over.map(function (u) { return layer(u, 'rd-over'); }).join('') +
+        '<span class="rd-home" style="left:' + (r.home.x * 100).toFixed(2) + '%;top:' + (r.home.y * 100).toFixed(2) + '%"></span>' +
+        '</div><div class="rd-cap"><span>Rain radar · ' + esc(r.radar) + '</span><span class="rd-t mono"></span></div>';
+      RADAR.idx = 0;
+    }
+    host.hidden = false;
+    if (!RADAR.timer) stepRadar();
+  }
+
+  function stepRadar() {
+    var host = byId('svRadar');
+    var r = D.radar;
+    if (!host || host.hidden || !r || !r.frames.length) { RADAR.timer = null; return; }
+    var imgs = host.querySelectorAll('.rd-f');
+    RADAR.idx = (RADAR.idx + 1) % imgs.length;
+    Array.prototype.forEach.call(imgs, function (im, i) { im.hidden = i !== RADAR.idx; });
+    var t = host.querySelector('.rd-t');
+    var f = r.frames[RADAR.idx];
+    if (t && f) t.textContent = fmtIsoLocal(f.at).replace(/^\w+ /, '');
+    /* a beat on each frame, and a longer hold on the newest */
+    RADAR.timer = setTimeout(stepRadar, RADAR.idx === imgs.length - 1 ? 2000 : 550);
   }
 
   function sportsTile() {
@@ -5441,7 +5535,8 @@
 
   var JOB_LABEL = {
     ics: 'Calendar sync', imap: 'Magic import mailbox',
-    weather: 'Weather', ha: 'Home Assistant', bom: 'BOM warnings'
+    weather: 'Weather', ha: 'Home Assistant', bom: 'BOM warnings',
+    fuel: 'Fuel prices', radar: 'Rain radar'
   };
 
   var statusTimer = null;
@@ -7082,6 +7177,13 @@
         updateSonosSheet();
         break;
       case 'sports-open': openSportsSheet(); break;
+      case 'fuel-open': openFuel(); break;
+      case 'fuel-go':
+        closeSheet();
+        MAPS.from = '';
+        openMapsSheet();
+        mapsGo(el.dataset.addr);
+        break;
       case 'tv-apps-open': openTvApps(el.dataset.entity); break;
       case 'sonos-share': openSonosShare(); break;
       case 'sonos-all': sonosEverywhere(); break;
@@ -7924,6 +8026,7 @@
   function svPaintChip() {
     var host = byId('svNext');
     paintTripMaps();
+    paintRadar();
     var trip = dueTrip();
     if (trip) {
       host.className = 'sv-next is-on is-trip' + (leaveIn(trip) <= 5 ? ' is-urgent' : '');
@@ -8022,6 +8125,7 @@
     if (!SV.on) return;
     SV.on = false;
     paintTripMaps();            // the map comes off with the frame
+    paintRadar();
     /* Renders and camera refreshes were paused behind the frame — one pass
        now, so the wall is current by the time the fade finishes. */
     renderSoon();
@@ -8251,6 +8355,8 @@
         loadMapConfig();
         loadAlerts();
         loadTripsNext();
+        loadFuel().then(renderPoll);
+        loadRadar();
         return Promise.all([loadAgenda(), loadChores(), loadWeather(), loadHa(),
           loadPhotos(), loadSports()]);
       })
@@ -8307,6 +8413,7 @@
       /* The backend only refreshes these hourly and neither sport can change
          faster than that, so this is just picking up what it already has. */
       solo('poll:sports', loadSports).then(renderPoll);
+      solo('poll:fuel', loadFuel).then(renderPoll);
       /* Both of these are loaded once at boot and never again, so a boot that
          raced the add-on's start left the panel with no recipes and no lists
          for the rest of the week. */
@@ -8318,6 +8425,7 @@
        min); trips every 2 min so the traffic time stays current */
     setInterval(function () { solo('poll:alerts', loadAlerts); }, 120000);
     setInterval(function () { solo('poll:trips', loadTripsNext); }, 120000);
+    setInterval(function () { solo('poll:radar', loadRadar); }, 120000);
     setInterval(function () { if (!mapKeyKnown()) solo('poll:mapcfg', loadMapConfig); }, 300000);
     /* the idle check runs on its own short beat — the 30 s tick would blur
        the moment the frame appears, and a sheet closing has to release it
@@ -9722,6 +9830,14 @@
     /* the demo has nothing to say it on, so it just agrees */
     if (path === '/api/ha/announce') return { ok: true };
 
+    if (path === '/api/fuel') {
+      return { available: true, fuel: 'Unleaded', radius_km: 8, average: 189.4, at: new Date().toISOString(),
+        cheapest: [
+          { name: 'Example Servo Kedron', brand: 'Independent', address: '1 Example Rd', postcode: '4031', price: 174.9, km: 2.1 },
+          { name: 'Example Servo Wooloowin', brand: 'Independent', address: '2 Sample St', postcode: '4030', price: 177.9, km: 3.4 },
+          { name: 'Example Servo Nundah', brand: 'Independent', address: '3 Demo Ave', postcode: '4012', price: 179.5, km: 4.0 }] };
+    }
+    if (path === '/api/radar') return { show: false, frames: [] };
     if (path === '/api/alerts') {
       return { items: [{ id: 'IDQ20885', title: 'Severe Thunderstorm Warning for Brisbane and parts of Moreton Bay',
         short: 'Severe Thunderstorm Warning', severity: 'major', issued: new Date().toISOString(),

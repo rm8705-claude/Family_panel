@@ -1085,6 +1085,58 @@ ul, ol { list-style: none; }
 :root[data-theme="day"] .maps-err { color: #C9353A; }
 :root[data-theme="day"] .tmap-err { color: var(--ink-2); }
 
+/* Fuel: a Home tile, and the list behind it */
+.tile.is-fuel { cursor: pointer; }
+.fu-unit { font-size: 0.55em; margin-left: 0.1em; vertical-align: 0.5em; }
+.fu-list { display: flex; flex-direction: column; gap: 0.375rem; margin-bottom: 1rem; }
+.fu-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.625rem 0.875rem;
+  border: 1px solid var(--hair);
+  border-radius: var(--radius-s);
+  background: var(--card);
+}
+.fu-row.is-best { border-color: var(--hero); border-width: 2px; }
+.fu-price { flex: 0 0 4.5rem; font-size: 1.375rem; font-weight: 700; }
+.fu-site { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.fu-site span { font-size: 0.875rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Rain radar, top-right of the screensaver while rain is about */
+.sv-radar {
+  position: absolute;
+  top: 2.5rem;
+  right: 3rem;
+  width: min(22rem, 32vw);
+  z-index: 2;
+  border-radius: 1rem;
+  overflow: hidden;
+  background: rgba(12, 14, 18, 0.8);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+.sv-radar[hidden] { display: none; }
+.rd-box { position: relative; aspect-ratio: 1 / 1; }
+.rd-box img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.rd-box img[hidden] { display: none; }
+.rd-home {
+  position: absolute;
+  width: 0.75rem;
+  height: 0.75rem;
+  margin: -0.375rem 0 0 -0.375rem;
+  border-radius: 50%;
+  background: #FFFFFF;
+  box-shadow: 0 0 0 3px rgba(229, 72, 77, 0.9);
+}
+.rd-cap {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.5rem 0.875rem;
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.85);
+}
+
 /* the rail's Traffic map key, under the countdown */
 .ra-map {
   display: inline-flex;

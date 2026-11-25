@@ -13,7 +13,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.39.1"
+APP_VERSION = "0.40.0"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -974,6 +974,43 @@ def api_alerts():
     import bom
     data = bom.latest() or {}
     return jsonify({"items": data.get("items", []), "updated_at": data.get("at")})
+
+
+@app.get("/api/fuel")
+def api_fuel():
+    """Cheapest servos near home for the fuel in fuel_type (refreshed by the
+    fuel job every 30 min). {available: false} without a qld_fuel_token."""
+    import fuel
+    data = fuel.latest()
+    if not data:
+        return jsonify({"available": False})
+    return jsonify({"available": True, **data})
+
+
+@app.get("/api/radar")
+def api_radar():
+    """The rain radar loop for the screensaver: frames, map layers, where the
+    house sits on it, and whether rain is about (show)."""
+    import radar
+    data = radar.latest()
+    if not data:
+        return jsonify({"show": False, "frames": []})
+    return jsonify({**data,
+                    "frames": [{**f, "url": f"/api/radar/img/{f['name']}"} for f in data.get("frames", [])],
+                    "layers": [f"/api/radar/img/{n}" for n in data.get("layers", [])]})
+
+
+@app.get("/api/radar/img/<name>")
+def api_radar_img(name):
+    import radar
+    path = radar.image_path(name)
+    if not path:
+        return jsonify({"error": "No such radar image"}), 404
+    with open(path, "rb") as f:
+        resp = app.response_class(f.read(), mimetype="image/png")
+    # frames never change once published; layers rarely
+    resp.headers["Cache-Control"] = "public, max-age=86400"
+    return resp
 
 
 @app.get("/api/trips")
