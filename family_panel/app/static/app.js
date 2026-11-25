@@ -941,6 +941,7 @@
     state.theme = next;
     root.setAttribute('data-theme', next);
     paintChrome();
+    if (changed && typeof mapRetheme === 'function') mapRetheme();
     if (changed) render();            // every accent is computed per theme
     /* Say it once, only when dusk or dawn actually flipped it live — boot and
        the ?theme= override pass animate:false and stay quiet. */
@@ -7398,6 +7399,36 @@
     { featureType: 'landscape.natural', elementType: 'geometry', stylers: [{ color: '#202226' }] }
   ];
 
+  /* A map opened from a key follows the panel: light by day, the dark one
+     at night. The screensaver / sleep-screen map is always the dark one. */
+  var MAP_STYLE_LIGHT = [
+    { elementType: 'geometry', stylers: [{ color: '#F2F1EE' }] },
+    { elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+    { elementType: 'labels.text.fill', stylers: [{ color: '#6E737B' }] },
+    { elementType: 'labels.text.stroke', stylers: [{ color: '#F2F1EE' }] },
+    { featureType: 'administrative', elementType: 'geometry', stylers: [{ color: '#D9D7D2' }] },
+    { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+    { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+    { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#FFFFFF' }] },
+    { featureType: 'road.highway', elementType: 'geometry', stylers: [{ color: '#E4E1DA' }] },
+    { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#7A7F87' }] },
+    { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#CFDCE4' }] },
+    { featureType: 'landscape.natural', elementType: 'geometry', stylers: [{ color: '#E9E8E3' }] }
+  ];
+
+  function mapLook(interactive) {
+    var light = interactive && state.theme !== 'night';
+    return { styles: light ? MAP_STYLE_LIGHT : MAP_STYLE, backgroundColor: light ? '#F2F1EE' : '#1c1e22',
+             line: light ? '#4A3575' : '#FFFFFF', lineOpacity: light ? 0.45 : 0.35 };
+  }
+
+  function mapRetheme() {
+    if (!MAP.map || !MAP.el || !MAP.el.isConnected) return;
+    var look = mapLook(MAP.interactive);
+    MAP.map.setOptions({ styles: look.styles, backgroundColor: look.backgroundColor });
+    if (MAP.line) MAP.line.setOptions({ strokeColor: look.line, strokeOpacity: look.lineOpacity });
+  }
+
   function mapReady() { return !!(MAP.cfg && MAP.cfg.key) && !MAP.failed; }
 
   /* Asked for at boot and again every few minutes until a key turns up —
@@ -7494,8 +7525,9 @@
     };
     if (path && path.length) {
       /* a pale line under the traffic colours — the route without hiding them */
-      MAP.line = new g.Polyline({ path: path, map: MAP.map, strokeColor: '#FFFFFF',
-        strokeOpacity: 0.35, strokeWeight: 9, zIndex: 1 });
+      var look = mapLook(MAP.interactive);
+      MAP.line = new g.Polyline({ path: path, map: MAP.map, strokeColor: look.line,
+        strokeOpacity: look.lineOpacity, strokeWeight: 9, zIndex: 1 });
       MAP.pins.push(dot(path[0], '#8A93A0'), dot(path[path.length - 1], '#E5484D'));
       var b = new g.LatLngBounds();
       path.forEach(function (p) { b.extend(p); });
@@ -7512,7 +7544,9 @@
     if (!host) return;
     ensureMap().then(function (m) {
       if (MAP.el.parentNode !== host) host.appendChild(MAP.el);
+      MAP.interactive = !!interactive;
       m.setOptions({ gestureHandling: interactive ? 'greedy' : 'none' });
+      mapRetheme();
       window.google.maps.event.trigger(m, 'resize');
       mapShowTrip(t);
       host.classList.add('has-map');

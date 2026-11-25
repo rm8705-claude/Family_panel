@@ -1063,6 +1063,28 @@ ul, ol { list-style: none; }
   line-height: 1.5;
 }
 
+/* Daytime: the maps opened from a key, and everything floating on them,
+   go light to match the panel. (The screensaver map stays dark.) */
+:root[data-theme="day"] .tmap-sheet,
+:root[data-theme="day"] .trip-map { background: #F2F1EE; }
+:root[data-theme="day"] .tmap-card {
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ink);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.12);
+}
+:root[data-theme="day"] .tmap-card .tc-drive { color: var(--ink-2); }
+:root[data-theme="day"] .maps-in,
+:root[data-theme="day"] .maps-mic,
+:root[data-theme="day"] .tmap-close {
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--ink);
+  border-color: var(--hair);
+}
+:root[data-theme="day"] .maps-in::placeholder { color: var(--ink-3); }
+:root[data-theme="day"] .maps-mic.is-rec { background: #E5484D; color: #FFFFFF; border-color: #E5484D; }
+:root[data-theme="day"] .maps-err { color: #C9353A; }
+:root[data-theme="day"] .tmap-err { color: var(--ink-2); }
+
 /* the rail's Traffic map key, under the countdown */
 .ra-map {
   display: inline-flex;
