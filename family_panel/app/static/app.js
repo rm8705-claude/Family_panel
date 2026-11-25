@@ -7132,6 +7132,7 @@
 
       case 'warning-open': openWarning(el.dataset.id); break;
       case 'trip-detail': openTripDetail(el.dataset.id); break;
+      case 'announce-toggle': toggleAnnounce(); break;
       case 'traffic-map': openTrafficMap(el.dataset.id); break;
       case 'maps': openMapsSheet(); break;
       case 'maps-go': mapsGo(); break;
@@ -7412,6 +7413,7 @@
   function loadTripsNext() {
     return GET('/api/trips/next').then(function (d) {
       D.tripsNext = (d && d.items) || [];
+      D.announce = (d && d.announce) || null;
       D.traffic = (d && d.traffic) || null;
       D.tripsNextAt = Date.now();
       renderAlerts();
@@ -7449,6 +7451,28 @@
     return (D.tripsNext || []).filter(function (t) { return leaveIn(t) >= -10; });
   }
 
+  /* The one switch for "time to leave" on the Sonos — right under the
+     countdown, so turning it off is one tap when it gets too much. */
+  function announceKeyHtml(cls) {
+    var a = D.announce;
+    if (!a || !a.speakers) return '';
+    return '<button class="ra-say' + (a.enabled ? ' is-on' : '') + (cls ? ' ' + cls : '') +
+      '" data-act="announce-toggle" aria-pressed="' + !!a.enabled + '">' + ICON.speaker +
+      '<span>' + (a.enabled ? 'Sonos reminders on' : 'Sonos reminders off') + '</span></button>';
+  }
+
+  function toggleAnnounce() {
+    var on = !(D.announce && D.announce.enabled);
+    act(PUT('/api/trips/announce', { enabled: on }), function (d) {
+      D.announce = Object.assign({}, D.announce || {}, { enabled: !!(d && d.enabled) });
+      renderAlerts();
+      var host = byId('tripsAnnounce');
+      if (host) host.innerHTML = announceKeyHtml('in-sheet');
+      toast(D.announce.enabled ? 'The Sonos will say when it’s time to leave.'
+        : 'Sonos leave reminders off — tap the speaker to turn them back on.', 4000);
+    });
+  }
+
   function renderAlerts() {
     var host = byId('railAlerts');
     if (!host) return;
@@ -7466,7 +7490,7 @@
         '</button>' +
         (mapKeyKnown() ? '<button class="ra-map" data-act="traffic-map" data-id="' + esc(t.id) + '">' +
           CAR_ICON + '<span>Traffic map</span></button>' : '');
-    }).join('') + warns.map(function (w) {
+    }).join('') + (trips.length ? announceKeyHtml('') : '') + warns.map(function (w) {
       return '<button class="ra-warn' + (w.severity === 'major' ? ' is-major' : '') +
         '" data-act="warning-open" data-id="' + esc(w.id) + '">' +
         '<span class="ra-ic">!</span><span class="ra-w">' + esc(w.short || w.title) + '</span></button>';
@@ -7937,6 +7961,7 @@
         'before each trip, using live traffic from Google Maps. ' +
         'Calendar events with an address in their location get one automatically — these are ' +
         'for the regular runs.</p>' + '<div id="trafficStatus">' + trafficStatusHtml() + '</div>' +
+        '<div id="tripsAnnounce" class="trips-say">' + announceKeyHtml('in-sheet') + '</div>' +
         tripsListHtml(list) +
         '<h3 class="trip-h">' + (edit ? 'Edit ' + esc(edit.label) : 'Add a trip') + '</h3>' +
         tripFormHtml(edit),
@@ -9942,12 +9967,14 @@
     if (path === '/api/trips/test') {
       return { minutes: 23, destination: 'Brisbane City', traffic: { configured: true, ok: true } };
     }
+    if (path === '/api/trips/announce') { M.announce = !!body.enabled; return { enabled: M.announce }; }
     if (path === '/api/trips/next') {
       var lvM = (nowMins() + 12) % 1440, arM = (lvM + 23) % 1440;
       var hm = function (m) { return pad2(Math.floor(m / 60)) + ':' + pad2(m % 60); };
       return { items: [{ id: 'w1', label: 'Work', destination: '1 Example St, Brisbane City', person: null,
         arrive: hm(arM), drive_min: 23, live: true, route: 'M3', usual_min: 20,
-        leave_at: hm(lvM), leave_in_min: 12 }] };
+        leave_at: hm(lvM), leave_in_min: 12 }],
+        announce: { enabled: M.announce !== false, speakers: 2 } };
     }
     if (path === '/api/trips') {
       M.trips = M.trips || [];

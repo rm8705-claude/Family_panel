@@ -1189,6 +1189,24 @@ ul, ol { list-style: none; }
 }
 .ra-map svg { width: 1.125rem; height: 1.125rem; display: block; }
 .ra-now { color: var(--ink-2); }
+/* the Sonos leave-reminder switch, under the countdown */
+.ra-say {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  padding: 0 0.875rem;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--hair);
+  background: var(--card);
+  color: var(--ink-3);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.ra-say svg { width: 1.125rem; height: 1.125rem; display: block; }
+.ra-say.is-on { color: var(--ink); border-color: var(--hero); }
+.ra-say:not(.is-on) svg { opacity: 0.45; }
+.trips-say { margin: 0.25rem 0 1rem; }
 
 .sleep-trip { display: none; }
 .sleep-trip.is-on {

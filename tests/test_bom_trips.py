@@ -329,3 +329,53 @@ def test_leave_time_aims_ten_minutes_early_by_default(monkeypatch):
     assert up["Soccer"]["leave_at"] == "08:05" and up["Soccer"]["early_min"] == 20     # its own setting
     no = trips.upcoming({"arrive_early_min": 0}, datetime(2026, 11, 20, 7, 30, tzinfo=db.LOCAL_TZ))
     assert {u["label"]: u["leave_at"] for u in no}["Work"] == "08:10"
+
+
+ANN_CFG = {"arrive_early_min": 0, "screen": {"sleep": "21:00", "wake": "05:45"},
+           "people": [{"id": "rohan", "name": "Rohan"}],
+           "ha_tiles": [{"entity": "media_player.kitchen", "type": "media", "allow_action": True},
+                        {"entity": "media_player.lounge", "type": "media", "allow_action": True}]}
+
+
+def test_leave_announcements_said_once_at_10_and_0(monkeypatch):
+    db.set_json_setting(trips.KEY, [])
+    db.set_json_setting(trips.ANNOUNCE_KEY, {})
+    trips.save({"label": "work", "destination": "1 Example St", "time": "08:30",
+                "days": [4], "minutes": 20, "person": "rohan"})
+    monkeypatch.setattr(trips, "travel_minutes", lambda cfg, dest, depart=None, **kw: (20.0, None))
+    said = []
+    send = lambda cfg, ents, msg: said.append((tuple(ents), msg))          # noqa: E731
+    at = lambda h, m: datetime(2026, 11, 20, h, m, tzinfo=db.LOCAL_TZ)     # noqa: E731
+    assert trips.announce_due(ANN_CFG, [], at(7, 55), send) == []          # 15 min out
+    trips.announce_due(ANN_CFG, [], at(8, 0), send)                        # 10 min out
+    trips.announce_due(ANN_CFG, [], at(8, 1), send)                        # not again
+    trips.announce_due(ANN_CFG, [], at(8, 10), send)                       # leave time
+    assert [m for _, m in said] == ["Rohan, work: leave in 10 minutes. 20 minutes in traffic.",
+                                    "Rohan, time to leave for work. 20 minutes in traffic."]
+    assert said[0][0] == ("media_player.kitchen", "media_player.lounge")
+
+
+def test_leave_announcements_switch_and_quiet_hours(monkeypatch):
+    db.set_json_setting(trips.KEY, [])
+    db.set_json_setting(trips.ANNOUNCE_KEY, {})
+    trips.save({"label": "Gym", "destination": "Gym", "time": "05:30", "days": [4], "minutes": 10})
+    trips.save({"label": "Work", "destination": "Work", "time": "08:30", "days": [4], "minutes": 20})
+    monkeypatch.setattr(trips, "travel_minutes", lambda cfg, dest, depart=None, **kw: (None, None))
+    said = []
+    send = lambda cfg, ents, msg: said.append(msg)                         # noqa: E731
+    trips.announce_due(ANN_CFG, [], datetime(2026, 11, 20, 5, 20, tzinfo=db.LOCAL_TZ), send)
+    assert said == []                                                     # inside sleep hours
+    trips.set_announce(False)
+    trips.announce_due(ANN_CFG, [], datetime(2026, 11, 20, 8, 0, tzinfo=db.LOCAL_TZ), send)
+    assert said == [] and trips.announce_enabled() is False
+    trips.set_announce(True)
+    trips.announce_due({**ANN_CFG, "leave_announce_speakers": "media_player.kitchen"}, [],
+                       datetime(2026, 11, 20, 8, 0, tzinfo=db.LOCAL_TZ),
+                       lambda cfg, ents, msg: said.append((ents, msg)))
+    assert said == [(["media_player.kitchen"], "Work: leave in 10 minutes.")]
+
+
+def test_announce_switch_endpoint(client):
+    assert client.put("/api/trips/announce", json={"enabled": False}).get_json() == {"enabled": False}
+    assert client.get("/api/trips/next").get_json()["announce"]["enabled"] is False
+    client.put("/api/trips/announce", json={"enabled": True})

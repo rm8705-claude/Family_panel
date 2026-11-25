@@ -195,6 +195,22 @@ def fetch_radar(config: dict) -> None:
         db.mark_sync("radar", False, str(e)[:200])
 
 
+def announce_leave(config: dict) -> None:
+    """Every minute: say "leave in 10 minutes" / "time to leave" on the Sonos
+    for any trip that's due (see trips.announce_due)."""
+    import trips
+    try:
+        from app import _event_window_rows
+        today = db.local_today()
+        said = trips.announce_due(config, _event_window_rows(today, today))
+        if said:
+            log.info("leave announcements: %s", said)
+            db.mark_sync("announce", True, said[-1][:200])
+    except Exception as e:
+        log.warning("leave announcement failed: %s", e)
+        db.mark_sync("announce", False, str(e)[:200])
+
+
 def poll_ha(config: dict) -> None:
     import ha
     try:
@@ -265,6 +281,8 @@ def start(config: dict) -> BackgroundScheduler:
     # Rain radar: a new frame every 5-10 minutes.
     if float(mins.get("radar", 10)) > 0:
         add("radar", fetch_radar, mins.get("radar", 10))
+    # "Time to leave" on the Sonos — checked every minute.
+    add("announce", announce_leave, 1)
     add("ha", poll_ha, mins.get("ha", 0.25))
     # photos change rarely; 6-hourly keeps a shared album fresh same-day
     # without hammering Google's share pages

@@ -13,7 +13,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.41.1"
+APP_VERSION = "0.42.0"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -1079,6 +1079,15 @@ def api_trips_drive():
     return jsonify(trips.drive_to(CONFIG, dest, arrive, origin=origin or None))
 
 
+@app.put("/api/trips/announce")
+def api_trips_announce():
+    """The one switch for the spoken "time to leave" on the Sonos."""
+    import trips
+    body = request.get_json(force=True, silent=True) or {}
+    trips.set_announce(bool(body.get("enabled")))
+    return jsonify({"enabled": trips.announce_enabled()})
+
+
 @app.get("/api/trips/next")
 def api_trips_next():
     """Today's trips due soon, with live Google Maps drive times: the leave-by
@@ -1086,6 +1095,8 @@ def api_trips_next():
     import trips
     today = db.local_today()
     return jsonify({"items": trips.upcoming(CONFIG, events=_event_window_rows(today, today)),
+                    "announce": {"enabled": trips.announce_enabled(),
+                                 "speakers": len(trips.announce_speakers(CONFIG))},
                     "traffic": {"provider": "Google Maps",
                                 "configured": bool(trips._api_key(CONFIG)),
                                 **trips.traffic_status}})

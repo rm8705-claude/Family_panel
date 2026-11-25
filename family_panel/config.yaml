@@ -5,7 +5,7 @@
 # together whenever you ship a change (see the repo's `ship` skill).
 name: "Family Panel"
 description: "Self-hosted family wall calendar: shared calendar, chores, lists, meal planner and Home Assistant tiles."
-version: "0.41.1"
+version: "0.42.0"
 slug: "family_panel"
 url: "https://github.com/rm8705-claude/family_panel"
 arch:
@@ -229,6 +229,10 @@ options:
   # Rain radar on the screensaver: the nearest BOM radar is picked from home.
   # Only to force another, put its 128 km product id here, e.g. "IDR663".
   bom_radar: ""
+  # "Time to leave" spoken on the Sonos (10 min before, and at leave time).
+  # Empty = every speaker on the panel; or list some:
+  # "media_player.kitchen, media_player.lounge". On/off is on the panel.
+  leave_announce_speakers: ""
   music_assistant_url: ""
   music_assistant_token: ""
   llm_provider: "anthropic"
@@ -319,6 +323,7 @@ schema:
   fuel_type: "str?"
   fuel_radius_km: "int(1,50)?"
   bom_radar: "str?"
+  leave_announce_speakers: "str?"
   music_assistant_url: "str?"
   music_assistant_token: "password?"
   llm_provider: "list(anthropic|lmstudio)"

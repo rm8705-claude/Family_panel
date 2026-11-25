@@ -415,3 +415,87 @@ def upcoming(config: dict, now: datetime | None = None, events: list[dict] | Non
         })
     out.sort(key=lambda x: x["leave_in_min"])
     return out
+
+
+# ------------------------------------------------- spoken on the Sonos
+# "Work: leave in 10 minutes — 23 minutes in traffic", then "Time to leave
+# for work" at the leave time, over whatever is playing (ha.announce, which
+# keeps to the night volume cap and the sonos_tts engine). Each trip is said
+# once per point per day. One switch turns the lot off (the speaker key in
+# the rail, and Settings > Trips); never inside the screen's sleep hours.
+ANNOUNCE_KEY = "announce:leave"
+ANNOUNCE_POINTS = (10, 0)            # minutes before leaving
+ANNOUNCE_WINDOW = 3                  # say it if we're up to this late for a point
+
+
+def announce_enabled() -> bool:
+    return (db.get_json_setting(ANNOUNCE_KEY) or {}).get("enabled", True)
+
+
+def set_announce(enabled: bool) -> None:
+    st = db.get_json_setting(ANNOUNCE_KEY) or {}
+    st["enabled"] = bool(enabled)
+    db.set_json_setting(ANNOUNCE_KEY, st)
+
+
+def _in_sleep(config: dict, now: datetime) -> bool:
+    sc = config.get("screen") or {}
+    try:
+        s = _mins(sc.get("sleep", "21:00"))
+        w = _mins(sc.get("wake", "05:45"))
+    except (ValueError, AttributeError):
+        return False
+    n = now.hour * 60 + now.minute
+    return (s <= n < w) if s < w else (n >= s or n < w)
+
+
+def announce_speakers(config: dict) -> list[str]:
+    own = [e.strip() for e in str(config.get("leave_announce_speakers") or "").split(",") if e.strip()]
+    media = [t["entity"] for t in config.get("ha_tiles", []) or []
+             if t.get("type") == "media" and t.get("allow_action") and t.get("entity")]
+    return [e for e in own if e in media] if own else media
+
+
+def announce_message(config: dict, t: dict, point: int) -> str:
+    who = next((p.get("name") for p in config.get("people", []) or []
+                if p.get("id") == t.get("person")), None)
+    lead = f"{who}, " if who else ""
+    if point == 0:
+        msg = f"{lead}time to leave for {t['label']}."
+    else:
+        msg = f"{lead}{t['label']}: leave in {point} minutes."
+    if t.get("live"):
+        msg += f" {t['drive_min']} minutes in traffic."
+    return msg
+
+
+def announce_due(config: dict, events: list[dict] | None = None, now: datetime | None = None,
+                 send=None) -> list[str]:
+    """Say whatever is due now; returns what was said."""
+    now = now or datetime.now(db.LOCAL_TZ)
+    if not announce_enabled() or _in_sleep(config, now):
+        return []
+    speakers = announce_speakers(config)
+    if not speakers:
+        return []
+    if send is None:
+        import ha
+        send = ha.announce
+    st = db.get_json_setting(ANNOUNCE_KEY) or {}
+    today = now.strftime("%Y-%m-%d")
+    done = set(st.get("done", [])) if st.get("date") == today else set()
+    said = []
+    for t in upcoming(config, now, events):
+        n = t["leave_in_min"]
+        for point in ANNOUNCE_POINTS:
+            key = f"{t['id']}@{point}"
+            if key in done or not (point - ANNOUNCE_WINDOW <= n <= point):
+                continue
+            msg = announce_message(config, t, point)
+            send(config, speakers, msg)
+            done.add(key)
+            said.append(msg)
+            break                     # one line per trip per run
+    st.update(date=today, done=sorted(done))
+    db.set_json_setting(ANNOUNCE_KEY, st)
+    return said
