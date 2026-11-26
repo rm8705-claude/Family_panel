@@ -505,24 +505,75 @@ def discover(config: dict, n: int = 6, source: str | None = None) -> dict:
     return {"available": True, "items": picked, "sources": srcs, "source": source}
 
 
+def _ha_state(entity: str) -> tuple[str | None, dict]:
+    try:
+        base, token = ha._api_base()
+        r = requests.get(f"{base}/states/{entity}", headers=ha._headers(token), timeout=TIMEOUT)
+        r.raise_for_status()
+        d = r.json() or {}
+        return d.get("state"), d.get("attributes") or {}
+    except Exception:                       # noqa: BLE001
+        return None, {}
+
+
+START_WAIT_S = 25
+POLL_S = 2.5
+
+
+def _started(target: str, before: tuple, wait: float = START_WAIT_S) -> bool:
+    """Did the speaker actually start? Home Assistant answers play_media as
+    soon as Music Assistant takes the order, playing or not — so watch the
+    player: playing, and a different track (or it wasn't playing before)."""
+    was_state, was_attrs = before
+    was_title = was_attrs.get("media_title")
+    deadline = time.time() + wait
+    while time.time() < deadline:
+        time.sleep(POLL_S)
+        st, attrs = _ha_state(target)
+        if st == "playing" and (was_state != "playing" or attrs.get("media_title") != was_title):
+            return True
+    return False
+
+
+def _play_media(target: str, uri: str, media_type: str, radio: bool) -> None:
+    _service("play_media", {"entity_id": target, "media_id": uri, "media_type": media_type,
+                            "enqueue": "replace", "radio_mode": radio})
+
+
 def play(config: dict, entity: str, uri: str, media_type: str) -> None:
-    """Play a library item on the speaker (via its MA twin). Artists start
-    radio mode — similar tracks, endlessly; playlists and albums play
-    shuffled and then carry on into radio once they run out."""
+    """Play a library item on the speaker (via its MA twin), and make sure
+    it really started.
+
+    Artists, playlists and albums play their own tracks, shuffled. (Artists
+    used to start "radio mode", but that leans on Spotify's recommendations,
+    which Spotify has shut off for most apps — the queue came up empty and
+    nothing played, silently.) A song still tries radio, so it carries on
+    after; if nothing has started 20-odd seconds later, it's played plain."""
     players, _ = player_map(config)
     target = players.get(entity)
     if not target:
         raise ValueError("Music Assistant has no player for that speaker")
     if media_type not in PLAYABLE:
         raise ValueError("Unknown media type")
-    if media_type in ("playlist", "album"):
+    if media_type in ("playlist", "album", "artist"):
         try:
             ha_shuffle(target)
         except Exception as e:              # noqa: BLE001
             log.info("shuffle on %s: %s", target, e)
-    _service("play_media", {"entity_id": target, "media_id": uri,
-                            "media_type": media_type, "enqueue": "replace",
-                            "radio_mode": media_type in ("artist", "track")})
+    before = _ha_state(target)
+    radio = media_type == "track"
+    _play_media(target, uri, media_type, radio)
+    if _started(target, before):
+        return
+    if radio:
+        log.info("radio didn't start on %s; playing %s plain", target, uri)
+        _play_media(target, uri, media_type, False)
+        if _started(target, before):
+            return
+    st, _ = _ha_state(target)
+    raise RuntimeError("Music Assistant took the request but the speaker never started"
+                       + (f" (it's {st})" if st else "")
+                       + " — Music Assistant's log at this moment will say why")
 
 
 # ---------------------------------------------------------------- search
@@ -588,10 +639,7 @@ def surprise(config: dict, entity: str, source: str | None = None) -> dict:
         raise ValueError("Nothing from that account in the library yet"
                          if source else "Nothing in the Music Assistant library yet")
     pick = random.choice(items)
-    _start(entity, pick["name"], lambda: _service(
-        "play_media", {"entity_id": players[entity], "media_id": pick["uri"],
-                       "media_type": pick["media_type"], "enqueue": "replace",
-                       "radio_mode": True}))
+    _start(entity, pick["name"], lambda: play(config, entity, pick["uri"], pick["media_type"]))
     return pick
 
 

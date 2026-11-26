@@ -79,14 +79,39 @@ def test_items_are_labelled_with_their_service():
     assert by["Currents"]["sub"] == "Tame Impala"
 
 
-def test_play_artist_is_radio_on_the_ma_twin(monkeypatch):
+def test_play_artist_shuffles_its_own_tracks_no_radio(monkeypatch):
     calls = []
     fake_ha(monkeypatch, calls)
+    monkeypatch.setattr(music, "_started", lambda target, before, wait=0: True)
+    monkeypatch.setattr(music, "_ha_state", lambda e: ("idle", {}))
     music.play(CONFIG, "media_player.lounge", "spotify://artist/a", "artist")
     url, body = calls[-1]
     assert url.endswith("/services/music_assistant/play_media")
     assert body["entity_id"] == "media_player.lounge_2"
-    assert body["radio_mode"] is True
+    assert body["radio_mode"] is False
+    assert any("shuffle_set" in u for u, _ in calls)
+
+
+def test_song_radio_falls_back_to_plain_then_reports(monkeypatch):
+    calls = []
+    fake_ha(monkeypatch, calls)
+    monkeypatch.setattr(music, "_ha_state", lambda e: ("idle", {}))
+    started = iter([False, True])
+    monkeypatch.setattr(music, "_started", lambda target, before, wait=0: next(started))
+    music.play(CONFIG, "media_player.lounge", "ytmusic://track/1", "track")
+    radios = [b["radio_mode"] for u, b in calls if u.endswith("play_media")]
+    assert radios == [True, False]
+    monkeypatch.setattr(music, "_started", lambda target, before, wait=0: False)
+    with pytest.raises(RuntimeError, match="never started"):
+        music.play(CONFIG, "media_player.lounge", "spotify://album/1", "album")
+
+
+def test_started_watches_for_a_new_track(monkeypatch):
+    states = iter([("buffering", {}), ("playing", {"media_title": "Old"}), ("playing", {"media_title": "New"})])
+    monkeypatch.setattr(music, "_ha_state", lambda e: next(states))
+    monkeypatch.setattr(music, "POLL_S", 0)
+    monkeypatch.setattr(music.time, "sleep", lambda s: None)
+    assert music._started("media_player.x", ("playing", {"media_title": "Old"}), wait=5) is True
 
 
 def test_unavailable_when_music_assistant_missing(monkeypatch):

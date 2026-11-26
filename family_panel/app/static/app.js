@@ -3747,7 +3747,7 @@
        favourite in `source`, and YouTube Music can take 20 s to get going —
        so those wait longer, and count as started once the track changes or
        the speaker starts playing. */
-    if (Date.now() - s.at > (s.ma ? 60000 : 20000)) { state.npStart = null; return null; }
+    if (Date.now() - s.at > (s.ma ? 80000 : 20000)) { state.npStart = null; return null; }
     if (a.source === s.name) { state.npStart = null; return null; }
     if (s.ma && ((a.title && a.title !== s.prevTitle) || (a.playing && !s.wasPlaying))) {
       state.npStart = null;
@@ -3768,7 +3768,9 @@
     updateNowPlaying();
     updateSonosSheet();
     render();
-    [25000, 50000].forEach(function (ms) {
+    /* the backend now waits to see the speaker actually start (up to ~50 s
+       when a song's radio has to be retried plain), so ask after that */
+    [35000, 65000].forEach(function (ms) {
       setTimeout(function () {
         if (state.npStart !== mark) return;           // started, or a newer tap
         GET('/api/ha/music/play_status?entity=' + encodeURIComponent(entity)).then(function (d) {
@@ -3777,7 +3779,7 @@
             state.npStart = null;
             toast('Couldn’t play ' + name + ': ' + (d.error || 'Music Assistant gave up') + '.', 7000);
             updateNowPlaying(); updateSonosSheet(); render();
-          } else if (ms === 50000) {
+          } else if (ms === 65000) {
             toast('Still waiting on ' + name + ' — Music Assistant is slow to start it.', 5000);
           }
           reloadHaAfterTap();
