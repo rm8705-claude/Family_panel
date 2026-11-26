@@ -192,6 +192,27 @@ class MAUnavailable(Exception):
     pass
 
 
+class MAError(RuntimeError):
+    """Home Assistant / Music Assistant turned a call down; the message is
+    the reason in plain words."""
+    def __init__(self, msg: str, status: int = 0, not_found: bool | None = None):
+        super().__init__(msg)
+        self.status = status
+        low = msg.lower()
+        self.not_found = (not_found if not_found is not None else
+                          ("not be found" in low or "notfound" in low or "couldn't find" in low))
+
+
+def _ma_reason(text: str) -> str:
+    t = " ".join(str(text or "").split())
+    if "MediaNotFound" in t or "could not be found" in t:
+        return ("Music Assistant couldn't find that item — usually its Spotify / YouTube Music "
+                "connection isn't working (Music Assistant > Settings > Providers; Spotify needs Premium)")
+    if "ProviderUnavailable" in t or "unavailable" in t.lower():
+        return "Music Assistant says that music service is unavailable right now"
+    return f"Music Assistant said: {t[:180]}" if t else "Music Assistant turned it down"
+
+
 def _ma_post(base: str, config: dict, command: str, args: dict | None):
     headers = {"Content-Type": "application/json"}
     tok = str(config.get("music_assistant_token") or "").strip()
@@ -290,13 +311,22 @@ def _ma_library(config: dict, kind: str, n: int, instance: str) -> list[dict]:
     return items[:n]
 
 
-def _service(service: str, body: dict, want_response: bool = False):
+# play_media doesn't answer until Music Assistant has the stream going — for
+# Spotify / YouTube Music that's often well past 10 s, and the old 10 s limit
+# turned a slow start into a "read timed out" error on the wall.
+PLAY_TIMEOUT = 90
+
+
+def _service(service: str, body: dict, want_response: bool = False, timeout: float = TIMEOUT):
     base, token = ha._api_base()
     url = f"{base}/services/music_assistant/{service}"
     if want_response:
         url += "?return_response"
-    r = requests.post(url, headers=ha._headers(token), json=body, timeout=TIMEOUT)
-    r.raise_for_status()
+    r = requests.post(url, headers=ha._headers(token), json=body, timeout=(5, timeout))
+    if r.status_code >= 400:
+        raw = str(r.text or "")
+        raise MAError(_ma_reason(raw), r.status_code,
+                      "MediaNotFound" in raw or "could not be found" in raw)
     if not want_response:
         return None
     data = r.json() or {}
@@ -310,7 +340,7 @@ def _library(entry: str, kind: str, n: int) -> list[dict]:
         resp = _service("get_library", {"config_entry_id": entry, "media_type": kind,
                                         "limit": n, "order_by": "random"}, True)
         items = (resp or {}).get("items") or []
-    except requests.HTTPError:
+    except (requests.HTTPError, MAError):
         resp = _service("get_library", {"config_entry_id": entry, "media_type": kind,
                                         "limit": 250}, True)
         items = (resp or {}).get("items") or []
@@ -437,7 +467,60 @@ def _shape(item: dict) -> dict | None:
                 if isinstance(m, dict)}
         key = next((d for d in ("spotify", "ytmusic") if d in doms), None)
     return {"uri": uri, "name": name, "media_type": kind, "sub": sub,
-            "source": key, "provider": PROVIDERS.get(key), "image": _art_link(item)}
+            "source": key, "provider": PROVIDERS.get(key), "image": _art_link(item),
+            "spotify": spotify_link(item)}
+
+
+# ------------------------------------------------- Sonos plays Spotify itself
+# The Sonos already has Spotify linked (in the Sonos app), and Home Assistant
+# can hand a Sonos speaker a Spotify share link to play directly — no Music
+# Assistant in the path at all, which is the part that kept failing. Songs,
+# albums and playlists can go that way; artists (no share-link playback),
+# YouTube Music, and anything the Sonos turns down go through MA as before.
+SONOS_SPOTIFY_KINDS = ("track", "album", "playlist")
+_SPOTIFY_URI = re.compile(r"^spotify[^:/]*://(track|album|playlist|artist)/([A-Za-z0-9]{10,40})$")
+
+
+def spotify_link(item: dict) -> str | None:
+    kind = item.get("media_type")
+    if kind not in SONOS_SPOTIFY_KINDS:
+        return None
+    m = _SPOTIFY_URI.match(str(item.get("uri") or ""))
+    sid = m.group(2) if m else None
+    if not sid:
+        for pm in item.get("provider_mappings") or []:
+            if isinstance(pm, dict) and str(pm.get("provider_domain") or "").startswith("spotify"):
+                raw = str(pm.get("item_id") or "").split(":")[-1]
+                if re.fullmatch(r"[A-Za-z0-9]{10,40}", raw):
+                    sid = raw
+                    break
+    return f"https://open.spotify.com/{kind}/{sid}" if sid else None
+
+
+def _ha_call(domain: str, service: str, body: dict, timeout: float = 30) -> None:
+    base, token = ha._api_base()
+    r = requests.post(f"{base}/services/{domain}/{service}", headers=ha._headers(token),
+                      json=body, timeout=(5, timeout))
+    r.raise_for_status()
+
+
+def play_on_sonos(entity: str, link: str, media_type: str) -> bool:
+    """Hand the Sonos a Spotify link; True if it really started."""
+    before = _ha_state(entity)
+    if media_type in ("album", "playlist"):
+        try:
+            _ha_call("media_player", "shuffle_set", {"entity_id": entity, "shuffle": True})
+        except Exception as e:              # noqa: BLE001
+            log.info("sonos shuffle %s: %s", entity, e)
+    try:
+        _ha_call("media_player", "play_media", {
+            "entity_id": entity, "media_content_id": link,
+            "media_content_type": "playlist" if media_type != "track" else "music",
+            "enqueue": "replace"}, timeout=45)
+    except Exception as e:                  # noqa: BLE001
+        log.info("sonos spotify %s on %s: %s", link, entity, e)
+        return False
+    return _started(entity, before, wait=15)
 
 
 def _picks(entry: str, kind: str, n: int, source: str | None) -> list[dict]:
@@ -537,10 +620,11 @@ def _started(target: str, before: tuple, wait: float = START_WAIT_S) -> bool:
 
 def _play_media(target: str, uri: str, media_type: str, radio: bool) -> None:
     _service("play_media", {"entity_id": target, "media_id": uri, "media_type": media_type,
-                            "enqueue": "replace", "radio_mode": radio})
+                            "enqueue": "replace", "radio_mode": radio}, timeout=PLAY_TIMEOUT)
 
 
-def play(config: dict, entity: str, uri: str, media_type: str) -> None:
+def play(config: dict, entity: str, uri: str, media_type: str, spotify: str | None = None,
+         name: str | None = None) -> None:
     """Play a library item on the speaker (via its MA twin), and make sure
     it really started.
 
@@ -549,6 +633,8 @@ def play(config: dict, entity: str, uri: str, media_type: str) -> None:
     which Spotify has shut off for most apps — the queue came up empty and
     nothing played, silently.) A song still tries radio, so it carries on
     after; if nothing has started 20-odd seconds later, it's played plain."""
+    if spotify and media_type in SONOS_SPOTIFY_KINDS and play_on_sonos(entity, spotify, media_type):
+        return                              # the Sonos is playing it from Spotify itself
     players, _ = player_map(config)
     target = players.get(entity)
     if not target:
@@ -562,7 +648,16 @@ def play(config: dict, entity: str, uri: str, media_type: str) -> None:
             log.info("shuffle on %s: %s", target, e)
     before = _ha_state(target)
     radio = media_type == "track"
-    _play_media(target, uri, media_type, radio)
+    try:
+        _play_media(target, uri, media_type, radio)
+    except MAError as e:
+        # "Not found" by its id: ask again by name, so Music Assistant
+        # searches every service it can actually reach for it.
+        if not (e.not_found and name):
+            raise
+        log.info("%s not found by uri on %s; trying by name %r", uri, target, name)
+        _play_media(target, name, media_type, False)
+        radio = False
     if _started(target, before):
         return
     if radio:
@@ -639,7 +734,8 @@ def surprise(config: dict, entity: str, source: str | None = None) -> dict:
         raise ValueError("Nothing from that account in the library yet"
                          if source else "Nothing in the Music Assistant library yet")
     pick = random.choice(items)
-    _start(entity, pick["name"], lambda: play(config, entity, pick["uri"], pick["media_type"]))
+    _start(entity, pick["name"], lambda: play(config, entity, pick["uri"], pick["media_type"],
+                                              pick.get("spotify"), pick["name"]))
     return pick
 
 
@@ -681,7 +777,8 @@ def play_status(entity: str) -> dict:
     return j or {"state": None}
 
 
-def start_play(config: dict, entity: str, uri: str, media_type: str, name: str = "") -> None:
+def start_play(config: dict, entity: str, uri: str, media_type: str, name: str = "",
+               spotify: str | None = None) -> None:
     """Check the order now (so a bad one still fails on the tap), play it
     in the background."""
     players, _ = player_map(config)
@@ -691,4 +788,6 @@ def start_play(config: dict, entity: str, uri: str, media_type: str, name: str =
         raise ValueError("Unknown media type")
     if not uri:
         raise ValueError("Nothing to play")
-    _start(entity, name or uri, lambda: play(config, entity, uri, media_type))
+    if spotify and not re.fullmatch(r"https://open\.spotify\.com/(track|album|playlist)/[A-Za-z0-9]{10,40}", spotify):
+        spotify = None
+    _start(entity, name or uri, lambda: play(config, entity, uri, media_type, spotify, name or None))

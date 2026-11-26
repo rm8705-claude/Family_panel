@@ -289,3 +289,54 @@ def test_start_play_returns_at_once_and_reports_failure(monkeypatch):
     assert st["state"] == "error" and "PO token" in st["error"] and st["name"] == "Song"
     with pytest.raises(ValueError):                      # a bad order still fails on the tap
         music.start_play(CONFIG, "media_player.nowhere", "x", "track")
+
+
+def test_spotify_links_from_any_item_shape():
+    assert music.spotify_link({"media_type": "playlist", "uri": "spotify--abc://playlist/37i9dQZF1DXcBWIGoYBM5M"}) \
+        == "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M"
+    assert music.spotify_link({"media_type": "album", "uri": "library://album/12",
+                               "provider_mappings": [{"provider_domain": "spotify",
+                                                      "item_id": "spotify:album:4aawyAB9vmqN3uQ7FjRGTy"}]}) \
+        == "https://open.spotify.com/album/4aawyAB9vmqN3uQ7FjRGTy"
+    assert music.spotify_link({"media_type": "artist", "uri": "spotify://artist/0OdUWJ0sBjDrqHygGUXeCF"}) is None
+    assert music.spotify_link({"media_type": "track", "uri": "ytmusic://track/abc"}) is None
+
+
+def test_spotify_goes_straight_to_the_sonos(monkeypatch):
+    calls = []
+    fake_ha(monkeypatch, calls)
+    monkeypatch.setattr(music, "_ha_state", lambda e: ("idle", {}))
+    monkeypatch.setattr(music, "_started", lambda target, before, wait=0: True)
+    music.play(CONFIG, "media_player.lounge", "library://playlist/1", "playlist",
+               "https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M")
+    pm = [(u, b) for u, b in calls if u.endswith("/services/media_player/play_media")]
+    assert pm and pm[0][1]["entity_id"] == "media_player.lounge"          # the Sonos itself, not MA
+    assert pm[0][1]["media_content_id"].startswith("https://open.spotify.com/")
+    assert not any("music_assistant/play_media" in u for u, _ in calls)
+
+
+def test_not_found_by_id_retries_by_name(monkeypatch):
+    calls = []
+    fake_ha(monkeypatch, calls)
+    monkeypatch.setattr(music, "_ha_state", lambda e: ("idle", {}))
+    monkeypatch.setattr(music, "_started", lambda target, before, wait=0: True)
+    real_post = music.requests.post
+
+    class Bad:
+        status_code = 500
+        text = "music_assistant_models.errors.MediaNotFoundError: The requested media item could not be found."
+
+    def post(url, headers=None, json=None, timeout=None):
+        if url.endswith("music_assistant/play_media") and json["media_id"].startswith("library://"):
+            calls.append((url, json))
+            return Bad()
+        return real_post(url, headers=headers, json=json, timeout=timeout)
+    monkeypatch.setattr(music.requests, "post", post)
+    music.play(CONFIG, "media_player.lounge", "library://artist/9", "artist", None, "Khruangbin")
+    ids = [b["media_id"] for u, b in calls if u.endswith("music_assistant/play_media")]
+    assert ids == ["library://artist/9", "Khruangbin"]
+
+
+def test_ma_errors_read_plainly():
+    assert "Spotify / YouTube Music connection" in music._ma_reason("MediaNotFoundError: x could not be found")
+    assert music.MAError(music._ma_reason("could not be found")).not_found

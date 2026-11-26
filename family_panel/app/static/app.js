@@ -2833,7 +2833,11 @@
   /* The tabs, then whatever the picked one offers: fresh picks from an
      account, or the favourites list with its search and shuffle switch. */
   function playChoiceHtml(t) {
-    return musicTabsHtml() + (curSrc() === 'favs' ? sourceRows(t) : discoverHtml(t));
+    if (curSrc() === 'favs') return musicTabsHtml() + sourceRows(t);
+    if (!musicOn() || !t || !t.allow_action) return musicTabsHtml();
+    return '<div class="mu-bar">' + musicTabsHtml() + discoverToolsHtml(t) + '</div>' +
+      '<div class="mu-discover"><div class="mu-body" data-entity="' + esc(t.entity) + '">' +
+      musicBodyHtml(t.entity) + '</div></div>';
   }
 
   function loadMusic() {
@@ -2867,7 +2871,7 @@
       : '';
     return '<button class="mu-tile is-' + esc(it.media_type) + (art ? '' : ' no-art') + '" data-act="music-play" data-entity="' +
       esc(entity) + '" data-uri="' + esc(it.uri) + '" data-type="' + esc(it.media_type) +
-      '" data-name="' + esc(it.name) + '">' +
+      '" data-name="' + esc(it.name) + '"' + (it.spotify ? ' data-sp="' + esc(it.spotify) + '"' : '') + '>' +
       '<span class="mu-art">' + art + '<span class="mu-ic">' +
       (ICON[MUSIC_KIND_ICON[it.media_type]] || ICON.playlist) + '</span></span>' +
       '<span class="mu-n">' + esc(it.name) + '</span>' +
@@ -2901,12 +2905,10 @@
       : 'Nothing from ' + esc(curSrcLabel()) + ' in the Music Assistant library yet.') + '</p>';
   }
 
-  function discoverHtml(t) {
-    if (!musicOn() || !t || !t.allow_action) return '';
+  function discoverToolsHtml(t) {
     var m = state.music;
     var q = m.q || '';
-    return '<div class="mu-discover">' +
-      '<div class="np-src-tools mu-tools">' +
+    return '<div class="np-src-tools mu-tools">' +
       '<button class="sn-wbtn np-surprise" data-act="sonos-surprise" data-entity="' + esc(t.entity) +
       '" data-label="Surprise me">' + ICON.playlist + '<span>Surprise me</span></button>' +
       '<div class="np-src-search mu-search">' +
@@ -2916,9 +2918,7 @@
       '<button class="np-src-search-x" data-act="music-search-clear" aria-label="Clear search"' +
       (q ? '' : ' hidden') + '>' + ICON.close + '</button></div>' +
       '<button class="mu-refresh" data-act="music-refresh" aria-label="Deal new picks"' +
-      (m.loading ? ' disabled' : '') + '>' + ICON.swap + '</button></div>' +
-      '<div class="mu-body" data-entity="' + esc(t.entity) + '">' + musicBodyHtml(t.entity) + '</div>' +
-      '</div>';
+      (m.loading ? ' disabled' : '') + '>' + ICON.swap + '</button></div>';
   }
 
   function paintMusicBody() {
@@ -2962,7 +2962,8 @@
     el.disabled = true;
     el.classList.add('is-busy');
     act(POST('/api/ha/music/play', { entity: el.dataset.entity, uri: el.dataset.uri,
-                                     media_type: el.dataset.type, name: el.dataset.name }, MUSIC_MS), function () {
+                                     media_type: el.dataset.type, name: el.dataset.name,
+                                     spotify: el.dataset.sp || null }, MUSIC_MS), function () {
       toast('Starting ' + el.dataset.name + '…');
       markMusicStarting(el.dataset.entity, el.dataset.name);
       reloadHaAfterTap();
@@ -3077,6 +3078,7 @@
        they are one tap each, and Pick rooms is the second sheet for the rest. */
     var row = list.length < 2 ? '' :
       '<div class="sn-target-row">' +
+      '<div class="np-sec sn-row-h">Play on</div>' +
       '<div class="sn-target">' + list.map(function (t) {
         return '<button class="sn-tgt' + (t.entity === target.entity ? ' is-on' :
           (group.indexOf(t) !== -1 ? ' is-with' : '')) +
@@ -3086,9 +3088,7 @@
       sonosWhereHtml(list) +
       '</div>';
     return '<div class="np-sources sn-favs">' +
-      '<div class="np-sec">Play something' +
-      (list.length > 1 ? ' on <b>' + esc(groupName(group)) + '</b>' : '') + '</div>' +
-      row + playChoiceHtml(group[0]) + '</div>';
+      (row || '<div class="np-sec">Play something</div>') + playChoiceHtml(group[0]) + '</div>';
   }
 
   function sonosSheetHtml() {
@@ -3110,12 +3110,11 @@
       'S.browser_fallback_url=https%3A%2F%2Fplay.google.com%2Fstore%2Fapps%2Fdetails%3Fid%3Dcom.sonos.acr2;end">' +
       'Open Sonos app</a>' +
       '</div>' +
-      /* What to play sits first — the household's ask — and the speakers'
-         own controls (now playing, volume) follow underneath. */
-      sonosFavouritesHtml(list) +
+      /* Now playing and volume first, what to play underneath. */
       '<div class="sn-list">' + sonosGroups(list).map(function (g) {
         return g.length > 1 ? sonosGroupCard(g, list) : sonosSpeakerCard(g[0], list);
-      }).join('') + '</div>';
+      }).join('') + '</div>' +
+      sonosFavouritesHtml(list);
   }
 
   /* The speakers as Sonos has them grouped: one list per group, the group's

@@ -13,7 +13,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import db
 from config import BASE_DIR, load_config, env
 
-APP_VERSION = "0.43.1"
+APP_VERSION = "0.44.0"
 
 CONFIG = load_config()
 db.init_db(CONFIG)
@@ -1450,7 +1450,8 @@ def api_ha_music_play():
     def go():
         # returns once the order is checked; the playing carries on behind
         music.start_play(CONFIG, body["entity"], str(body.get("uri") or ""),
-                         str(body.get("media_type") or ""), str(body.get("name") or ""))
+                         str(body.get("media_type") or ""), str(body.get("name") or ""),
+                         str(body.get("spotify") or "") or None)
         return jsonify({"ok": True, "started": True})
     return _music_call(go)
 
