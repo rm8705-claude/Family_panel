@@ -340,3 +340,28 @@ def test_not_found_by_id_retries_by_name(monkeypatch):
 def test_ma_errors_read_plainly():
     assert "Spotify / YouTube Music connection" in music._ma_reason("MediaNotFoundError: x could not be found")
     assert music.MAError(music._ma_reason("could not be found")).not_found
+
+
+def test_plays_straight_through_music_assistant_when_it_can(monkeypatch):
+    calls = []
+    fake_ha(monkeypatch, calls)
+    music._players_direct.update(list=None)
+    monkeypatch.setattr(music, "_ha_state", lambda e: ("idle", {}))
+    monkeypatch.setattr(music, "_started", lambda target, before, wait=0: True)
+    ha_post = music.requests.post
+    sent = []
+
+    def post(url, headers=None, json=None, timeout=None):
+        if not url.endswith("/api"):
+            return ha_post(url, headers=headers, json=json, timeout=timeout)
+        sent.append(json)
+        if json["command"] == "players/all":
+            return Resp([{"player_id": "RINCON_1", "display_name": "Lounge"},
+                         {"player_id": "RINCON_2", "display_name": "Bathroom"}])
+        return Resp(None)
+    monkeypatch.setattr(music.requests, "post", post)
+    music.play(CONFIG, "media_player.lounge", "library://artist/9", "artist", None, "Khruangbin")
+    pm = [j for j in sent if j["command"] == "player_queues/play_media"]
+    assert pm and pm[0]["args"]["queue_id"] == "RINCON_1" and pm[0]["args"]["media"] == "library://artist/9"
+    assert not any("music_assistant/play_media" in u for u, _ in calls)       # Home Assistant not used
+    assert music._attempts[-1]["route"] == "Music Assistant direct"

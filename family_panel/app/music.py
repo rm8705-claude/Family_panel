@@ -33,6 +33,7 @@ from urllib.parse import quote, urlparse
 
 import requests
 
+import db
 import ha
 
 log = logging.getLogger("family-panel.music")
@@ -129,11 +130,23 @@ def status(config: dict) -> dict:
     chain (find MA players -> match speakers -> read the library) fails."""
     out = {"ma_players": None, "config_entry": None, "speaker_map": None,
            "unmatched_speakers": None, "library_counts": {}, "error": None,
-           "ma_api": None, "accounts": None}
+           "ma_api": None, "accounts": None, "music_services": None,
+           "ma_players_direct": None, "speaker_to_ma_player": None, "last_plays": list(_attempts)}
     try:
         _ma.update(providers=None, down_until=0.0, base=None)   # probe afresh
+        _players_direct.update(list=None)
         out["accounts"] = sources(config)
         out["ma_api"] = f"ok at {_ma['base']}"
+        # every streaming service MA has, working or not — "available: false"
+        # is the usual reason for "media item could not be found"
+        out["music_services"] = [
+            {"name": p.get("name"), "domain": p.get("domain"), "id": p.get("instance_id"),
+             "available": p.get("available", True)}
+            for p in (_ma["providers"] or []) if isinstance(p, dict) and p.get("domain") in STREAMING]
+        out["ma_players_direct"] = ma_players(config)
+        out["speaker_to_ma_player"] = {
+            t["entity"]: ma_queue_for(config, t["entity"])
+            for t in config.get("ha_tiles", []) or [] if t.get("type") == "media" and t.get("entity")}
     except Exception as e:                  # noqa: BLE001
         out["ma_api"] = f"{type(e).__name__}: {e}"
     try:
@@ -223,6 +236,9 @@ def _ma_post(base: str, config: dict, command: str, args: dict | None):
     if r.status_code in (401, 403):
         raise MAUnavailable(f"Music Assistant at {base} wants a login token "
                             "(add-on option music_assistant_token)")
+    if r.status_code >= 400 and r.status_code not in (404, 405):
+        # MA's own reason (e.g. MediaNotFoundError), not just "500 Server Error"
+        raise ValueError(" ".join(str(r.text or f"HTTP {r.status_code}").split())[:240])
     r.raise_for_status()
     data = r.json()
     if isinstance(data, dict) and "message_id" in data and ("result" in data or "error_code" in data):
@@ -258,6 +274,49 @@ def ma_api(config: dict, command: str, args: dict | None = None):
     why = f"Music Assistant not reachable ({last})"
     _ma.update(down_until=time.time() + DOWN_RETRY_S, down_why=why)
     raise MAUnavailable(why)
+
+
+# ------------------------------------------------- Music Assistant players
+# Playback goes straight to Music Assistant (player_queues/play_media) when
+# its API is reachable — the same server the library, Discover and search
+# came from, so the item ids always line up. Going through Home Assistant's
+# music_assistant integration instead hit "media item could not be found"
+# whenever that integration and the panel weren't looking at the same thing.
+_players_direct = {"at": 0.0, "list": None}
+_attempts: list = []                         # the last few plays, for the status page
+
+
+def _note(entity: str, uri: str, media_type: str, route: str, result: str) -> None:
+    _attempts.append({"at": db.utc_now_iso(), "speaker": entity, "uri": uri, "type": media_type,
+                      "route": route, "result": result[:240]})
+    del _attempts[:-10]
+
+
+def ma_players(config: dict) -> list[dict]:
+    if _players_direct["list"] is None or time.time() - _players_direct["at"] > _CACHE_S:
+        raw = ma_api(config, "players/all") or []
+        _players_direct.update(at=time.time(), list=[
+            {"player_id": p.get("player_id"), "name": p.get("display_name") or p.get("name"),
+             "available": p.get("available", True), "provider": p.get("provider")}
+            for p in raw if isinstance(p, dict) and p.get("player_id")])
+    return _players_direct["list"]
+
+
+def ma_queue_for(config: dict, entity: str) -> str | None:
+    """Music Assistant's own player id for a Sonos tile, matched by name."""
+    states = (ha.cached_states() or {}).get("states", {})
+    names = {_norm(n) for n in (
+        ((states.get(entity) or {}).get("attributes") or {}).get("friendly_name"),
+        next((t.get("label") for t in config.get("ha_tiles", []) or [] if t.get("entity") == entity), None),
+    ) if n}
+    twin = player_map(config)[0].get(entity)
+    if twin:
+        names.add(_norm(next((p.get("name") for p in _players() if p.get("entity") == twin), "")))
+    names.discard("")
+    for p in ma_players(config):
+        if _norm(p["name"]) in names and p.get("available", True) is not False:
+            return p["player_id"]
+    return None
 
 
 def _names(config: dict) -> dict:
@@ -618,6 +677,44 @@ def _started(target: str, before: tuple, wait: float = START_WAIT_S) -> bool:
     return False
 
 
+def _play_direct(config: dict, entity: str, uri: str, media_type: str, name: str | None) -> bool:
+    """Straight to Music Assistant. True = playing; False = its API isn't
+    reachable (the caller falls back to Home Assistant); raises with MA's
+    own reason if MA turned it down or nothing started."""
+    try:
+        qid = ma_queue_for(config, entity)
+    except Exception as e:                  # noqa: BLE001 - API not reachable
+        log.info("MA direct unavailable: %s", e)
+        return False
+    if not qid:
+        _note(entity, uri, media_type, "Music Assistant direct", "no MA player matched this speaker")
+        return False
+    before = _ha_state(entity)
+    if media_type in ("playlist", "album", "artist"):
+        try:
+            ma_api(config, "player_queues/shuffle", {"queue_id": qid, "shuffle_enabled": True})
+        except Exception as e:              # noqa: BLE001
+            log.info("MA shuffle %s: %s", qid, e)
+    tries = [uri] + ([name] if name and name != uri else [])
+    last = None
+    for media in tries:
+        try:
+            ma_api(config, "player_queues/play_media",
+                   {"queue_id": qid, "media": media, "option": "replace", "radio_mode": False})
+        except (ValueError, MAUnavailable, requests.HTTPError) as e:
+            last = str(e)
+            _note(entity, media, media_type, "Music Assistant direct", f"refused: {last}")
+            continue
+        if _started(entity, before):
+            _note(entity, media, media_type, "Music Assistant direct", "playing")
+            return True
+        last = "accepted, but the speaker never started"
+        _note(entity, media, media_type, "Music Assistant direct", last)
+    raise MAError(_ma_reason(last or "") if last and "not" in last.lower() else
+                  f"Music Assistant: {last or 'it did not play'}",
+                  not_found="found" in (last or "").lower())
+
+
 def _play_media(target: str, uri: str, media_type: str, radio: bool) -> None:
     _service("play_media", {"entity_id": target, "media_id": uri, "media_type": media_type,
                             "enqueue": "replace", "radio_mode": radio}, timeout=PLAY_TIMEOUT)
@@ -633,8 +730,13 @@ def play(config: dict, entity: str, uri: str, media_type: str, spotify: str | No
     which Spotify has shut off for most apps — the queue came up empty and
     nothing played, silently.) A song still tries radio, so it carries on
     after; if nothing has started 20-odd seconds later, it's played plain."""
-    if spotify and media_type in SONOS_SPOTIFY_KINDS and play_on_sonos(entity, spotify, media_type):
-        return                              # the Sonos is playing it from Spotify itself
+    if spotify and media_type in SONOS_SPOTIFY_KINDS:
+        if play_on_sonos(entity, spotify, media_type):
+            _note(entity, spotify, media_type, "Sonos plays Spotify itself", "playing")
+            return                          # the Sonos is playing it from Spotify itself
+        _note(entity, spotify, media_type, "Sonos plays Spotify itself", "didn't start — trying Music Assistant")
+    if _play_direct(config, entity, uri, media_type, name):
+        return
     players, _ = player_map(config)
     target = players.get(entity)
     if not target:
@@ -648,9 +750,11 @@ def play(config: dict, entity: str, uri: str, media_type: str, spotify: str | No
             log.info("shuffle on %s: %s", target, e)
     before = _ha_state(target)
     radio = media_type == "track"
+    _note(entity, uri, media_type, "via Home Assistant", "sent")
     try:
         _play_media(target, uri, media_type, radio)
     except MAError as e:
+        _note(entity, uri, media_type, "via Home Assistant", str(e))
         # "Not found" by its id: ask again by name, so Music Assistant
         # searches every service it can actually reach for it.
         if not (e.not_found and name):
