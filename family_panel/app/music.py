@@ -221,6 +221,10 @@ def _ma_reason(text: str) -> str:
     if "MediaNotFound" in t or "could not be found" in t:
         return ("Music Assistant couldn't find that item — usually its Spotify / YouTube Music "
                 "connection isn't working (Music Assistant > Settings > Providers; Spotify needs Premium)")
+    if "500" in t and "trouble" in t.lower():
+        return ("Music Assistant couldn't play it (Home Assistant only passes on \"500\"; its log "
+                "usually says media item not found — the panel needs music_assistant_token to "
+                "talk to Music Assistant directly)")
     if "ProviderUnavailable" in t or "unavailable" in t.lower():
         return "Music Assistant says that music service is unavailable right now"
     return f"Music Assistant said: {t[:180]}" if t else "Music Assistant turned it down"
@@ -701,7 +705,12 @@ def _play_direct(config: dict, entity: str, uri: str, media_type: str, name: str
         try:
             ma_api(config, "player_queues/play_media",
                    {"queue_id": qid, "media": media, "option": "replace", "radio_mode": False})
-        except (ValueError, MAUnavailable, requests.HTTPError) as e:
+        except MAUnavailable as e:
+            # locked (needs a token) or gone: not a refusal — let the caller
+            # try through Home Assistant instead
+            _note(entity, media, media_type, "Music Assistant direct", f"unreachable: {e}")
+            return False
+        except (ValueError, requests.HTTPError) as e:
             last = str(e)
             _note(entity, media, media_type, "Music Assistant direct", f"refused: {last}")
             continue
@@ -757,7 +766,9 @@ def play(config: dict, entity: str, uri: str, media_type: str, spotify: str | No
         _note(entity, uri, media_type, "via Home Assistant", str(e))
         # "Not found" by its id: ask again by name, so Music Assistant
         # searches every service it can actually reach for it.
-        if not (e.not_found and name):
+        # Home Assistant hands MA's MediaNotFoundError back as a bare
+        # "500 Internal Server Error", so a 500 counts as "not found" too.
+        if not ((e.not_found or e.status == 500) and name):
             raise
         log.info("%s not found by uri on %s; trying by name %r", uri, target, name)
         _play_media(target, name, media_type, False)

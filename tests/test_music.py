@@ -9,6 +9,7 @@ def fresh_ma():
     """Each test starts with no remembered Music Assistant address, account
     list or "unreachable" note — they'd otherwise carry from test to test."""
     music._ma.update(base=None, at=0.0, providers=None, down_until=0.0, down_why=None)
+    music._players_direct.update(list=None, at=0.0)
     yield
     music._ma.update(base=None, at=0.0, providers=None, down_until=0.0, down_why=None)
 
@@ -365,3 +366,26 @@ def test_plays_straight_through_music_assistant_when_it_can(monkeypatch):
     assert pm and pm[0]["args"]["queue_id"] == "RINCON_1" and pm[0]["args"]["media"] == "library://artist/9"
     assert not any("music_assistant/play_media" in u for u, _ in calls)       # Home Assistant not used
     assert music._attempts[-1]["route"] == "Music Assistant direct"
+
+
+def test_ha_500_counts_as_not_found_and_retries_by_name(monkeypatch):
+    calls = []
+    fake_ha(monkeypatch, calls)
+    music._ma.update(down_until=9e12, down_why="wants a login token")      # direct API locked
+    monkeypatch.setattr(music, "_ha_state", lambda e: ("idle", {}))
+    monkeypatch.setattr(music, "_started", lambda target, before, wait=0: True)
+    real_post = music.requests.post
+
+    class Err500:
+        status_code = 500
+        text = "500 Internal Server Error Server got itself in trouble"
+
+    def post(url, headers=None, json=None, timeout=None):
+        if url.endswith("music_assistant/play_media") and json["media_id"].startswith("library://"):
+            calls.append((url, json))
+            return Err500()
+        return real_post(url, headers=headers, json=json, timeout=timeout)      # records it too
+    monkeypatch.setattr(music.requests, "post", post)
+    music.play(CONFIG, "media_player.lounge", "library://album/3", "album", None, "Ocean Avenue Acoustic")
+    ids = [b["media_id"] for u, b in calls if u.endswith("music_assistant/play_media")]
+    assert ids == ["library://album/3", "Ocean Avenue Acoustic"]
