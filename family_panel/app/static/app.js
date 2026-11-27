@@ -2811,6 +2811,14 @@
     return musicSources().some(function (x) { return x.id === v; }) ? v : 'favs';
   }
 
+  /* which service the chosen tab is (spotify / ytmusic), for items that
+     don't say so themselves */
+  function curSrcDomain() {
+    var v = curSrc();
+    var hit = musicSources().filter(function (x) { return x.id === v; })[0];
+    return hit ? hit.domain : '';
+  }
+
   function curSrcLabel() {
     var v = curSrc();
     var hit = musicSources().filter(function (x) { return x.id === v; })[0];
@@ -2871,7 +2879,9 @@
       : '';
     return '<button class="mu-tile is-' + esc(it.media_type) + (art ? '' : ' no-art') + '" data-act="music-play" data-entity="' +
       esc(entity) + '" data-uri="' + esc(it.uri) + '" data-type="' + esc(it.media_type) +
-      '" data-name="' + esc(it.name) + '"' + (it.spotify ? ' data-sp="' + esc(it.spotify) + '"' : '') + '>' +
+      '" data-name="' + esc(it.name) + '"' + (it.spotify ? ' data-sp="' + esc(it.spotify) + '"' : '') +
+      ' data-src="' + esc(it.source || curSrcDomain()) + '"' +
+      (it.media_type === 'album' || it.media_type === 'track' ? ' data-artist="' + esc(it.sub || '') + '"' : '') + '>' +
       '<span class="mu-art">' + art + '<span class="mu-ic">' +
       (ICON[MUSIC_KIND_ICON[it.media_type]] || ICON.playlist) + '</span></span>' +
       '<span class="mu-n">' + esc(it.name) + '</span>' +
@@ -2963,7 +2973,8 @@
     el.classList.add('is-busy');
     act(POST('/api/ha/music/play', { entity: el.dataset.entity, uri: el.dataset.uri,
                                      media_type: el.dataset.type, name: el.dataset.name,
-                                     spotify: el.dataset.sp || null }, MUSIC_MS), function () {
+                                     spotify: el.dataset.sp || null, source: el.dataset.src || null,
+                                     artist: el.dataset.artist || null }, MUSIC_MS), function () {
       toast('Starting ' + el.dataset.name + '…');
       markMusicStarting(el.dataset.entity, el.dataset.name);
       reloadHaAfterTap();

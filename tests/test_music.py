@@ -389,3 +389,44 @@ def test_ha_500_counts_as_not_found_and_retries_by_name(monkeypatch):
     music.play(CONFIG, "media_player.lounge", "library://album/3", "album", None, "Ocean Avenue Acoustic")
     ids = [b["media_id"] for u, b in calls if u.endswith("music_assistant/play_media")]
     assert ids == ["library://album/3", "Ocean Avenue Acoustic"]
+
+
+def _search_ha(monkeypatch, calls, results):
+    fake_ha(monkeypatch, calls)
+    real_post = music.requests.post
+
+    def post(url, headers=None, json=None, timeout=None):
+        if "music_assistant/search" in url:
+            calls.append((url, json))
+            return Resp({"service_response": results})
+        return real_post(url, headers=headers, json=json, timeout=timeout)
+    monkeypatch.setattr(music.requests, "post", post)
+
+
+def test_spotify_link_found_by_search_without_a_token(monkeypatch):
+    calls = []
+    _search_ha(monkeypatch, calls, {
+        "albums": [{"name": "Ocean Avenue (Live)", "uri": "spotify--x1://album/1111111111aaaaaaaaaa"},
+                   {"name": "Ocean Avenue Acoustic", "uri": "spotify--x1://album/2222222222bbbbbbbbbb"},
+                   {"name": "Ocean Avenue Acoustic", "uri": "library://album/3"}],
+        "playlists": [{"name": "This Is Khruangbin", "uri": "spotify--x1://playlist/37i9dQZF1DZ06evO0ENHL8"}]})
+    link, kind = music.spotify_via_search(CONFIG, "Ocean Avenue Acoustic", "album", "Yellowcard")
+    assert link == "https://open.spotify.com/album/2222222222bbbbbbbbbb" and kind == "album"
+    assert calls[-1][1]["artist"] == "Yellowcard" and calls[-1][1]["library_only"] is False
+    link, kind = music.spotify_via_search(CONFIG, "Khruangbin", "artist")
+    assert link.endswith("/playlist/37i9dQZF1DZ06evO0ENHL8") and kind == "playlist"
+    assert music.spotify_via_search(CONFIG, "Someone Else", "artist") == (None, None)
+
+
+def test_spotify_tap_searches_then_plays_on_the_sonos(monkeypatch):
+    calls = []
+    _search_ha(monkeypatch, calls, {"albums": [
+        {"name": "Ocean Avenue Acoustic", "uri": "spotify--x1://album/2222222222bbbbbbbbbb"}]})
+    monkeypatch.setattr(music, "_ha_state", lambda e: ("idle", {}))
+    monkeypatch.setattr(music, "_started", lambda target, before, wait=0: True)
+    music._ma.update(down_until=9e12, down_why="wants a login token")
+    music.play(CONFIG, "media_player.lounge", "library://album/3", "album", None,
+               "Ocean Avenue Acoustic", "spotify", "Yellowcard")
+    sonos = [b for u, b in calls if u.endswith("/services/media_player/play_media")]
+    assert sonos and sonos[0]["media_content_id"] == "https://open.spotify.com/album/2222222222bbbbbbbbbb"
+    assert not any("music_assistant/play_media" in u for u, _ in calls)

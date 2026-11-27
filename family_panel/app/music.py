@@ -567,6 +567,48 @@ def _ha_call(domain: str, service: str, body: dict, timeout: float = 30) -> None
     r.raise_for_status()
 
 
+def _same(a, b) -> bool:
+    norm = lambda x: re.sub(r"[^a-z0-9]", "", str(x or "").lower())    # noqa: E731
+    return bool(norm(a)) and norm(a) == norm(b)
+
+
+def spotify_via_search(config: dict, name: str, media_type: str,
+                       artist: str | None = None) -> tuple[str | None, str | None]:
+    """(link, kind) — find the Spotify copy of a library item by searching
+    through Home Assistant (needs no Music Assistant token). Search results
+    carry real Spotify ids where library items only have library://… ones.
+    An artist becomes Spotify's own "This Is <artist>" playlist, since a
+    Sonos can't play an artist link."""
+    if not name:
+        return None, None
+    _, entry = player_map(config)
+    if not entry:
+        return None, None
+    if media_type == "artist":
+        kind, query, want = "playlist", f"This Is {name}", f"This Is {name}"
+    elif media_type in SONOS_SPOTIFY_KINDS:
+        kind, query, want = media_type, name, name
+    else:
+        return None, None
+    body = {"config_entry_id": entry, "name": query, "media_type": [kind], "limit": 15,
+            "library_only": False}
+    if artist and kind in ("album", "track"):
+        body["artist"] = artist
+    try:
+        res = _service("search", body, True) or {}
+    except Exception as e:                  # noqa: BLE001
+        log.info("spotify search %r: %s", query, e)
+        return None, None
+    found = [i for i in (res.get(kind + "s") or []) if isinstance(i, dict)]
+    links = [(i, spotify_link({**i, "media_type": kind})) for i in found]
+    links = [(i, l) for i, l in links if l]
+    exact = [l for i, l in links if _same(i.get("name"), want)]
+    if exact:
+        return exact[0], kind
+    # an album or song by a near-enough name will do; an artist needs the real "This Is"
+    return (links[0][1], kind) if links and media_type != "artist" else (None, None)
+
+
 def play_on_sonos(entity: str, link: str, media_type: str) -> bool:
     """Hand the Sonos a Spotify link; True if it really started."""
     before = _ha_state(entity)
@@ -730,7 +772,7 @@ def _play_media(target: str, uri: str, media_type: str, radio: bool) -> None:
 
 
 def play(config: dict, entity: str, uri: str, media_type: str, spotify: str | None = None,
-         name: str | None = None) -> None:
+         name: str | None = None, source: str | None = None, artist: str | None = None) -> None:
     """Play a library item on the speaker (via its MA twin), and make sure
     it really started.
 
@@ -739,11 +781,24 @@ def play(config: dict, entity: str, uri: str, media_type: str, spotify: str | No
     which Spotify has shut off for most apps — the queue came up empty and
     nothing played, silently.) A song still tries radio, so it carries on
     after; if nothing has started 20-odd seconds later, it's played plain."""
-    if spotify and media_type in SONOS_SPOTIFY_KINDS:
+    # A Spotify item without a Spotify link (it came through Home Assistant,
+    # as library://…): look the link up by name first.
+    sp_kind = media_type
+    if not spotify and source and source.startswith("spotify") and name:
+        spotify, found_kind = spotify_via_search(config, name, media_type, artist)
+        if spotify:
+            sp_kind = found_kind
+            _note(entity, spotify, media_type, "Spotify link found by search", "ok")
+        else:
+            _note(entity, uri, media_type, "Spotify link found by search", "no match")
+    if spotify and sp_kind in SONOS_SPOTIFY_KINDS:
+        media_type_was = media_type
+        media_type = sp_kind
         if play_on_sonos(entity, spotify, media_type):
             _note(entity, spotify, media_type, "Sonos plays Spotify itself", "playing")
             return                          # the Sonos is playing it from Spotify itself
         _note(entity, spotify, media_type, "Sonos plays Spotify itself", "didn't start — trying Music Assistant")
+        media_type = media_type_was
     if _play_direct(config, entity, uri, media_type, name):
         return
     players, _ = player_map(config)
@@ -850,7 +905,9 @@ def surprise(config: dict, entity: str, source: str | None = None) -> dict:
                          if source else "Nothing in the Music Assistant library yet")
     pick = random.choice(items)
     _start(entity, pick["name"], lambda: play(config, entity, pick["uri"], pick["media_type"],
-                                              pick.get("spotify"), pick["name"]))
+                                              pick.get("spotify"), pick["name"],
+                                              pick.get("source") or source,
+                                              pick.get("sub") if pick["media_type"] == "album" else None))
     return pick
 
 
@@ -893,7 +950,8 @@ def play_status(entity: str) -> dict:
 
 
 def start_play(config: dict, entity: str, uri: str, media_type: str, name: str = "",
-               spotify: str | None = None) -> None:
+               spotify: str | None = None, source: str | None = None,
+               artist: str | None = None) -> None:
     """Check the order now (so a bad one still fails on the tap), play it
     in the background."""
     players, _ = player_map(config)
@@ -905,4 +963,5 @@ def start_play(config: dict, entity: str, uri: str, media_type: str, name: str =
         raise ValueError("Nothing to play")
     if spotify and not re.fullmatch(r"https://open\.spotify\.com/(track|album|playlist)/[A-Za-z0-9]{10,40}", spotify):
         spotify = None
-    _start(entity, name or uri, lambda: play(config, entity, uri, media_type, spotify, name or None))
+    _start(entity, name or uri, lambda: play(config, entity, uri, media_type, spotify, name or None,
+                                             source or None, artist or None))
